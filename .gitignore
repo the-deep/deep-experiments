@@ -152,3 +152,4 @@ artifacts/
 
 # Time estimation models
 app/vision/image_classification/experiment_duration_models
+/data
