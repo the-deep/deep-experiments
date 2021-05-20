@@ -58,11 +58,11 @@ if __name__ == "__main__":
     tokenizer = DistilBertTokenizerFast.from_pretrained(args.model_name)
     model = DistilBertForSequenceClassification.from_pretrained(args.model_name)
 
-    train_encodings = tokenizer(list(train_df.sentence_text), truncation=True, padding=True)
-    test_encodings = tokenizer(list(test_df.sentence_text), truncation=True, padding=True)
+    train_encodings = tokenizer(list(train_df.excerpt), truncation=True, padding=True)
+    test_encodings = tokenizer(list(test_df.excerpt), truncation=True, padding=True)
 
-    train_labels = list(train_df.sector_ids)
-    test_labels = list(test_df.sector_ids)
+    train_labels = list(train_df["Humanitarian Conditions"])
+    test_labels = list(test_df["Humanitarian Conditions"])
 
     class Dataset(torch.utils.data.Dataset):
         def __init__(self, encodings, labels):
