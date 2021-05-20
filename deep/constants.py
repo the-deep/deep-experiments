@@ -10,7 +10,7 @@ SCRIPTS_MODELS_PATH = SCRIPTS_PATH / "models"
 
 SAGEMAKER_BUCKET = "deep-experiments-sagemaker-bucket"
 
-dimension_classes = [
+DIMENSION_CLASSES = [
     "Shock Informaton",
     "Effects Systems And Networks",
     "Effects On Population",
@@ -23,7 +23,7 @@ dimension_classes = [
     "Context",
 ]
 
-sector_classes = [
+SECTOR_CLASSES = [
     "Agricolture",
     "Cross",
     "Education",
