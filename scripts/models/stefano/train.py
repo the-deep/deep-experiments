@@ -1,6 +1,7 @@
-from transformers import AutoModelForSequenceClassification, Trainer, TrainingArguments
+from transformers import AutoModelForSequenceClassification, AutoTokenizerForSequenceClassification, Trainer, TrainingArguments
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from datasets import load_from_disk
+import pandas as pd
 import random
 import logging
 import sys
@@ -35,8 +36,9 @@ if __name__ == "__main__":
     )
     
     # load datasets
-    train_dataset = load_from_disk(args.training_dir)
-    test_dataset = load_from_disk(args.test_dir)
+    # train_dataset = load_from_disk(args.training_dir)
+    train_df = pd.read_pickle(args.training_dir)
+    test_df = None # load_from_disk(args.test_dir)
     logger.info(f" loaded train_dataset length is: {len(train_dataset)}")
     logger.info(f" loaded test_dataset length is: {len(test_dataset)}")
     
@@ -49,7 +51,27 @@ if __name__ == "__main__":
         return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
     # download model from model hub
+    tokenizer = AutoTokenizerForSequenceClassification.from_pretrained(args.model_name)
     model = AutoModelForSequenceClassification.from_pretrained(args.model_name)
+
+    train_encodings = tokenizer(list(train_df.sentence_text), truncation=True, padding=True)
+    train_labels = list(train_df.sector_ids)
+
+    class Dataset(torch.utils.data.Dataset):
+        def __init__(self, encodings, labels):
+            self.encodings = encodings
+            self.labels = labels
+
+        def __getitem__(self, idx):
+            item = {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+            item['labels'] = torch.tensor(self.labels[idx])
+            return item
+
+        def __len__(self):
+            return len(self.labels)
+
+
+    train_dataset = Dataset(train_encodings, train_labels)
     
     # define training args
     training_args = TrainingArguments(
@@ -80,9 +102,9 @@ if __name__ == "__main__":
     
     # writes eval result to file which can be accessed later in s3 ouput
     with open(os.path.join(args.output_data_dir, "eval_results.txt"), "w") as writer:
-    print(f"***** Eval results *****")
-    for key, value in sorted(eval_result.items()):
-    writer.write(f"{key} = {value}\n")
+        print(f"***** Eval results *****")
+        for key, value in sorted(eval_result.items()):
+            writer.write(f"{key} = {value}\n")
     
     # Saves the model to s3
     trainer.save_model(args.model_dir)
