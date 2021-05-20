@@ -153,3 +153,4 @@ artifacts/
 # TC data/models
 *.train
 *.validation
+*.pickle
