@@ -150,6 +150,6 @@ artifacts/
 .idea/
 *.iml
 
-# Time estimation models
-app/vision/image_classification/experiment_duration_models
-/data
+# TC data/models
+*.train
+*.validation
