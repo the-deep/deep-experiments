@@ -1,6 +1,6 @@
 from transformers import (
-    AutoModelForSequenceClassification,
-    AutoTokenizerForSequenceClassification,
+    DistilBertForSequenceClassification,
+    DistilBertTokenizerFast,
     Trainer,
     TrainingArguments,
 )
@@ -55,8 +55,8 @@ if __name__ == "__main__":
         return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
 
     # download model from model hub
-    tokenizer = AutoTokenizerForSequenceClassification.from_pretrained(args.model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_name)
+    tokenizer = DistilBertTokenizerFast.from_pretrained(args.model_name)
+    model = DistilBertForSequenceClassification.from_pretrained(args.model_name)
 
     train_encodings = tokenizer(list(train_df.sentence_text), truncation=True, padding=True)
     test_encodings = tokenizer(list(test_df.sentence_text), truncation=True, padding=True)
