@@ -41,8 +41,8 @@ if __name__ == "__main__":
 
     # load datasets
     # train_dataset = load_from_disk(args.training_dir)
-    train_df = pd.read_pickle(args.training_dir)
-    test_df = None  # load_from_disk(args.test_dir)
+    train_df = pd.read_pickle(f"{args.training_dir}/train_df.pickle")
+    test_df = pd.read_pickle(f"{args.training_dir}/test_df.pickle")
     logger.info(f" loaded train_dataset length is: {train_df.shape}")
     logger.info(f" loaded test_dataset length is: {test_df.shape}")
 
