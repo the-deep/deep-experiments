@@ -6,7 +6,8 @@ IMMAP_PATH = DATA_PATH / "immap"
 FRAMEWORKS_PATH = DATA_PATH / "frameworks_data"
 
 SCRIPTS_PATH = ROOT_PATH / "scripts"
-SCRIPTS_MODELS_PATH = SCRIPTS_PATH / "models"
+SCRIPTS_TRAINING_PATH = SCRIPTS_PATH / "training"
+SCRIPTS_INFERENCE_PATH = SCRIPTS_PATH / "inference"
 
 SAGEMAKER_BUCKET = "deep-experiments-sagemaker-bucket"
 
