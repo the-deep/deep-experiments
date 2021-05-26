@@ -1,3 +1,10 @@
+import logging
+import sys
+import argparse
+import os
+import torch
+from pathlib import Path
+
 from transformers import (
     DistilBertForSequenceClassification,
     DistilBertTokenizerFast,
@@ -6,11 +13,7 @@ from transformers import (
 )
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import pandas as pd
-import logging
-import sys
-import argparse
-import os
-import torch
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -90,6 +93,7 @@ if __name__ == "__main__":
         evaluation_strategy="epoch",
         logging_dir=f"{args.output_data_dir}/logs",
         learning_rate=float(args.learning_rate),
+        logging_steps=1,
     )
 
     # create Trainer instance
@@ -115,3 +119,4 @@ if __name__ == "__main__":
 
     # Saves the model to s3
     trainer.save_model(args.model_dir)
+    tokenizer.save_pretrained(Path(args.model_dir) / "tokenizer")

@@ -1,3 +1,9 @@
+import logging
+import sys
+import argparse
+import os
+import torch
+
 from transformers import (
     DistilBertForSequenceClassification,
     DistilBertTokenizerFast,
@@ -6,11 +12,6 @@ from transformers import (
 )
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 import pandas as pd
-import logging
-import sys
-import argparse
-import os
-import torch
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
