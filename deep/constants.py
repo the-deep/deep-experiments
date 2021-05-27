@@ -1,4 +1,5 @@
 from pathlib import Path
+from cloudpathlib import CloudPath
 
 ROOT_PATH = Path(__file__).parent.parent.absolute()
 DATA_PATH = ROOT_PATH / "data"
@@ -9,7 +10,8 @@ SCRIPTS_PATH = ROOT_PATH / "scripts"
 SCRIPTS_TRAINING_PATH = SCRIPTS_PATH / "training"
 SCRIPTS_INFERENCE_PATH = SCRIPTS_PATH / "inference"
 
-SAGEMAKER_BUCKET = "deep-experiments-sagemaker-bucket"
+DEV_BUCKET = CloudPath("s3://sagemaker-deep-experiments-dev")
+PROD_BUCKET = CloudPath("s3://sagemaker-deep-experiments-prod")
 
 DIMENSION_CLASSES = [
     "Shock Informaton",
