@@ -56,7 +56,13 @@ if __name__ == "__main__":
         preds = pred.predictions.argmax(-1)
         precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
         acc = accuracy_score(labels, preds)
-        return {"accuracy": acc, "f1": f1, "precision": precision, "recall": recall}
+        return {
+            "accuracy": acc,
+            "f1": f1,
+            "precision": precision,
+            "recall": recall,
+            "stupid_metric": 1.0,
+        }
 
     # download model from model hub
     tokenizer = DistilBertTokenizerFast.from_pretrained(args.model_name)
