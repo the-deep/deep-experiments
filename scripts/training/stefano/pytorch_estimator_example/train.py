@@ -7,8 +7,8 @@ from pathlib import Path
 import pickle
 
 from transformers import (
-    DistilBertForSequenceClassification,
-    DistilBertTokenizerFast,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
     Trainer,
     TrainingArguments,
 )
@@ -65,8 +65,8 @@ if __name__ == "__main__":
         }
 
     # download model from model hub
-    tokenizer = DistilBertTokenizerFast.from_pretrained(args.model_name)
-    model = DistilBertForSequenceClassification.from_pretrained(args.model_name)
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    model = AutoModelForSequenceClassification.from_pretrained(args.model_name)
 
     train_encodings = tokenizer(list(train_df.excerpt), truncation=True, padding=True)
     test_encodings = tokenizer(list(test_df.excerpt), truncation=True, padding=True)
