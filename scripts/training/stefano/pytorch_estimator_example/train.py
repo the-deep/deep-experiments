@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     # writes eval result to file which can be accessed later in s3 ouput
     with open(os.path.join(args.output_data_dir, "eval_results.txt"), "w") as writer:
-        print(f"***** Eval results *****")
+        print("***** Eval results *****")
         for key, value in sorted(eval_result.items()):
             writer.write(f"{key} = {value}\n")
     with open(Path(args.output_data_dir) / "test_predictions.pickle", "wb") as f:

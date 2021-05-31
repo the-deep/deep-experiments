@@ -1,26 +1,21 @@
-from pathlib import Path
+import sys
 import os
-import random
-import json
-from datetime import datetime
+import argparse
+import logging
+import pickle
+from pathlib import Path
 
 import pandas as pd
-import numpy as np
-from sklearn.metrics import classification_report
 import torch
-import sagemaker
-from sagemaker import get_execution_role
-import boto3
 import pytorch_lightning as pl
 import torch.nn as nn
 from transformers import (
-    AutoModelForSequenceClassification,
     AutoModel,
     AutoTokenizer,
     AdamW,
     get_linear_schedule_with_warmup,
 )
-from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -59,7 +54,6 @@ if __name__ == "__main__":
     logger.info(f" loaded val_dataset shape is: {val_df.shape}")
     logger.info(f" loaded test_dataset shape is: {test_df.shape}")
 
-    # compute metrics function for binary classification
     def compute_metrics(pred):
         labels = pred.label_ids
         preds = pred.predictions.argmax(-1)
@@ -73,16 +67,13 @@ if __name__ == "__main__":
             "stupid_metric": 1.0,
         }
 
-    # download model from model hub
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    model = AutoModelForSequenceClassification.from_pretrained(args.model_name)
-
 
     class TransformerDataset(Dataset):
         def __init__(self, tokenizer, df):
             self.tokenizer = tokenizer
-            self.labels = df['labels']
-            self.texts = df['texts']
+            self.labels = df["labels"]
+            self.texts = df["texts"]
 
         def __len__(self):
             return len(self.texts)
@@ -92,93 +83,96 @@ if __name__ == "__main__":
             inputs = self.tokenizer.encode_plus(
                 text,
                 truncation=True,
-                padding='max_length',
-                return_tensors='pt',
+                padding="max_length",
+                return_tensors="pt",
             )
             inputs = {
-                'input_ids': inputs['input_ids'].flatten(),
-                'attention_mask': inputs['attention_mask'].flatten(),
-                'label': torch.tensor(self.labels[idx], dtype=torch.float)
+                "input_ids": inputs["input_ids"].flatten(),
+                "attention_mask": inputs["attention_mask"].flatten(),
+                "label": torch.tensor(self.labels[idx], dtype=torch.float),
             }
             return inputs
 
-
     class DataModule(pl.LightningDataModule):
-
-        def __init__(self, train_df, val_df, test_df, tokenizer, batch_size=16, max_token_len=200):
+        def __init__(
+            self,
+            train_df,
+            val_df,
+            test_df,
+            tokenizer,
+            train_batch_size=16,
+            eval_batch_size=64,
+            max_token_len=200,
+        ):
             super().__init__()
             self.train_df = train_df
             self.val_df = val_df
             self.test_df = test_df
             self.tokenizer = tokenizer
-            self.batch_size = batch_size
+            self.train_batch_size = train_batch_size
+            self.eval_batch_size = eval_batch_size
             self.max_token_len = max_token_len
 
-        def setup(self):
+        def setup(self, stage=None):
             self.train_dataset = TransformerDataset(tokenizer=self.tokenizer, df=self.train_df)
             self.val_dataset = TransformerDataset(tokenizer=self.tokenizer, df=self.val_df)
             self.test_dataset = TransformerDataset(tokenizer=self.tokenizer, df=self.test_df)
 
         def train_dataloader(self):
-            return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+            return DataLoader(self.train_dataset, batch_size=self.train_batch_size, shuffle=True)
 
         def val_dataloader(self):
-            return DataLoader(self.val_dataset, batch_size=self.batch_size)
+            return DataLoader(self.val_dataset, batch_size=self.eval_batch_size)
 
         def test_dataloader(self):
-            return DataLoader(self.test_dataset, batch_size=self.batch_size)
+            return DataLoader(self.test_dataset, batch_size=self.eval_batch_size)
 
     # we will use the BERT base model(the smaller one)
     class DistilClassifier(pl.LightningModule):
         # Set up the classifier
-        def __init__(self, n_classes=10, steps_per_epoch=None, n_epochs=3, lr=2e-5):
+        def __init__(self, n_classes=10, steps_per_epoch=None, n_epochs=1, lr=2e-5):
             super().__init__()
 
-            self.model = AutoModel.from_pretrained(model_name)
-            self.classifier = nn.Linear(self.model.config.hidden_size,
-                                        n_classes)
+            self.model = AutoModel.from_pretrained(args.model_name)
+            self.classifier = nn.Linear(self.model.config.hidden_size, n_classes)
             self.steps_per_epoch = steps_per_epoch
             self.n_epochs = n_epochs
             self.lr = lr
             self.criterion = nn.BCEWithLogitsLoss()
 
-        def forward(self, input_ids, attn_mask):
-            output = self.model(input_ids=input_ids, attention_mask=attn_mask)
+        def forward(self, batch):
+            output = self.model(
+                input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+            )
             pooler_output = output.last_hidden_state[:, 0, :]
             output = self.classifier(pooler_output)
 
             return output
 
         def training_step(self, batch, batch_idx):
-            input_ids = batch['input_ids']
-            attention_mask = batch['attention_mask']
-            labels = batch['label']
+            labels = batch["label"]
 
-            outputs = self(input_ids, attention_mask)
+            outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log('train_loss', loss, prog_bar=True, logger=True)
+            self.log("train_loss", loss, prog_bar=True, logger=True)
 
             return {"loss": loss, "predictions": outputs, "labels": labels}
 
         def validation_step(self, batch, batch_idx):
-            input_ids = batch['input_ids']
-            attention_mask = batch['attention_mask']
-            labels = batch['label']
+            labels = batch["label"]
 
-            outputs = self(input_ids, attention_mask)
+            outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log('val_loss', loss, prog_bar=True, logger=True)
+            self.log("val_loss", loss, prog_bar=True, logger=True)
 
             return loss
 
         def test_step(self, batch, batch_idx):
-            input_ids = batch['input_ids']
-            attention_mask = batch['attention_mask']
-            labels = batch['label']
+            labels = batch["label"]
 
-            outputs = self(input_ids, attention_mask)
+            outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log('test_loss', loss, prog_bar=True, logger=True)
+            self.log("test_loss", loss, prog_bar=True, logger=True)
 
             return loss
 
@@ -191,9 +185,24 @@ if __name__ == "__main__":
 
             return [optimizer], [scheduler]
 
-
-    data = DataModule(train_df, val_df, test_df, tokenizer)
+    data = DataModule(
+        train_df,
+        val_df,
+        test_df,
+        tokenizer,
+        train_batch_size=args.train_batch_size,
+        eval_batch_size=args.eval_batch_size,
+    )
     data.setup()
     model = DistilClassifier()
-    trainer = pl.Trainer()
+    trainer = pl.Trainer(gpus=1, min_epochs=args.epochs, max_epochs=args.epochs)
     trainer.fit(model, data)
+
+    # Output
+    predictions = trainer.predict(model, dataloaders=data.test_dataloader())
+    predictions = torch.cat(predictions)
+    with open(Path(args.output_data_dir) / "test_predictions.pickle", "wb") as f:
+        pickle.dump(predictions, f)
+
+    tokenizer.save_pretrained(Path(args.model_dir) / "tokenizer")
+    trainer.save_checkpoint(Path(args.model_dir) / "model.ckpt")
