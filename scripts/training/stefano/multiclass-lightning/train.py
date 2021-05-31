@@ -162,7 +162,7 @@ if __name__ == "__main__":
 
             outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log("train_loss", loss, on_step=True, on_epoch=True)
+            self.log("train_loss", loss, on_step=True, on_epoch=False)
             self.compute_metrics(outputs, labels)
 
             return {"loss": loss, "predictions": outputs, "labels": labels}
