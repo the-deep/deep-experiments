@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--model_name", type=str)
+    parser.add_argument("--log_every_n_steps", type=int, default=10)
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -72,8 +73,8 @@ if __name__ == "__main__":
     class TransformerDataset(Dataset):
         def __init__(self, tokenizer, df):
             self.tokenizer = tokenizer
-            self.labels = df["labels"]
-            self.texts = df["texts"]
+            self.labels = list(df["labels"])
+            self.texts = list(df["texts"])
 
         def __len__(self):
             return len(self.texts)
@@ -154,7 +155,7 @@ if __name__ == "__main__":
 
             outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log("train_loss", loss, prog_bar=True, logger=True)
+            self.log("train_loss", loss, on_step=True, on_epoch=True)
 
             return {"loss": loss, "predictions": outputs, "labels": labels}
 
@@ -163,7 +164,7 @@ if __name__ == "__main__":
 
             outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log("val_loss", loss, prog_bar=True, logger=True)
+            self.log("val_loss", loss, on_step=True)
 
             return loss
 
@@ -172,7 +173,7 @@ if __name__ == "__main__":
 
             outputs = self(batch)
             loss = self.criterion(outputs, labels)
-            self.log("test_loss", loss, prog_bar=True, logger=True)
+            self.log("test_loss", loss)
 
             return loss
 
@@ -195,12 +196,18 @@ if __name__ == "__main__":
     )
     data.setup()
     model = DistilClassifier()
-    trainer = pl.Trainer(gpus=1, min_epochs=args.epochs, max_epochs=args.epochs)
+    trainer = pl.Trainer(
+        gpus=1,
+        min_epochs=args.epochs,
+        max_epochs=args.epochs,
+        default_root_dir="/tmp/",
+        log_every_n_steps=args.log_every_n_steps,
+    )
     trainer.fit(model, data)
 
     # Output
     predictions = trainer.predict(model, dataloaders=data.test_dataloader())
-    predictions = torch.cat(predictions)
+    predictions = torch.cat(predictions).cpu()
     with open(Path(args.output_data_dir) / "test_predictions.pickle", "wb") as f:
         pickle.dump(predictions, f)
 
