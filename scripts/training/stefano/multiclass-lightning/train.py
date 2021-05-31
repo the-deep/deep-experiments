@@ -15,8 +15,8 @@ from transformers import (
     AdamW,
     get_linear_schedule_with_warmup,
 )
-from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from torch.utils.data import DataLoader, Dataset
+from torchmetrics import F1
 
 
 if __name__ == "__main__":
@@ -55,18 +55,17 @@ if __name__ == "__main__":
     logger.info(f" loaded val_dataset shape is: {val_df.shape}")
     logger.info(f" loaded test_dataset shape is: {test_df.shape}")
 
-    def compute_metrics(pred):
-        labels = pred.label_ids
-        preds = pred.predictions.argmax(-1)
-        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="binary")
-        acc = accuracy_score(labels, preds)
-        return {
-            "accuracy": acc,
-            "f1": f1,
-            "precision": precision,
-            "recall": recall,
-            "stupid_metric": 1.0,
-        }
+    def sigmoid(x):
+        return 1 / (1 + torch.exp(-x))
+
+    def compute_metrics(outputs, labels):
+        f1 = F1()
+        logging.info(
+            {
+                "f1": float(f1(sigmoid(outputs.cuda()), labels.cuda().long())),
+                "stupid_metric": 1.0,
+            }
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
@@ -131,7 +130,14 @@ if __name__ == "__main__":
     # we will use the BERT base model(the smaller one)
     class DistilClassifier(pl.LightningModule):
         # Set up the classifier
-        def __init__(self, n_classes=10, steps_per_epoch=None, n_epochs=1, lr=2e-5):
+        def __init__(
+            self,
+            n_classes=10,
+            steps_per_epoch=None,
+            n_epochs=1,
+            lr=2e-5,
+            compute_metrics=compute_metrics,
+        ):
             super().__init__()
 
             self.model = AutoModel.from_pretrained(args.model_name)
@@ -140,6 +146,7 @@ if __name__ == "__main__":
             self.n_epochs = n_epochs
             self.lr = lr
             self.criterion = nn.BCEWithLogitsLoss()
+            self.compute_metrics = compute_metrics
 
         def forward(self, batch):
             output = self.model(
@@ -156,6 +163,7 @@ if __name__ == "__main__":
             outputs = self(batch)
             loss = self.criterion(outputs, labels)
             self.log("train_loss", loss, on_step=True, on_epoch=True)
+            self.compute_metrics(outputs, labels)
 
             return {"loss": loss, "predictions": outputs, "labels": labels}
 
