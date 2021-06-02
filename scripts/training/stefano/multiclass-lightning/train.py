@@ -30,6 +30,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--model_name", type=str)
     parser.add_argument("--log_every_n_steps", type=int, default=10)
+    parser.add_argument("--n_classes", type=int, default=10)
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -62,7 +63,10 @@ if __name__ == "__main__":
         logging.info(
             {
                 "f1": float(
-                    f1_score(labels.cpu().long().view(-1), sigmoid(outputs).cpu().view(-1))
+                    f1_score(
+                        labels.detach().cpu().long().view(-1),
+                        sigmoid(outputs.detach()).cpu().view(-1),
+                    )
                 ),
                 "stupid_metric": 1.0,
             }
@@ -204,7 +208,7 @@ if __name__ == "__main__":
         eval_batch_size=args.eval_batch_size,
     )
     data.setup()
-    model = DistilClassifier()
+    model = DistilClassifier(n_classes=args.n_classes)
     trainer = pl.Trainer(
         gpus=1,
         min_epochs=args.epochs,
