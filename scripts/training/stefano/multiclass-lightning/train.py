@@ -17,8 +17,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 from torch.utils.data import DataLoader, Dataset
-
-# from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score
 
 
 if __name__ == "__main__":
@@ -62,14 +61,13 @@ if __name__ == "__main__":
         return 1 / (1 + torch.exp(-x))
 
     def compute_metrics(outputs, labels):
+        labels = labels.detach().cpu().long()
+        outputs = sigmoid(outputs.detach().cpu())
+        outputs = (outputs > 0.5).long()
+
         logging.info(
             {
-                # "f1": float(
-                #     f1_score(
-                #         labels.detach().cpu().long().view(-1),
-                #         sigmoid(outputs.detach()).cpu().view(-1),
-                #     )
-                # ),
+                "f1": float(f1_score(labels, outputs)),
                 "stupid_metric": random.random(),
             }
         )

@@ -14,21 +14,8 @@ SCRIPTS_INFERENCE_PATH = SCRIPTS_PATH / "inference"
 DEV_BUCKET = CloudPath("s3://sagemaker-deep-experiments-dev")
 PROD_BUCKET = CloudPath("s3://sagemaker-deep-experiments-prod")
 
-DIMENSION_CLASSES = [
-    "Shock Informaton",
-    "Effects Systems And Networks",
-    "Effects On Population",
-    "Capacities & Response",
-    "At Risk",
-    "Scope & Scale",
-    "Impact",
-    "Humanitarian Conditions",
-    "Priorities",
-    "Context",
-]
-
-SECTOR_CLASSES = [
-    "Agricolture",
+SECTOR = [
+    "Agriculture",
     "Cross",
     "Education",
     "Food Security",
@@ -38,5 +25,37 @@ SECTOR_CLASSES = [
     "Nutrition",
     "Protection",
     "Shelter",
-    "Wash",
+    "WASH",
+]
+
+PILLARS = [
+    "Humanitarian Conditions",
+    "Capacities & Response",
+    "Impact",
+    "Priority Interventions",
+    "People At Risk",
+    "Priority Needs",
+]
+
+SUBPILLARS = [
+    "Capacities & Response->International Response",
+    "Capacities & Response->National Response",
+    "Capacities & Response->Number Of People Reached",
+    "Capacities & Response->Response Gaps",
+    "Humanitarian Conditions->Coping Mechanisms",
+    "Humanitarian Conditions->Living Standards",
+    "Humanitarian Conditions->Number Of People In Need",
+    "Humanitarian Conditions->Physical And Mental Well Being",
+    "Impact->Driver/Aggravating Factors",
+    "Impact->Impact On People",
+    "Impact->Impact On People Or Impact On Services",
+    "Impact->Impact On Services",
+    "Impact->Impact On Systems And Services",
+    "Impact->Number Of People Affected",
+    "People At Risk->Number Of People At Risk",
+    "People At Risk->Risk And Vulnerabilities",
+    "Priority Interventions->Expressed By Humanitarian Staff",
+    "Priority Interventions->Expressed By Population",
+    "Priority Needs->Expressed By Humanitarian Staff",
+    "Priority Needs->Expressed By Population",
 ]
