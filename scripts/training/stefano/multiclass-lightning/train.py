@@ -4,6 +4,7 @@ import argparse
 import logging
 import pickle
 from pathlib import Path
+import random
 
 import pandas as pd
 import torch
@@ -16,7 +17,8 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 from torch.utils.data import DataLoader, Dataset
-from sklearn.metrics import f1_score
+
+# from sklearn.metrics import f1_score
 
 
 if __name__ == "__main__":
@@ -62,13 +64,13 @@ if __name__ == "__main__":
     def compute_metrics(outputs, labels):
         logging.info(
             {
-                "f1": float(
-                    f1_score(
-                        labels.detach().cpu().long().view(-1),
-                        sigmoid(outputs.detach()).cpu().view(-1),
-                    )
-                ),
-                "stupid_metric": 1.0,
+                # "f1": float(
+                #     f1_score(
+                #         labels.detach().cpu().long().view(-1),
+                #         sigmoid(outputs.detach()).cpu().view(-1),
+                #     )
+                # ),
+                "stupid_metric": random.random(),
             }
         )
 

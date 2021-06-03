@@ -27,7 +27,7 @@ class Dataset(torch.utils.data.Dataset):
         return item
 
     def __len__(self):
-        return len(self.encodings)
+        return len(self.encodings["input_ids"])
 
 
 def model_fn(model_dir):
@@ -43,13 +43,16 @@ def model_fn(model_dir):
 # data preprocessing
 def input_fn(request_body, request_content_type):
     assert request_content_type == "application/json"
+    logging.info("request_body: {}".format(request_body))
     data = json.loads(request_body)["inputs"]
+    logging.info("data: {}".format(data))
     # data = torch.tensor(data, dtype=torch.float32, device=device)
     return data
 
 
 # inference
 def predict_fn(input_object, model):
+    logging.info("input_object: {}".format(input_object))
     tokenizer, model = model["tokenizer"], model["model"]
     encodings = tokenizer(input_object, truncation=True, padding=True)
     dataset = Dataset(encodings)
@@ -69,6 +72,7 @@ def predict_fn(input_object, model):
         # eval_dataset=dataset,
     )
     predictions = trainer.predict(dataset)
+    logging.info("predictions: {}".format(predictions))
     return predictions.predictions
 
 
