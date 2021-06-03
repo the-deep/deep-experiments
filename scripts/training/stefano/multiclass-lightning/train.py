@@ -67,7 +67,7 @@ if __name__ == "__main__":
 
         logging.info(
             {
-                "f1": float(f1_score(labels, outputs)),
+                "f1": float(f1_score(labels, outputs, average="weighted")),
                 "stupid_metric": random.random(),
             }
         )

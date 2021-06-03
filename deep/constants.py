@@ -14,7 +14,7 @@ SCRIPTS_INFERENCE_PATH = SCRIPTS_PATH / "inference"
 DEV_BUCKET = CloudPath("s3://sagemaker-deep-experiments-dev")
 PROD_BUCKET = CloudPath("s3://sagemaker-deep-experiments-prod")
 
-SECTOR = [
+SECTORS = [
     "Agriculture",
     "Cross",
     "Education",
