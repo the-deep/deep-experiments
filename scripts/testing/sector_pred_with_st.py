@@ -72,7 +72,6 @@ uploaded_file = st.file_uploader(
     "Upload", type=["pdf"], accept_multiple_files=False, key=None, help=None)
 if uploaded_file is not None:
     sentences = pdf_parser(uploaded_file)
-    print(sentences)
     preds = list(map(predict_sector, sentences))
 
     col1, col2, col3 = st.beta_columns([10, 1, 3])
@@ -83,6 +82,6 @@ if uploaded_file is not None:
     for sentence, sector in zip(sentences, preds):
         col1, col2, col3 = st.beta_columns([10, 1, 3])
         col1.write(sentence)
-        col2.text("g")
+        col2.text(" ")
         col3.text(sector)
         st.markdown("""---""")
