@@ -11,3 +11,7 @@ local-install: install
 cloud-install:
 	source activate pytorch_p36
 	local-install
+
+streamlit:
+	pip install -r streamlit-requirements.txt
+	pip install git+https://github.com/casics/nostril.git

@@ -6,17 +6,18 @@ from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 import re
 from nostril import nonsense
 from urllib.parse import urlparse
-import pandas as pd
 import streamlit as st
 
 import nltk
 from nltk.tokenize import sent_tokenize
-nltk.download('punkt')
+
+nltk.download("punkt")
 
 MIN_NUM_TOKENS = 5
 MIN_WORD_LEN = 4
 
-#TODO: @Stefano please use prediction API
+
+# TODO: @Stefano please use prediction API
 def predict_sector(sentence):
     return "Cross"
 
@@ -36,7 +37,7 @@ def preprocess_sentence(sentence):
         return ""
     sentence = " ".join(tokens)
     keep = re.escape("/\\$.:,;-_()[]{}!'\"% ")
-    sentence = re.sub(r'[^\w' + keep + ']', '', sentence)
+    sentence = re.sub(r"[^\w" + keep + "]", "", sentence)
     return sentence
 
 
@@ -50,9 +51,8 @@ def pdf_parser(fp):
     with st.spinner("Converting PDF to text.."):
         rsrcmgr = PDFResourceManager()
         retstr = StringIO()
-        codec = 'utf-8'
         laparams = LAParams()
-        device = TextConverter(rsrcmgr, retstr, codec=codec, laparams=laparams)
+        device = TextConverter(rsrcmgr, retstr, laparams=laparams)
         # Create a PDF interpreter object.
         interpreter = PDFPageInterpreter(rsrcmgr, device)
         # Process each page contained in the document.
@@ -69,7 +69,8 @@ def pdf_parser(fp):
 
 
 uploaded_file = st.file_uploader(
-    "Upload", type=["pdf"], accept_multiple_files=False, key=None, help=None)
+    "Upload", type=["pdf"], accept_multiple_files=False, key=None, help=None
+)
 if uploaded_file is not None:
     sentences = pdf_parser(uploaded_file)
     print(sentences)

@@ -12,7 +12,6 @@ from fastai.text.all import (
     RecallMulti,
     PrecisionMulti,
     F1ScoreMulti,
-    RocAucMulti,
     AWD_LSTM,
     accuracy_multi,
     MultiCategoryBlock,
@@ -68,7 +67,6 @@ if __name__ == "__main__":
             RecallMulti(thresh=0.35),
             PrecisionMulti(thresh=0.35),
             F1ScoreMulti(thresh=0.35),
-            RocAucMulti(),
         ],
     )
     classes = learn.dls.vocab[1]
