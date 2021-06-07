@@ -154,6 +154,8 @@ artifacts/
 *.train
 *.validation
 *.pickle
+*.tar.gz
+*.tar
 /data
 lightning_logs/
 runs/

@@ -4,3 +4,4 @@ dvc==2.1.0
 boto3==1.17.76
 cloudpathlib==0.4.0
 flake8==3.9.2
+langdetect==1.0.9
