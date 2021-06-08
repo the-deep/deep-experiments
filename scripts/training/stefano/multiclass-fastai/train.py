@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=str, default=0.02)
     parser.add_argument("--text_col", type=str)
     parser.add_argument("--label_col", type=str)
+    parser.add_argument("--multi_category", type=int, default=1)
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -47,29 +48,48 @@ if __name__ == "__main__":
     df = pd.read_pickle(f"{args.training_dir}/df.pickle")
     logger.info(f" loaded train_dataset shape is: {df.shape}")
 
-    dls = TextDataLoaders.from_df(
-        df,
-        text_col=args.text_col,
-        label_col=args.label_col,
-        label_delim=";",
-        valid_col="is_valid",
-        is_lm=False,  # Mention explicitly that this dataloader is meant for language model
-        seq_len=72,  # Pick a sequence length i.e. how many words to feed through the RNN at once
-        bs=args.batch_size,  # Specify the batch size for the dataloader
-        y_block=MultiCategoryBlock,
-    )
-    learn = text_classifier_learner(
-        dls,
-        AWD_LSTM,
-        drop_mult=0.5,
-        metrics=[
-            accuracy_multi,
-            RecallMulti(thresh=0.35),
-            PrecisionMulti(thresh=0.35),
-            F1ScoreMulti(thresh=0.35),
-        ],
-    )
-    classes = learn.dls.vocab[1]
+    if args.multi_category:
+        dls = TextDataLoaders.from_df(
+            df,
+            text_col=args.text_col,
+            label_col=args.label_col,
+            label_delim=";",
+            valid_col="is_valid",
+            is_lm=False,  # Mention explicitly that this dataloader is meant for language model
+            seq_len=72,  # Pick a sequence length i.e. how many words to feed through the RNN
+            bs=args.batch_size,  # Specify the batch size for the dataloader
+            y_block=MultiCategoryBlock,
+        )
+        learn = text_classifier_learner(
+            dls,
+            AWD_LSTM,
+            drop_mult=0.5,
+            metrics=[
+                accuracy_multi,
+                RecallMulti(thresh=0.35),
+                PrecisionMulti(thresh=0.35),
+                F1ScoreMulti(thresh=0.35),
+            ],
+        )
+        classes = learn.dls.vocab[1]
+    else:
+        dls = TextDataLoaders.from_df(
+            df,
+            text_col=args.text_col,
+            label_col=args.label_col,
+            valid_col="is_valid",
+            is_lm=False,  # Mention explicitly that this dataloader is meant for language model
+            seq_len=72,  # Pick a sequence length i.e. how many words to feed through the RNN
+            bs=args.batch_size,  # Specify the batch size for the dataloader
+        )
+        learn = text_classifier_learner(
+            dls,
+            AWD_LSTM,
+            drop_mult=0.5,
+            metrics=[],
+        )
+        classes = list(df[args.label_col].value_counts().index)
+
     learn.fine_tune(int(args.epochs), float(args.learning_rate))
 
     train_preds, train_targets = learn.get_preds(0)
