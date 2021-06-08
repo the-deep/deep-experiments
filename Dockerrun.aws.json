@@ -1,0 +1,16 @@
+{
+  "AWSEBDockerrunVersion": "1",
+  "Image": {
+    "Name": "961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit:latest",
+    "Update": "true",
+    "Memory": 16,
+    "Cpu": 4
+  },
+  "Ports": [
+    {
+      "ContainerPort": 8501,
+      "HostPort": 8501
+    }
+  ],
+  "Logging": "/var/log/nginx"
+}
