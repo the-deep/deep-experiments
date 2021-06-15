@@ -1,10 +1,11 @@
-name: release
+name: documentation
 on:
   push:
     branches:
       - main
     paths:
       - 'docs/*'
+      - '.github/workflows/documentation.yml'
 
 
 jobs:

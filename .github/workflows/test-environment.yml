@@ -1,4 +1,4 @@
-name: release
+name: test-environment
 on:
   push:
     branches:
