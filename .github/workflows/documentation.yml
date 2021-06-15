@@ -11,16 +11,17 @@ jobs:
     steps:
 
     - uses: actions/checkout@v1
-    - name: Set up Python 3.7
+    - name: Set up Python 3.9
       uses: actions/setup-python@v1
       with:
-        python-version: 3.7
+        python-version: 3.9
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         make doc-install
     - name: Build sphinx documentation
       run: |
+        ls ./docs
         make documentation
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -29,7 +30,10 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
     - name: Deploy static site to S3 bucket
-      run: aws s3 sync ./docs/documentation/ s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/deep-experiments/ --delete
+      run: |
+        ls ./docs
+        aws s3 rm s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/documentation --recursive
+        aws s3 sync ./docs/documentation/ s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/deep-experiments/ --delete
 #    - name: gcloud auth
 #      uses: actions/gcloud/auth@master
 #      env:
