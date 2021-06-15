@@ -22,15 +22,14 @@ jobs:
     - name: Build sphinx documentation
       run: |
         make documentation
-    - name: Sync to S3
-        uses: raulanatol/aws-s3-docker-action@master
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: 'us-east-1'
-          AWS_BUCKET_NAME: ${{ secrets.AWS_DOCUMENTATION_BUCKET }}
-          SOURCE: './docs/documentation'
-          TARGET: 'deep-experiments'
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    - name: Deploy static site to S3 bucket
+      run: aws s3 sync ./docs/documentation/ s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/deep-experiments/ --delete
 #    - name: gcloud auth
 #      uses: actions/gcloud/auth@master
 #      env:
