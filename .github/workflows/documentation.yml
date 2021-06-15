@@ -2,7 +2,10 @@ name: release
 on:
   push:
     branches:
-    - main
+      - main
+    paths:
+      - 'docs/*'
+
 
 jobs:
   documentation:
@@ -32,22 +35,3 @@ jobs:
       run: |
         aws s3 rm s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/documentation --recursive
         aws s3 sync ./docs/documentation/ s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/deep-experiments/ --delete
-#    - name: gcloud auth
-#      uses: actions/gcloud/auth@master
-#      env:
-#        GCLOUD_AUTH: ${{ secrets.GCLOUD_AUTH }}
-#    - name: Upload to GCS
-#      env:
-#        PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-#        GCLOUD_AUTH: ${{ secrets.GCLOUD_AUTH }}
-#        GOOGLE_APPLICATION_CREDENTIALS: ./service-account.json
-#      run: |
-#        export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)"
-#        echo "deb http://packages.cloud.google.com/apt $CLOUD_SDK_REPO main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
-#        curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
-#        sudo apt-get update
-#        sudo apt-get install google-cloud-sdk
-#        echo ${GCLOUD_AUTH} | base64 --decode > ${GOOGLE_APPLICATION_CREDENTIALS}
-#        gcloud auth activate-service-account --key-file $GOOGLE_APPLICATION_CREDENTIALS
-#        gcloud config set project ${PROJECT_ID}
-#        gsutil mv -r ./build/html/* gs://<your-bucket>/  # please replace here.
