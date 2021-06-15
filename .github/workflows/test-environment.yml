@@ -3,9 +3,10 @@ on:
   push:
     branches:
       - main
-#    paths:
-#      - 'docker/Dockerfile'
-#      - 'script/testing/*'
+    paths:
+      - 'docker/Dockerfile'
+      - 'script/testing/*'
+      - '.github/workflows/test-environment.yml'
 
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
         aws-region: us-east-1
     - name: Get necessary data
       run: |
-        aws s3 cp s3://${{ secrets.AWS_DEV_BUCKET }}/test-environment/data data/streamlit
+        aws s3 cp s3://${{ secrets.AWS_DEV_BUCKET }}/test-environment/data data/streamlit --recursive
     - name: Build Docker
       run: |
         make streamlit-build
