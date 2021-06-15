@@ -72,8 +72,7 @@ Pull the data:
 
     dvc pull
 
-Streamlit
-~~~~~~~~~
+Test Environment
 
 We incorporated in the repo the ``streamlit`` web application. In the future we will put it in
 another repo.
@@ -85,21 +84,18 @@ To use it locally:
     make streamlit-install
     streamlit run scripts/testing/subpillar_pred_with_st.py
 
-You can also build and deploy a Docker application to ECR and Beanstalk:
-
-.. code-block:: bash
-
-    make streamlit-build
-    make streamlit-deploy
-
-You may need to change the local image name (WIP).
-Also we plan to add Github Actions to automate this procedure
+The ``streamlit`` web app is automatically built and pushed to ECR via the Github CI.
+We use Beanstalk to serve the docker image.
+`Here <http://test-env.eba-crsiq2wb.us-east-1.elasticbeanstalk.com>`_ you can see the
+live test environment.
 
 
-Folder structure
+Folder Structure
 ----------------
 
 - ``data`` contains the data
 - ``deep`` contains the code
+- ``docker`` contains the Dockerfile used to build the test environment.
 - ``notebooks`` contains all the Jupyter Notebook, divided by category and person working on them
 - ``scripts`` contains the training scripts necessary for Sagemaker
+- ``requirements`` contains all the Python requirements for the different configurations
