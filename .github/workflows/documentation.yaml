@@ -1,0 +1,43 @@
+name: release
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  release:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v1
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        make doc-install
+    - name: Build sphinx documentation
+      run: |
+        make documentation
+#    - name: gcloud auth
+#      uses: actions/gcloud/auth@master
+#      env:
+#        GCLOUD_AUTH: ${{ secrets.GCLOUD_AUTH }}
+#    - name: Upload to GCS
+#      env:
+#        PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+#        GCLOUD_AUTH: ${{ secrets.GCLOUD_AUTH }}
+#        GOOGLE_APPLICATION_CREDENTIALS: ./service-account.json
+#      run: |
+#        export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)"
+#        echo "deb http://packages.cloud.google.com/apt $CLOUD_SDK_REPO main" | sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
+#        curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+#        sudo apt-get update
+#        sudo apt-get install google-cloud-sdk
+#        echo ${GCLOUD_AUTH} | base64 --decode > ${GOOGLE_APPLICATION_CREDENTIALS}
+#        gcloud auth activate-service-account --key-file $GOOGLE_APPLICATION_CREDENTIALS
+#        gcloud config set project ${PROJECT_ID}
+#        gsutil mv -r ./build/html/* gs://<your-bucket>/  # please replace here.

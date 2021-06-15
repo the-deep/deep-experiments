@@ -4,6 +4,9 @@ Deep Experiments
 This repository is dedicated to the NLP part of the DEEP project.
 The code is tightly coupled with AWS Sagemaker.
 
+You can access the full documentation
+`here <http://deep-documentation.s3-website-us-east-1.amazonaws.com/deep-experiments/index.html>`_
+
 Quick-start
 -----------
 

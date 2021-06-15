@@ -1,0 +1,12 @@
+S3
+======
+
+We use `Terraform <https://www.terraform.io>`_ to configure the AWS buckets.
+We have the following one:
+
+- ``sagemaker-deep-experiments-dev``, main development bucket
+- ``sagemaker-deep-experiments-prod``, main production bucket
+- ``deep-experiments-dvc-remote``, the remote bucket of DVC
+- ``deep-documentation``, the bucket that hosts the documentation website
+- ``deep-experiments-open-bucket``, an open bucket that can be used by the members of the team
+- ``terraform-state-bucket-test-stefano``, the terraform state. We probably need to store it in a safest way

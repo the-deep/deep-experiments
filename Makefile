@@ -8,8 +8,10 @@ install: cloud-install
 	conda install -y -c conda-forge jupyter_contrib_nbextensions
 	jupyter contrib nbextension install --user
 
-dev-install: install
+doc-install:
 	pip install -r doc-requirements.txt
+
+dev-install: install doc-install
 
 streamlit-install:
 	pip install -r streamlit-requirements.txt

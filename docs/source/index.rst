@@ -20,7 +20,9 @@
 
 .. toctree::
    :maxdepth: 1
-   :caption: Sagemaker:
+   :caption: AWS:
 
-   sagemaker/sagemaker
+   aws/sagemaker
+   aws/s3
+   aws/terraform
 
