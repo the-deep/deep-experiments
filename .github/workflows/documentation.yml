@@ -21,7 +21,6 @@ jobs:
         make doc-install
     - name: Build sphinx documentation
       run: |
-        ls ./docs
         make documentation
     - name: Configure AWS Credentials
       uses: aws-actions/configure-aws-credentials@v1
@@ -31,7 +30,6 @@ jobs:
         aws-region: us-east-1
     - name: Deploy static site to S3 bucket
       run: |
-        ls ./docs
         aws s3 rm s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/documentation --recursive
         aws s3 sync ./docs/documentation/ s3://${{ secrets.AWS_DOCUMENTATION_BUCKET }}/deep-experiments/ --delete
 #    - name: gcloud auth

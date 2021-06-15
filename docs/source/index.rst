@@ -9,7 +9,7 @@
    :maxdepth: 1
    :caption: Data:
 
-   data/description
+   dfs-data/description
 
 .. toctree::
    :maxdepth: 1

@@ -29,6 +29,7 @@ streamlit-deploy:
 	docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit
 
 documentation:
+	rm -rf docs/documentation
 	sphinx-build -b html docs/source docs/documentation
 
 documentation-push:
