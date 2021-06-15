@@ -6,6 +6,7 @@ The code is tightly coupled with AWS Sagemaker.
 
 You can access the full documentation
 `here <http://deep-documentation.s3-website-us-east-1.amazonaws.com/deep-experiments/index.html>`_
+(if you are already browsing the documentation on the web, it links to the same page you are at now)
 
 Quick-start
 -----------
