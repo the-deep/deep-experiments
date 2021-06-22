@@ -1,15 +1,13 @@
-FROM python:3.9.1
+FROM python:3.8.0
 
 RUN pip install \
-    mlflow==1.18.0 \
-    pymysql \
-    boto3 & \
+    mlflow==1.12.1 \
+    pymysql==0.10.1 \
+    boto3 && \
     mkdir /mlflow/
 
 EXPOSE 5000
 
-## Environment variables made available through the Fargate task.
-## Do not enter values
 CMD mlflow server \
     --host 0.0.0.0 \
     --port 5000 \
