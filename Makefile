@@ -18,15 +18,23 @@ streamlit-install:
 	pip install git+https://github.com/casics/nostril.git
 
 streamlit-build:
-	docker build . -f docker/Dockerfile -t streamlit --no-cache --platform=linux/amd64
+	docker build . -f docker/Dockerfile.streamlit -t streamlit --no-cache --platform=linux/amd64
 
 streamlit-build-arm:
-	docker build . -f docker/Dockerfile -t streamlit-m1 --no-cache
+	docker build . -f docker/Dockerfile.streamlit -t streamlit-m1 --no-cache
 
 streamlit-deploy:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 961104659532.dkr.ecr.us-east-1.amazonaws.com
 	docker tag streamlit 961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit
 	docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit
+
+mlflow-build:
+	docker build . -f docker/Dockerfile.mlflow -t mlflow --no-cache --platform=linux/amd64
+
+mlflow-deploy:
+	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 961104659532.dkr.ecr.us-east-1.amazonaws.com
+	docker tag mlflow 961104659532.dkr.ecr.us-east-1.amazonaws.com/mlflow
+	docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/mlflow
 
 documentation:
 	rm -rf docs/documentation

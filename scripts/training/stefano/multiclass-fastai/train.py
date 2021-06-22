@@ -96,14 +96,14 @@ if __name__ == "__main__":
     test_preds, test_targets = learn.get_preds(1)
 
     # Output
+    with open(Path(args.output_data_dir) / "df.pickle", "wb") as f:
+        pickle.dump(df, f)
     with open(Path(args.output_data_dir) / "train_preds.pickle", "wb") as f:
         pickle.dump(train_preds, f)
     with open(Path(args.output_data_dir) / "train_targets.pickle", "wb") as f:
         pickle.dump(train_targets, f)
     with open(Path(args.output_data_dir) / "test_preds.pickle", "wb") as f:
         pickle.dump(test_preds, f)
-    with open(Path(args.output_data_dir) / "test_targets.pickle", "wb") as f:
-        pickle.dump(test_targets, f)
     with open(Path(args.output_data_dir) / "test_targets.pickle", "wb") as f:
         pickle.dump(test_targets, f)
     with open(Path(args.output_data_dir) / "classes.pickle", "wb") as f:

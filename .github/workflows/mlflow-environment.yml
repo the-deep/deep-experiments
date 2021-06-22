@@ -4,9 +4,9 @@ on:
     branches:
       - main
     paths:
-      - 'docker/Dockerfile.streamlit'
-      - 'script/testing/*'
-      - '.github/workflows/test-environment.yml'
+      - 'docker/Dockerfile.mlflow'
+      - 'Makefile'
+      - '.github/workflows/mlflow-environment.yml'
 
 
 jobs:
@@ -22,12 +22,9 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
-    - name: Get necessary data
-      run: |
-        aws s3 cp s3://${{ secrets.AWS_DEV_BUCKET }}/test-environment/data data/streamlit --recursive
     - name: Build Docker
       run: |
-        make streamlit-build
+        make mlflow-build
     - name: Deploy on ECR
       run: |
-        make streamlit-deploy
+        make mlflow-deploy
