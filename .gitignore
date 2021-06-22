@@ -163,3 +163,5 @@ artifacts/
 lightning_logs/
 runs/
 *.xlsx
+mlruns/
+*.sqlite
