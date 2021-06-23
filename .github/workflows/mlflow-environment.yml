@@ -9,7 +9,6 @@ on:
       - '.github/workflows/mlflow-environment.yml'
 
 
-
 jobs:
   documentation:
     name: Build
