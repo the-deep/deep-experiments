@@ -4,4 +4,8 @@ RUN pip install PyMySQL==1.0.2 && \
     pip install psycopg2-binary==2.9.1 && \
     pip install mlflow==1.18.0
 
-ENTRYPOINT ["mlflow", "server"]
+CMD mlflow server \
+    --host 0.0.0.0 \
+    --port ${SERVICE_PORT} \
+    --default-artifact-root ${BUCKET} \
+    --backend-store-uri mysql+pymysql://${USERNAME}:${PASSWORD}@${HOST}:${DB_PORT}/${DATABASE}
