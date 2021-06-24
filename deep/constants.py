@@ -2,6 +2,7 @@ from pathlib import Path
 from cloudpathlib import CloudPath
 
 MLFLOW_SERVER = "http://mlflow-terratest-387470f3-828569864.us-east-1.elb.amazonaws.com"
+SAGEMAKER_ROLE = "AmazonSageMaker-ExecutionRole-20210519T102514"
 
 ROOT_PATH = Path(__file__).parent.parent.absolute()
 DATA_PATH = ROOT_PATH / "data"
