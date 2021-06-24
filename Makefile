@@ -13,20 +13,20 @@ doc-install:
 
 dev-install: install doc-install
 
-streamlit-install:
-	pip install -r requirements/streamlit-requirements.txt
+offline-test-env-install:
+	pip install -r requirements/offline-test-env-requirements.txt
 	pip install git+https://github.com/casics/nostril.git
 
-streamlit-build:
-	docker build . -f docker/Dockerfile.streamlit -t streamlit --no-cache --platform=linux/amd64
+offline-test-env-build:
+	docker build . -f docker/Dockerfile.offline_test_env -t offline_test_env --no-cache --platform=linux/amd64
 
-streamlit-build-arm:
-	docker build . -f docker/Dockerfile.streamlit -t streamlit-m1 --no-cache
+offline-test-env-build-arm:
+	docker build . -f docker/Dockerfile.offline_test_env -t offline_test_env-m1 --no-cache
 
-streamlit-deploy:
+offline-test-env-deploy:
 	aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 961104659532.dkr.ecr.us-east-1.amazonaws.com
-	docker tag streamlit 961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit
-	docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/streamlit
+	docker tag offline_test_env 961104659532.dkr.ecr.us-east-1.amazonaws.com/offline_test_env
+	docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/offline_test_env
 
 mlflow-build:
 	docker build . -f docker/Dockerfile.mlflow -t mlflow --no-cache --platform=linux/amd64

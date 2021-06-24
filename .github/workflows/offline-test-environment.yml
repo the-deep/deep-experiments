@@ -1,4 +1,4 @@
-name: test-environment
+name: offline-test-environment
 on:
   push:
     branches:
@@ -6,7 +6,7 @@ on:
     paths:
       - 'docker/Dockerfile.streamlit'
       - 'script/testing/*'
-      - '.github/workflows/test-environment.yml'
+      - '.github/workflows/offline-test-environment.yml'
 
 
 jobs:
@@ -24,10 +24,10 @@ jobs:
         aws-region: us-east-1
     - name: Get necessary data
       run: |
-        aws s3 cp s3://${{ secrets.AWS_DEV_BUCKET }}/test-environment/data data/streamlit --recursive
+        aws s3 cp s3://${{ secrets.AWS_TEST_ENV_BUCKET }}/data data/test_environment --recursive
     - name: Build Docker
       run: |
-        make streamlit-build
+        make offline-test-env-build
     - name: Deploy on ECR
       run: |
-        make streamlit-deploy
+        make offline-test-env-deploy

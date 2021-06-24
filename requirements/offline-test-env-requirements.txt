@@ -3,3 +3,4 @@ pdfminer==20191125
 nltk==3.6.2
 pandas==1.2.4
 watchdog==2.1.2
+streamlit-aggrid==0.1.9
