@@ -4,8 +4,8 @@ on:
     branches:
       - main
     paths:
-      - 'docker/Dockerfile.streamlit'
-      - 'script/testing/*'
+      - 'docker/Dockerfile.offline_test_env'
+      - 'scripts/testing/*'
       - '.github/workflows/offline-test-environment.yml'
 
 

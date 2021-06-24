@@ -69,7 +69,7 @@ def pdf_parser(fp):
     return sentences
 
 
-DATA_PATH = "data/streamlit/fastai-5ep-english.pickle"
+DATA_PATH = "data/test_environment/fastai-5ep-english.pickle"
 data = pd.read_pickle(DATA_PATH).sample(20)
 index, sentences, preds, targets = data.index, data.excerpt, data.Predictions, data.Targets
 
