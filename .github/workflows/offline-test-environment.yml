@@ -6,6 +6,7 @@ on:
     paths:
       - 'docker/Dockerfile.offline_test_env'
       - 'scripts/testing/offline_testing/present_matches.py'
+      - 'requirements/offline-test-env-requirements.txt'
       - '.github/workflows/offline-test-environment.yml'
 
 

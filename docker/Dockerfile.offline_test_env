@@ -1,7 +1,7 @@
 FROM python:3.9.5
 COPY scripts/testing/offline_testing/ app/
 COPY Makefile app/
-COPY requirements/offline-test-env-requirements.txt app/requirements/
+COPY requirements/test-env-requirements.txt app/requirements/
 COPY data/test_environment app/data/test_environment
 WORKDIR app/
 RUN apt-get update && apt-get install make && apt-get install gcc && apt-get install g++

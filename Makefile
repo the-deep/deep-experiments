@@ -14,7 +14,7 @@ doc-install:
 dev-install: install doc-install
 
 offline-test-env-install:
-	pip install -r requirements/offline-test-env-requirements.txt
+	pip install -r requirements/test-env-requirements.txt
 	pip install git+https://github.com/casics/nostril.git
 
 offline-test-env-build:
