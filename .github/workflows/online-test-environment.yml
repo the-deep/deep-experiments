@@ -1,4 +1,4 @@
-name: offline-test-environment
+name: online-test-environment
 on:
   push:
     branches:
@@ -28,7 +28,7 @@ jobs:
         aws s3 cp s3://${{ secrets.AWS_TEST_ENV_BUCKET }}/data data/test_environment --recursive
     - name: Build Docker
       run: |
-        make offline-test-env-build
+        make online-test-env-build
     - name: Deploy on ECR
       run: |
-        make offline-test-env-deploy
+        make online-test-env-deploy
