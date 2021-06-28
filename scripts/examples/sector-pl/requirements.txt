@@ -1,0 +1,4 @@
+mlflow==1.18.0
+transformers==4.6.1
+pytorch-lightning==1.3.3
+torchmetrics==0.3.2
