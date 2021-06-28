@@ -8,7 +8,7 @@ ROOT_PATH = Path(__file__).parent.parent.absolute()
 DATA_PATH = ROOT_PATH / "data"
 IMMAP_PATH = DATA_PATH / "immap"
 FRAMEWORKS_PATH = DATA_PATH / "frameworks_data"
-LATEST_DATA_PATH = FRAMEWORKS_PATH / "data_v0.4.4"
+LATEST_DATA_PATH = FRAMEWORKS_PATH / "data_v0.5"
 
 SCRIPTS_PATH = ROOT_PATH / "scripts"
 SCRIPTS_TRAINING_PATH = SCRIPTS_PATH / "training"
