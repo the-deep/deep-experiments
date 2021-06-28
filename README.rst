@@ -49,6 +49,8 @@ Notebook instances on AWS
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Ask Stefano for a AWS user account and a new Notebook instance on AWS.
+The notebook instance will be created in the region ``us-east-1``, switch to this
+region if you don't find your instance.
 The notebook instance comes with the repo already cloned.
 
 Once it is ready, start the instance and click on *Open Jupyter*.
