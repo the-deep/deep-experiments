@@ -3,6 +3,9 @@ from cloudpathlib import CloudPath
 
 MLFLOW_SERVER = "http://mlflow-deep-387470f3-1883319727.us-east-1.elb.amazonaws.com/"
 SAGEMAKER_ROLE = "AmazonSageMaker-ExecutionRole-20210519T102514"
+SAGEMAKER_ROLE_ARN = (
+    "arn:aws:iam::961104659532:role/service-role/" "AmazonSageMaker-ExecutionRole-20210519T102514"
+)
 
 ROOT_PATH = Path(__file__).parent.parent.absolute()
 DATA_PATH = ROOT_PATH / "data"
@@ -11,6 +14,7 @@ FRAMEWORKS_PATH = DATA_PATH / "frameworks_data"
 LATEST_DATA_PATH = FRAMEWORKS_PATH / "data_v0.5"
 
 SCRIPTS_PATH = ROOT_PATH / "scripts"
+SCRIPTS_EXAMPLES_PATH = SCRIPTS_PATH / "examples"
 SCRIPTS_TRAINING_PATH = SCRIPTS_PATH / "training"
 SCRIPTS_INFERENCE_PATH = SCRIPTS_PATH / "inference"
 
