@@ -225,6 +225,60 @@ class SectorsTransformer(pl.LightningModule):
         return [optimizer], [scheduler]
 
 
+class SectorsDatasetPreds(Dataset):
+    def __init__(self, dataframe, tokenizer, max_len=200):
+        self.tokenizer = tokenizer
+        self.excerpt_text = dataframe["excerpt"].tolist() if dataframe is not None else None
+        self.max_len = max_len
+
+    def encode_example(self, excerpt_text: str):
+        inputs = self.tokenizer(
+            excerpt_text,
+            None,
+            truncation=True,
+            add_special_tokens=True,
+            max_length=self.max_len,
+            padding="max_length",
+            return_token_type_ids=True,
+        )
+        ids = inputs["input_ids"]
+        mask = inputs["attention_mask"]
+        token_type_ids = inputs["token_type_ids"]
+        encoded = {
+            "ids": torch.tensor(ids, dtype=torch.long),
+            "mask": torch.tensor(mask, dtype=torch.long),
+            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+        }
+        return encoded
+
+    def __len__(self):
+        return len(self.excerpt_text)
+
+    def __getitem__(self, index):
+        excerpt_text = str(self.excerpt_text[index])
+        return self.encode_example(excerpt_text)
+
+
+class TransformersQAWrapper(mlflow.pyfunc.PythonModel):
+    def __init__(self, tokenizer, model):
+        self.tokenizer = tokenizer
+        self.model = model.eval()
+        super().__init__()
+
+    def load_context(self, context):
+        pass
+
+    def predict(self, context, model_input):
+        dataset = SectorsDatasetPreds(model_input, self.tokenizer)
+        val_params = {"batch_size": 16, "shuffle": False, "num_workers": 0}
+        dataloader = DataLoader(dataset, **val_params)
+        with torch.no_grad():
+            predictions = [model.forward(batch) for batch in dataloader]
+        predictions = torch.cat(predictions)
+        predictions = predictions.argmax(1)
+        return pd.Series(predictions)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # MLflow related parameters
@@ -298,7 +352,10 @@ if __name__ == "__main__":
         pip_dependencies = default_env["dependencies"][2]["pip"]
         pip_dependencies.extend(requirements)
 
-        mlflow.pytorch.log_model(model.cpu(), artifact_path="model", conda_env=default_env)
+        prediction_wrapper = TransformersQAWrapper(tokenizer, model)
+        mlflow.pyfunc.log_model(
+            python_model=prediction_wrapper, artifact_path="model", conda_env=default_env
+        )
 
         # ABS ERROR AND LOG COUPLE PERF METRICS
         # logging.info("evaluating model")

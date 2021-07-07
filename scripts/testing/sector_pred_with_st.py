@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 
 sys.path.append(str((Path(sys.path[0])).parent.parent.parent))
+sys.path.append(".")
 from deep.constants import SECTORS
 
 import json
