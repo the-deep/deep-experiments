@@ -1,8 +1,17 @@
+from pathlib import Path
+import sys
+
+sys.path.append(str((Path(sys.path[0])).parent.parent.parent))
+from deep.constants import SECTORS
+
+import json
 from io import StringIO
 from pdfminer.layout import LAParams
 from pdfminer.converter import TextConverter
 from pdfminer.pdfpage import PDFPage
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
+import pandas as pd
+import boto3
 import re
 from nostril import nonsense
 from urllib.parse import urlparse
@@ -13,13 +22,32 @@ from nltk.tokenize import sent_tokenize
 
 nltk.download("punkt")
 
+APP_NAME = "prova7"
 MIN_NUM_TOKENS = 5
 MIN_WORD_LEN = 4
+ID_TO_SECTOR = {i: sector for i, sector in enumerate(SECTORS)}
 
 
-# TODO: @Stefano please use prediction API
-def predict_sector(sentence):
-    return "Cross"
+def query_endpoint(app_name, input_json):
+    client = boto3.session.Session().client("sagemaker-runtime", "us-east-1")
+
+    response = client.invoke_endpoint(
+        EndpointName=app_name,
+        Body=input_json,
+        ContentType="application/json; format=pandas-split",
+    )
+    preds = response["Body"].read().decode("ascii")
+    preds = json.loads(preds)
+    print("Received response: {}".format(preds))
+    return preds
+
+
+def predict_sector(sentences):
+    test_data = pd.DataFrame({"excerpt": sentences})
+    input_json = test_data.to_json(orient="split")
+    predictions = query_endpoint(app_name=APP_NAME, input_json=input_json)
+    predictions = [ID_TO_SECTOR[pred["0"]] for pred in predictions]
+    return predictions
 
 
 def preprocess_sentence(sentence):
@@ -73,7 +101,7 @@ uploaded_file = st.file_uploader(
 )
 if uploaded_file is not None:
     sentences = pdf_parser(uploaded_file)
-    preds = list(map(predict_sector, sentences))
+    preds = predict_sector(sentences)
 
     col1, col2, col3 = st.beta_columns([10, 1, 3])
     col1.write("Excerpt")

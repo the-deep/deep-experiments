@@ -1,5 +1,6 @@
 FROM python:3.9.5
 COPY scripts/testing/ app/
+COPY deep/ app/
 COPY Makefile app/
 COPY requirements/test-env-requirements.txt app/requirements/
 COPY data/test_environment app/data/test_environment
