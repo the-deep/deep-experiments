@@ -8,6 +8,7 @@ sys.path.append(".")
 import os
 import logging
 import argparse
+from pathlib import Path
 from typing import Optional
 
 import mlflow
@@ -258,7 +259,7 @@ if __name__ == "__main__":
     # set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment(args.experiment_name)
-    mlflow.pytorch.autolog()
+    mlflow.pytorch.autolog(log_models=False)
 
     with mlflow.start_run():
 
@@ -287,13 +288,25 @@ if __name__ == "__main__":
         )
         trainer.fit(model, training_loader, val_loader)
 
+        # Log
+        requirement_file = str(Path(__file__).parent / "requirements.txt")
+        with open(requirement_file, "r") as f:
+            requirements = f.readlines()
+        requirements = [x.replace("\n", "") for x in requirements]
+
+        default_env = mlflow.pytorch.get_default_conda_env()
+        pip_dependencies = default_env["dependencies"][2]["pip"]
+        pip_dependencies.extend(requirements)
+
+        mlflow.pytorch.log_model(model.cpu(), artifact_path="model", conda_env=default_env)
+
         # ABS ERROR AND LOG COUPLE PERF METRICS
         # logging.info("evaluating model")
         # df_metrics_val = model.custom_eval(val_loader, class_to_id)
         # logging.info("metric_val", df_metrics_val.shape)
 
-        mlflow.pytorch.log_model(
-            model.model.cpu(),
-            artifact_path=args.model_name,
-            registered_model_name="pytorch-first-example",
-        )
+        # mlflow.pytorch.log_model(
+        #     model.model.cpu(),
+        #     artifact_path=args.model_name,
+        #     registered_model_name="pytorch-first-example",
+        # )
