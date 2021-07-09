@@ -1,0 +1,29 @@
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+td, th {
+  border: 1px solid #9c9c9c;
+  text-align: left;
+  padding: 8px;
+  vertical-align: top;
+}
+
+tr:nth-child(even) {
+  background-color: #dddddd;
+}
+
+textarea,button{
+  display:inline-block;
+  position:relative;
+  vertical-align:middle;
+}
+textarea{
+  width:100%;
+  resize: none;
+  margin-bottom: 5px;
+}
+button{
+  margin-left: 0px;
+}
