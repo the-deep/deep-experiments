@@ -128,10 +128,8 @@ if not _RELEASE:
     cleaned_table = selected_lead.replace("", None)
     json_data = json.dumps(cleaned_table.to_dict("records"))
     clicked_text = custom_table_component(json_data)
-    print(clicked_text)
-    entry = "entry"
 
-    def send_feed_back(feedback_text, lead_url, project_title, af_title):
+    def send_feed_back(feedback_text, lead_url, project_title, af_title, entry):
         try:
             bucket_name = "deep-test-environment"
             s3_client = boto3.client("s3")
@@ -142,6 +140,7 @@ if not _RELEASE:
                 "project_title": project_title,
                 "af_title": af_title,
                 "model_identifier": model_identifier,
+                "entry": entry,
             }
             feedback_obj = json.dumps(feedback_obj).encode("utf-8")
             file_name_on_s3 = f"feedback/{time.ctime().replace(' ', '_')}.json"
@@ -151,4 +150,6 @@ if not _RELEASE:
             st.warning(e.message)
 
     if clicked_text:
-        send_feed_back(clicked_text, selected_url, selected_project_title, af_title)
+        feedback_text = clicked_text.get("feedback", "")
+        entry = clicked_text.get("entry", "")
+        send_feed_back(feedback_text, selected_url, selected_project_title, af_title, entry)
