@@ -165,3 +165,4 @@ runs/
 *.xlsx
 mlruns/
 *.sqlite
+node_modules
