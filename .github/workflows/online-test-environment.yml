@@ -5,7 +5,7 @@ on:
       - main
     paths:
       - 'docker/Dockerfile.online_test_env'
-      - 'scripts/testing/offline_testing/present_matches.py'
+      - 'scripts/testing/sector_pred_with_st.py'
       - 'requirements/test-env-requirements.txt'
       - '.github/workflows/online-test-environment.yml'
 
