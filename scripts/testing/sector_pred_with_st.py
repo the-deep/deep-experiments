@@ -23,7 +23,7 @@ from nltk.tokenize import sent_tokenize
 
 nltk.download("punkt")
 
-APP_NAME = "prova7"
+APP_NAME = "pl-example"
 MIN_NUM_TOKENS = 5
 MIN_WORD_LEN = 4
 ID_TO_SECTOR = {i: sector for i, sector in enumerate(SECTORS)}
