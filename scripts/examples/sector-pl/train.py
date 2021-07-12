@@ -23,40 +23,6 @@ from data import SectorsDataset
 logging.basicConfig(level=logging.INFO)
 
 
-# class SectorsDatasetPreds(Dataset):
-#     def __init__(self, dataframe, tokenizer, max_len=200):
-#         self.tokenizer = tokenizer
-#         self.excerpt_text = dataframe["excerpt"].tolist() if dataframe is not None else None
-#         self.max_len = max_len
-#
-#     def encode_example(self, excerpt_text: str):
-#         inputs = self.tokenizer(
-#             excerpt_text,
-#             None,
-#             truncation=True,
-#             add_special_tokens=True,
-#             max_length=self.max_len,
-#             padding="max_length",
-#             return_token_type_ids=True,
-#         )
-#         ids = inputs["input_ids"]
-#         mask = inputs["attention_mask"]
-#         token_type_ids = inputs["token_type_ids"]
-#         encoded = {
-#             "ids": torch.tensor(ids, dtype=torch.long),
-#             "mask": torch.tensor(mask, dtype=torch.long),
-#             "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
-#         }
-#         return encoded
-#
-#     def __len__(self):
-#         return len(self.excerpt_text)
-#
-#     def __getitem__(self, index):
-#         excerpt_text = str(self.excerpt_text[index])
-#         return self.encode_example(excerpt_text)
-
-
 class TransformersQAWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self, tokenizer, model):
         self.tokenizer = tokenizer
