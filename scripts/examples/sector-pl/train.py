@@ -61,7 +61,6 @@ if __name__ == "__main__":
     class_to_id = {class_: i for i, class_ in enumerate(classes)}
 
     logging.info("building training and testing datasets")
-
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     training_set = SectorsDataset(
         dataframe=train_df, tokenizer=tokenizer, class_to_id=class_to_id, max_len=args.max_len
@@ -70,9 +69,12 @@ if __name__ == "__main__":
         dataframe=val_df, tokenizer=tokenizer, class_to_id=class_to_id, max_len=args.max_len
     )
 
-    # set remote mlflow server
+    # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
+    # Set experiment name
     mlflow.set_experiment(args.experiment_name)
+    # pytorch autolog automatically logs relevant data. DO NOT log the model, since
+    # for NLP tasks we need a custom inference logic
     mlflow.pytorch.autolog(log_models=False)
 
     with mlflow.start_run():
@@ -87,7 +89,7 @@ if __name__ == "__main__":
             "train": train_params,
             "val": val_params,
         }
-        mlflow.log_params(params)
+        mlflow.log_params(params)  # Logging example
 
         logging.info("training model")
 
@@ -95,11 +97,11 @@ if __name__ == "__main__":
         model = SectorsTransformer(args.model_name, len(class_to_id))
         trainer.fit(model, training_loader, val_loader)
 
-        # Log
+        # This class is logged as a pickle artifact and used at inference time
         prediction_wrapper = TransformersQAWrapper(tokenizer, model)
         mlflow.pyfunc.log_model(
             python_model=prediction_wrapper,
             artifact_path="model",
-            conda_env=get_conda_env_specs(),
-            code_path=[__file__, "model.py", "data.py", "inference.py"],
+            conda_env=get_conda_env_specs(),  # python conda dependencies
+            code_path=[__file__, "model.py", "data.py", "inference.py"],  # file dependencies
         )
