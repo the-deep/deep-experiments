@@ -51,8 +51,3 @@ and you reach a semi-definitive version of the training script, we advise you to
 They can use faster GPUs, are cheaper (you can run a training job from your
 local PC and pay only the training time) and allow for a better tracking of the results and model artifact.
 
-Experiment tracking
--------------------
-
-We are discussing the preferred tracking system in these days.
-The main options are MLFlow and the built-in Sagemaker Experiments/Pipeline.

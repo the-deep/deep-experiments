@@ -16,6 +16,7 @@
    :caption: Modeling:
 
    modeling/current_work
+   modeling/tracking
    modeling/testing_environment
 
 .. toctree::
