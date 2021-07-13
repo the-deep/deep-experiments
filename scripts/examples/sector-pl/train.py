@@ -13,34 +13,26 @@ from pathlib import Path
 import mlflow
 import pytorch_lightning as pl
 from transformers import AutoTokenizer
-import torch
 from torch.utils.data import DataLoader
 import pandas as pd
 
 from model import SectorsTransformer
 from data import SectorsDataset
+from inference import TransformersQAWrapper
 
 logging.basicConfig(level=logging.INFO)
 
 
-class TransformersQAWrapper(mlflow.pyfunc.PythonModel):
-    def __init__(self, tokenizer, model):
-        self.tokenizer = tokenizer
-        self.model = model.eval()
-        super().__init__()
+def get_conda_env_specs():
+    requirement_file = str(Path(__file__).parent / "requirements.txt")
+    with open(requirement_file, "r") as f:
+        requirements = f.readlines()
+    requirements = [x.replace("\n", "") for x in requirements]
 
-    def load_context(self, context):
-        pass
-
-    def predict(self, context, model_input):
-        dataset = SectorsDataset(model_input, self.tokenizer)
-        val_params = {"batch_size": 16, "shuffle": False, "num_workers": 0}
-        dataloader = DataLoader(dataset, **val_params)
-        with torch.no_grad():
-            predictions = [model.forward(batch) for batch in dataloader]
-        predictions = torch.cat(predictions)
-        predictions = predictions.argmax(1)
-        return pd.Series(predictions)
+    default_env = mlflow.pytorch.get_default_conda_env()
+    pip_dependencies = default_env["dependencies"][2]["pip"]
+    pip_dependencies.extend(requirements)
+    return default_env
 
 
 if __name__ == "__main__":
@@ -99,43 +91,15 @@ if __name__ == "__main__":
 
         logging.info("training model")
 
-        trainer = pl.Trainer(
-            # callbacks=[early_stopping_callback, checkpoint_callback],
-            gpus=1,
-            max_epochs=args.epochs,
-        )
-        model = SectorsTransformer(
-            args.model_name,
-            len(class_to_id),
-        )
+        trainer = pl.Trainer(gpus=1, max_epochs=args.epochs)
+        model = SectorsTransformer(args.model_name, len(class_to_id))
         trainer.fit(model, training_loader, val_loader)
 
         # Log
-        requirement_file = str(Path(__file__).parent / "requirements.txt")
-        with open(requirement_file, "r") as f:
-            requirements = f.readlines()
-        requirements = [x.replace("\n", "") for x in requirements]
-
-        default_env = mlflow.pytorch.get_default_conda_env()
-        pip_dependencies = default_env["dependencies"][2]["pip"]
-        pip_dependencies.extend(requirements)
-
         prediction_wrapper = TransformersQAWrapper(tokenizer, model)
-        logging.info(__file__)
         mlflow.pyfunc.log_model(
             python_model=prediction_wrapper,
             artifact_path="model",
-            conda_env=default_env,
-            code_path=[__file__, "model.py", "data.py"],
+            conda_env=get_conda_env_specs(),
+            code_path=[__file__, "model.py", "data.py", "inference.py"],
         )
-
-        # ABS ERROR AND LOG COUPLE PERF METRICS
-        # logging.info("evaluating model")
-        # df_metrics_val = model.custom_eval(val_loader, class_to_id)
-        # logging.info("metric_val", df_metrics_val.shape)
-
-        # mlflow.pytorch.log_model(
-        #     model.model.cpu(),
-        #     artifact_path=args.model_name,
-        #     registered_model_name="pytorch-first-example",
-        # )
