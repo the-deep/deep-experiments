@@ -6,6 +6,7 @@ sys.path.append(".")
 from deep.constants import SECTORS
 
 import json
+import time
 from io import StringIO
 from pdfminer.layout import LAParams
 from pdfminer.converter import TextConverter
@@ -23,6 +24,7 @@ from nltk.tokenize import sent_tokenize
 
 nltk.download("punkt")
 
+RELEASE = False
 APP_NAME = "pl-example"
 MIN_NUM_TOKENS = 5
 MIN_WORD_LEN = 4
@@ -42,13 +44,18 @@ def query_endpoint(app_name, input_json):
     print("Received response: {}".format(preds))
     return preds
 
-
+@st.cache
 def predict_sector(sentences):
-    test_data = pd.DataFrame({"excerpt": sentences})
-    input_json = test_data.to_json(orient="split")
-    predictions = query_endpoint(app_name=APP_NAME, input_json=input_json)
-    predictions = [ID_TO_SECTOR[pred["0"]] for pred in predictions]
-    return predictions
+    if RELEASE:
+        test_data = pd.DataFrame({"excerpt": sentences})
+        input_json = test_data.to_json(orient="split")
+        predictions = query_endpoint(app_name=APP_NAME, input_json=input_json)
+        predictions = [ID_TO_SECTOR[pred["0"]] for pred in predictions]
+        return predictions
+    else:
+        for _ in range(3):
+            time.sleep(1)
+        return ["Random"]*len(sentences)
 
 
 def preprocess_sentence(sentence):
@@ -75,7 +82,7 @@ def page_to_sentences(page):
     sentences = [preprocess_sentence(sentence) for sentence in sentences]
     return sentences
 
-
+@st.cache
 def pdf_parser(fp):
     with st.spinner("Converting PDF to text.."):
         rsrcmgr = PDFResourceManager()
@@ -98,11 +105,15 @@ def pdf_parser(fp):
 
 
 uploaded_file = st.file_uploader(
-    "Upload", type=["pdf"], accept_multiple_files=False, key=None, help=None
+    "Upload", type=["pdf"], accept_multiple_files=False, key="None", help=None
 )
 if uploaded_file is not None:
-    sentences = pdf_parser(uploaded_file)
-    preds = predict_sector(sentences)
+    if "fname" in st.session_state and st.session_state.fname == uploaded_file.name:
+        sentences = st.session_state.sentences
+        preds = st.session_state.preds
+    else:
+        sentences = pdf_parser(uploaded_file)
+        preds = predict_sector(sentences)
 
     col1, col2, col3 = st.beta_columns([10, 1, 3])
     col1.write("Excerpt")
