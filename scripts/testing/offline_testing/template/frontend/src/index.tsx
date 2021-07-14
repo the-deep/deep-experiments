@@ -1,10 +1,10 @@
 import React from "react"
 import ReactDOM from "react-dom"
-import CustomTableComponent from "./CustomTableComponent"
+import EntryPoint from "./EntryPoint"
 
 ReactDOM.render(
   <React.StrictMode>
-    <CustomTableComponent />
+    <EntryPoint />
   </React.StrictMode>,
   document.getElementById("root")
 )
