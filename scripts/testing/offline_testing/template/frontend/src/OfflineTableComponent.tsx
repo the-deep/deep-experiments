@@ -80,6 +80,8 @@ interface State {
 class CustomTableComponent extends StreamlitComponentBase<State> {
   constructor(props: any) {
     super(props);
+    const data: Datum[] = JSON.parse(this.props.args["data"]);
+
     this.state = {
       data,
     };

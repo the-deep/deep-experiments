@@ -72,10 +72,6 @@ class OnlineTableComponent extends StreamlitComponentBase<State> {
     super(props);
     const data: Datum[] = JSON.parse(this.props.args["data"]);
 
-    console.log("***************************************");
-    console.log(this.props.args);
-    console.log("***************************************");
-
     this.state = {
       data,
     };

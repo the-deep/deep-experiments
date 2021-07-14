@@ -1,3 +1,6 @@
+import {
+  withStreamlitConnection,
+} from "streamlit-component-lib"
 import React from "react"
 import OnlineTableComponent from './OnlineTableComponent';
 import OfflineTableComponent from './OfflineTableComponent';
@@ -12,20 +15,16 @@ function EntryPoint(props: Props) {
 
   if (args.componentType === 'OfflineTableComponent') {
     return (
-      <OfflineTableComponent
-        args={args}
-      />
+      <OfflineTableComponent />
     );
   }
   if (args.componentType === 'OnlineTableComponent') {
     return (
-      <OnlineTableComponent
-        args={args}
-      />
+      <OnlineTableComponent />
     );
   }
 
   return null;
 }
 
-export default EntryPoint;
+export default withStreamlitConnection(EntryPoint);
