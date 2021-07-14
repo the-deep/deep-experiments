@@ -5,7 +5,7 @@ on:
       - main
     paths:
       - 'README.rst'
-      - 'docs/*'
+      - 'docs/source/*'
       - '.github/workflows/documentation.yml'
 
 
