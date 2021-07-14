@@ -8,18 +8,13 @@ import React, { useState, useCallback } from "react"
 import './style.css';
 
 interface Datum {
-  Entry: string;
-  'Tagger Name': string;
-  Pillars: string;
-  Sectors: string;
-  'Matched Sentences': string;
-  'Predicted Pillars': string;
-  'Predicted Sectors': string;
+  sentence: string;
+  prediction: string;
 }
 
 interface RowProps {
   item: Datum;
-  onSubmit: (value: { feedback: string, entry: string }) => void;
+  onSubmit: (value: { feedback: string, sentence: string, prediction: string }) => void;
 }
 function Row(props: RowProps) {
   const {
@@ -37,7 +32,7 @@ function Row(props: RowProps) {
 
   const handleSubmit = useCallback(
     () => {
-      onSubmit({ entry: item['Entry'], feedback });
+      onSubmit({ sentence: item['sentence'], prediction: item['prediction'], feedback });
     },
     [onSubmit, item, feedback],
   );
@@ -45,13 +40,8 @@ function Row(props: RowProps) {
   return (
     <React.Fragment>
       <tr>
-        <td width="30%">{item['Entry']}</td>
-        <td>{item['Tagger Name']}</td>
-        <td>{item['Pillars']}</td>
-        <td>{item['Sectors']}</td>
-        <td width="30%">{item['Matched Sentences']}</td>
-        <td>{item['Predicted Pillars']}</td>
-        <td>{item['Predicted Sectors']}</td>
+        <td width="30%">{item['sentence']}</td>
+        <td>{item['prediction']}</td>
       </tr>
       <tr>
         <td colSpan={7}>
@@ -77,16 +67,21 @@ interface State {
   data: Datum[];
 }
 
-class CustomTableComponent extends StreamlitComponentBase<State> {
+class OnlineTableComponent extends StreamlitComponentBase<State> {
   constructor(props: any) {
     super(props);
     const data: Datum[] = JSON.parse(this.props.args["data"]);
+
+    console.log("***************************************");
+    console.log(this.props.args);
+    console.log("***************************************");
+
     this.state = {
       data,
     };
   }
 
-  handleSubmit = (value: { feedback: string, entry: string }) => {
+  handleSubmit = (value: { feedback: string, sentence: string, prediction: string }) => {
     Streamlit.setComponentValue(value);
   }
 
@@ -96,17 +91,12 @@ class CustomTableComponent extends StreamlitComponentBase<State> {
     return (
       <table>
         <tr>
-          <th>Entry</th>
-          <th>Tagger Name</th>
-          <th>Pillars</th>
-          <th>Sectors</th>
-          <th>Matched Sentences</th>
-          <th>Predicted Pillars</th>
-          <th>Predicted Sectors</th>
+          <th>Sentence</th>
+          <th>Prediction</th>
         </tr>
         {data.map((datum) => (
           <Row
-            key={datum.Entry}
+            key={datum.sentence}
             item={datum}
             onSubmit={this.handleSubmit}
           />
@@ -115,4 +105,4 @@ class CustomTableComponent extends StreamlitComponentBase<State> {
     );
   }
 }
-export default withStreamlitConnection(CustomTableComponent)
+export default withStreamlitConnection(OnlineTableComponent)

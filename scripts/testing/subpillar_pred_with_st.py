@@ -71,7 +71,12 @@ def pdf_parser(fp):
 
 DATA_PATH = "data/test_environment/fastai-5ep-english.pickle"
 data = pd.read_pickle(DATA_PATH).sample(20)
-index, sentences, preds, targets = data.index, data.excerpt, data.Predictions, data.Targets
+index, sentences, preds, targets = (
+    data.index,
+    data.excerpt,
+    data.Predictions,
+    data.Targets,
+)
 
 st.set_page_config(layout="wide")
 col0, col1, col2, col3, col4, col5, col6 = st.beta_columns([2, 1, 10, 1, 7, 1, 7])

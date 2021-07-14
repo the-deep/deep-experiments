@@ -86,10 +86,7 @@ if __name__ == "__main__":
         def __getitem__(self, idx):
             text = self.texts[idx]
             inputs = self.tokenizer.encode_plus(
-                text,
-                truncation=True,
-                padding="max_length",
-                return_tensors="pt",
+                text, truncation=True, padding="max_length", return_tensors="pt"
             )
             inputs = {
                 "input_ids": inputs["input_ids"].flatten(),

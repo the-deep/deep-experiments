@@ -82,12 +82,7 @@ if __name__ == "__main__":
             seq_len=72,  # Pick a sequence length i.e. how many words to feed through the RNN
             bs=args.batch_size,  # Specify the batch size for the dataloader
         )
-        learn = text_classifier_learner(
-            dls,
-            AWD_LSTM,
-            drop_mult=0.5,
-            metrics=[],
-        )
+        learn = text_classifier_learner(dls, AWD_LSTM, drop_mult=0.5, metrics=[])
         classes = list(df[args.label_col].value_counts().index)
 
     learn.fine_tune(int(args.epochs), float(args.learning_rate))

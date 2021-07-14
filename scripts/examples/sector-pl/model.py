@@ -18,10 +18,7 @@ class Model(nn.Module):
         self.l3 = torch.nn.Linear(768, num_labels)
 
     def forward(self, inputs):
-        output = self.l1(
-            inputs["ids"],
-            attention_mask=inputs["mask"],
-        )
+        output = self.l1(inputs["ids"], attention_mask=inputs["mask"])
         output = output.last_hidden_state
         output = self.l2(output)
         output = self.l3(output)
@@ -105,7 +102,14 @@ class SectorsTransformer(pl.LightningModule):
             logger=False,
         )
 
-        self.log("val_loss", val_loss, on_step=True, on_epoch=True, prog_bar=True, logger=False)
+        self.log(
+            "val_loss",
+            val_loss,
+            on_step=True,
+            on_epoch=True,
+            prog_bar=True,
+            logger=False,
+        )
         return {"val_loss": val_loss}
 
     def test_step(self, batch, batch_nb):

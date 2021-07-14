@@ -63,10 +63,16 @@ if __name__ == "__main__":
     logging.info("building training and testing datasets")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     training_set = SectorsDataset(
-        dataframe=train_df, tokenizer=tokenizer, class_to_id=class_to_id, max_len=args.max_len
+        dataframe=train_df,
+        tokenizer=tokenizer,
+        class_to_id=class_to_id,
+        max_len=args.max_len,
     )
     val_set = SectorsDataset(
-        dataframe=val_df, tokenizer=tokenizer, class_to_id=class_to_id, max_len=args.max_len
+        dataframe=val_df,
+        tokenizer=tokenizer,
+        class_to_id=class_to_id,
+        max_len=args.max_len,
     )
 
     # Set remote mlflow server
@@ -79,16 +85,21 @@ if __name__ == "__main__":
 
     with mlflow.start_run():
 
-        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 0}
-        val_params = {"batch_size": args.eval_batch_size, "shuffle": False, "num_workers": 0}
+        train_params = {
+            "batch_size": args.train_batch_size,
+            "shuffle": True,
+            "num_workers": 0,
+        }
+        val_params = {
+            "batch_size": args.eval_batch_size,
+            "shuffle": False,
+            "num_workers": 0,
+        }
 
         training_loader = DataLoader(training_set, **train_params)
         val_loader = DataLoader(val_set, **val_params)
 
-        params = {
-            "train": train_params,
-            "val": val_params,
-        }
+        params = {"train": train_params, "val": val_params}
         mlflow.log_params(params)  # Logging example
 
         logging.info("training model")
@@ -103,5 +114,10 @@ if __name__ == "__main__":
             python_model=prediction_wrapper,
             artifact_path="model",
             conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[__file__, "model.py", "data.py", "inference.py"],  # file dependencies
+            code_path=[
+                __file__,
+                "model.py",
+                "data.py",
+                "inference.py",
+            ],  # file dependencies
         )

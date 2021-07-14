@@ -60,7 +60,9 @@ if __name__ == "__main__":
         # TRAIN
         logging.info("training model")
         model = RandomForestRegressor(
-            n_estimators=args.n_estimators, min_samples_leaf=args.min_samples_leaf, n_jobs=-1
+            n_estimators=args.n_estimators,
+            min_samples_leaf=args.min_samples_leaf,
+            n_jobs=-1,
         )
 
         model.fit(X_train, y_train)
@@ -76,5 +78,7 @@ if __name__ == "__main__":
         # SAVE MODEL
         logging.info("saving model in MLflow")
         mlflow.sklearn.log_model(
-            sk_model=model, artifact_path="model", registered_model_name="sklearn-first-example"
+            sk_model=model,
+            artifact_path="model",
+            registered_model_name="sklearn-first-example",
         )

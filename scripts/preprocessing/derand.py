@@ -11,11 +11,65 @@ class Derand:
     # This is a non-optimized Python port of Derand
     # https://github.com/Netflix/derand
     MODEL_CHARS = [
-        '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.',
-        '/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', ':', ';', '<',
-        '=', '>', '?', '@', '_', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
-        'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w',
-        'x', 'y', 'z'
+        "!",
+        '"',
+        "#",
+        "$",
+        "%",
+        "&",
+        "'",
+        "(",
+        ")",
+        "*",
+        "+",
+        ",",
+        "-",
+        ".",
+        "/",
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        ":",
+        ";",
+        "<",
+        "=",
+        ">",
+        "?",
+        "@",
+        "_",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+        "g",
+        "h",
+        "i",
+        "j",
+        "k",
+        "l",
+        "m",
+        "n",
+        "o",
+        "p",
+        "q",
+        "r",
+        "s",
+        "t",
+        "u",
+        "v",
+        "w",
+        "x",
+        "y",
+        "z",
     ]
     CHAR_TO_INDEX = {char: i for i, char in enumerate(MODEL_CHARS)}
     MAX_LEN = 16
@@ -35,7 +89,7 @@ class Derand:
 
     def load_model(self):
         self.download_model()
-        self.model = backend.prepare(load(self.MODEL_PATH), 'CPU')
+        self.model = backend.prepare(load(self.MODEL_PATH), "CPU")
 
     def pred(self, input):
         return self.model.run(input)
@@ -44,9 +98,9 @@ class Derand:
         if input is None or not len(input):
             return np.zeros((1, self.MAX_LEN), dtype=np.float32)
         if len(input) > self.MAX_LEN:
-            input = input[-self.MAX_LEN:]
+            input = input[-self.MAX_LEN :]
         elif len(input) < self.MAX_LEN:
-            input = (self.MAX_LEN - len(input))*self.MODEL_CHARS[0] + input
+            input = (self.MAX_LEN - len(input)) * self.MODEL_CHARS[0] + input
         input = input.lower()
         result = [self.CHAR_TO_INDEX.get(char, 0) for char in input]
         return np.array(result, dtype=np.float32).reshape(1, -1)
@@ -63,7 +117,7 @@ class Derand:
     def classify(self, text: str):
         if self.is_empty(text):
             return []
-        return predict_randomness_per_word(text.split(" "))
+        return self.predict_randomness_per_word(text.split(" "))
 
     def clean(self, text: str) -> str:
         if self.is_empty(text):
