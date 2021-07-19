@@ -26,13 +26,18 @@ def train_on_specific_targets (train_dataset,
                                val_params,
                                 gpu_nb:int,
                                MAX_EPOCHS:int,
-                               weight_classes):
-
+                               output_length=384,
+                               weight_classes=None):
+    """
+    main function used to train model
+    """
     if not os.path.exists(dirpath):
         os.makedirs(dirpath)
 
-    logger = TensorBoardLogger("lightning_logs", name=name_classifier)
+    train_dataset = train_dataset[['entry_id', 'excerpt', 'target']]
+    val_dataset = val_dataset[['entry_id', 'excerpt', 'target']]
 
+    logger = TensorBoardLogger("lightning_logs", name=name_classifier)
 
     tagname_to_tagid = tagname_to_id (train_dataset["target"])
 
@@ -80,7 +85,8 @@ def train_on_specific_targets (train_dataset,
                         plugin='deepspeed_stage_3_offload',
                         accumulate_grad_batches=1,
                         max_epochs=MAX_EPOCHS,
-                        dropout_rate=dropout_rate)
+                        dropout_rate=dropout_rate,
+                        output_length=output_length)
 
     trainer.fit(model)
 

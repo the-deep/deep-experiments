@@ -113,11 +113,11 @@ class CustomDataset(Dataset):
 
 
 class Model(nn.Module):
-    def __init__(self, model_name_or_path: str, num_labels:int, dropout_rate=0.3):
+    def __init__(self, model_name_or_path: str, num_labels:int, dropout_rate=0.3, output_length=384):
         super().__init__()
         self.l1 = AutoModel.from_pretrained(model_name_or_path)
         self.l2 = torch.nn.Dropout(dropout_rate)
-        self.l3 = torch.nn.Linear(384, num_labels)
+        self.l3 = torch.nn.Linear(output_length, num_labels)
         
     def forward(self, inputs):
         output = self.l1(inputs["ids"],
@@ -145,13 +145,19 @@ class Transformer(pl.LightningModule):
                  eval_batch_size: int = 32,
                  eval_splits: Optional[list] = None,
                  dropout_rate: float = 0.3,
+                 output_length=384,
 
                  **kwargs):
         super().__init__()
-
+        self.output_length = output_length
         self.save_hyperparameters()
-        self.model = Model(model_name_or_path, num_labels, dropout_rate)
-        self.weight_classes = torch.tensor(weight_classes).to('cuda')
+        self.num_labels = num_labels
+        self.model = Model(model_name_or_path, num_labels, dropout_rate, self.output_length)
+        if any(weight_classes):
+            self.use_weights = True
+            self.weight_classes = torch.tensor(weight_classes).to('cuda')
+        else:
+            self.use_weights = False
         self.empty_dataset = empty_dataset
         self.pred_threshold = pred_threshold
         self.val_loader = val_loader
@@ -184,6 +190,7 @@ class Transformer(pl.LightningModule):
             process_group=None,
             dist_sync_fn=None,
         )
+        
     @auto_move_data
     def forward(self, inputs):
         output = self.model(inputs)
@@ -191,9 +198,13 @@ class Transformer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        loss = F.binary_cross_entropy_with_logits(outputs,
-                                                 batch["targets"],
-                                                weight=self.weight_classes)
+        if self.use_weights:
+            loss = F.binary_cross_entropy_with_logits(outputs,
+                                                    batch["targets"],
+                                                    weight=self.weight_classes)
+        else:
+            loss = F.binary_cross_entropy_with_logits(outputs,
+                                                    batch["targets"])
 
         self.f1_score_train(torch.sigmoid(outputs),
                             batch["targets"].to(dtype=torch.long))
@@ -220,7 +231,7 @@ class Transformer(pl.LightningModule):
                  on_epoch=True,
                  prog_bar=True,
                  logger=False)
-        return {'val_f1': val_f1}
+        return {'val_loss': val_loss, 'val_f1': self.f1_score_val}
 
     def test_step(self, batch, batch_nb):
         logits = self(batch)
@@ -260,6 +271,8 @@ class Transformer(pl.LightningModule):
         self.log({"pred_classes": pred_classes})
 
     def custom_predict(self, validation_loader, name:str, return_logits=False):
+        if self.device.type == "cpu":
+            self.to("cuda")
         self.eval()
         self.freeze()
         indexes=torch.tensor([])
@@ -271,14 +284,16 @@ class Transformer(pl.LightningModule):
                 logits = self({"ids": batch["ids"].to('cuda'),
                                 "mask": batch["mask"].to('cuda'),
                                 "token_type_ids": batch["token_type_ids"].to('cuda')})
-
+                logits_to_array = np.array([np.array(t) for t in logits.cpu()])
+                
                 if return_logits:
                     if iter==0:
-                        predictions = logits
+                        
+                        predictions = logits_to_array
                         indexes = batch["entry_id"]
                     
                     else:
-                        predictions = np.concatenate([predictions,logits], 0) #.append(preds_batch)
+                        predictions = np.concatenate([predictions, logits_to_array], 0) #.append(preds_batch)
                         indexes = tf.concat([indexes, batch["entry_id"]], 0)
                 
                     iter += 1
@@ -298,7 +313,7 @@ class Transformer(pl.LightningModule):
                 
         np.save('predictions-'+name, np.array(predictions))
         np.save('indexes-'+name, np.array(indexes))
-        return predictions, indexes
+        return np.array(predictions), np.array(indexes)
 
     def total_steps(self) -> int:
         """The number of total training steps that will be run. Used for lr scheduler purposes."""
