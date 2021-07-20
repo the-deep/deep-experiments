@@ -4,6 +4,6 @@ COPY scripts/deployment/sectors_model app/
 WORKDIR app/
 #RUN apt-get update && apt-get install make && apt-get install gcc && apt-get install g++
 RUN conda env create --name model --file=conda.yaml
-RUN conda activate model
+RUN source activate model
 ENTRYPOINT ["python"]
 CMD ["app.py"]
