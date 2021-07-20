@@ -1,9 +1,11 @@
 import json
 
+import yaml
 import mlflow
 import pandas as pd
 
-MODEL_PATH = "s3://deep-mlflow-artifact/2/f3b4e0f9a0364f8dbfe1563b248348a1/artifacts/model"
+with open("config.yml", "r") as f:
+    MODEL_PATH = yaml.safe_load(f)["model"]
 INPUT_PATH = "/opt/ml/processing/input.json"
 OUTPUT_PATH = "/opt/ml/processing/output.json"
 
