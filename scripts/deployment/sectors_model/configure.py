@@ -1,4 +1,5 @@
 from pathlib import Path
+from cloudpathlib import CloudPath
 import yaml
 
 import boto3
@@ -10,8 +11,11 @@ if __name__ == "__main__":
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    model = config["model"]
+    model = CloudPath(config["model"])
     dependencies = model + "/conda.yaml"
 
     s3 = boto3.client("s3")
-    s3.download_file(model, "conda.yaml", str(current_path / "conda.yaml"))
+    bucket_name = model.cloud_prefix + model.bucket
+    s3.download_file(
+        bucket_name, str(model).replace(bucket_name, ""), str(current_path / "conda.yaml")
+    )

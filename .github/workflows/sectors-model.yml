@@ -25,6 +25,7 @@ jobs:
       run: |
         pip install PyYAML==5.4.1
         pip install boto3==1.17.76
+        pip install cloudpathlib==0.4.0
         python scripts/deployment/sectors_model/configure.py
     - name: Build Docker
       run: |
