@@ -12,7 +12,6 @@ if __name__ == "__main__":
         config = yaml.safe_load(f)
 
     model = CloudPath(config["model"])
-    dependencies = model + "/conda.yaml"
 
     s3 = boto3.client("s3")
     bucket_name = model.cloud_prefix + model.bucket
