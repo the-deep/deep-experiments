@@ -21,6 +21,10 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
+    - name: Get dependencies
+      run: |
+        pip install PyYAML==5.4.1
+        python script/deployment/sectors_model/configure.py
     - name: Build Docker
       run: |
         docker build . -f scripts/deployment/sectors_model/Dockerfile -t sectors-model --no-cache
