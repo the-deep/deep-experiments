@@ -16,5 +16,5 @@ if __name__ == "__main__":
     s3 = boto3.client("s3")
     bucket_name = model.cloud_prefix + model.bucket
     s3.download_file(
-        bucket_name, str(model).replace(bucket_name, ""), str(current_path / "conda.yaml")
+        str(model.bucket), str(model).replace(bucket_name, ""), str(current_path / "conda.yaml")
     )
