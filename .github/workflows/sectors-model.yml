@@ -1,11 +1,11 @@
-name: create-endpoint
+name: sectors-model
 on:
   push:
     branches:
       - main
     paths:
-      - 'scripts/deployment/create_endpoint/*'
-      - '.github/workflows/create-endpoint.yml'
+      - 'scripts/deployment/sectors_model/*'
+      - '.github/workflows/sectors-model.yml'
 
 
 jobs:
@@ -23,9 +23,9 @@ jobs:
         aws-region: us-east-1
     - name: Build Docker
       run: |
-        docker build . -f scripts/deployment/create_endpoint/Dockerfile -t create-endpoint --no-cache
+        docker build . -f scripts/deployment/sectors_model/Dockerfile -t sectors-model --no-cache
     - name: Deploy on ECR
       run: |
         aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 961104659532.dkr.ecr.us-east-1.amazonaws.com
-        docker tag create-endpoint 961104659532.dkr.ecr.us-east-1.amazonaws.com/create-endpoint
-        docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/create-endpoint
+        docker tag sectors-model 961104659532.dkr.ecr.us-east-1.amazonaws.com/sectors-model
+        docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/sectors-model
