@@ -24,7 +24,8 @@ jobs:
     - name: Get dependencies
       run: |
         pip install PyYAML==5.4.1
-        python script/deployment/sectors_model/configure.py
+        pip install boto3==1.17.76
+        python scripts/deployment/sectors_model/configure.py
     - name: Build Docker
       run: |
         docker build . -f scripts/deployment/sectors_model/Dockerfile -t sectors-model --no-cache
