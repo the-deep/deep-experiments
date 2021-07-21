@@ -6,8 +6,8 @@ import pandas as pd
 
 with open("config.yml", "r") as f:
     MODEL_PATH = yaml.safe_load(f)["model"]
-INPUT_PATH = "/opt/ml/processing/input.json"
-OUTPUT_PATH = "/opt/ml/processing/output.json"
+INPUT_PATH = "/opt/ml/processing/input/input.json"
+OUTPUT_PATH = "/opt/ml/processing/output/output.json"
 
 
 def load_model():
