@@ -38,7 +38,8 @@ def train_on_specific_targets (train_dataset,
                                output_length=384,
                                max_len=128,
                                weight_classes=None,
-                               learning_rate=3e-5):
+                               learning_rate=3e-5,
+                               pred_threshold:float=0.5):
     """
     main function used to train model
     """
@@ -101,7 +102,8 @@ def train_on_specific_targets (train_dataset,
                         weight_decay=weight_decay,
                         warmup_steps=warmup_steps,
                         output_length=output_length,
-                        learning_rate=learning_rate
+                        learning_rate=learning_rate,
+                        pred_threshold=pred_threshold
                         )
 
     trainer.fit(model)

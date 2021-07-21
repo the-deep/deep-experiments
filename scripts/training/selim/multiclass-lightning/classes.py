@@ -17,7 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 
 import numpy as np
 import pandas as pd
-from sklearn import metrics, classification_report
+from sklearn import metrics
 
 import transformers
 from transformers import (
@@ -383,7 +383,7 @@ class Transformer(pl.LightningModule):
         supports = []
         tagname_to_tagid = self.empty_dataset.tagname_to_tagid
         for tag_name, tag_id in tagname_to_tagid.items():
-            cls_rprt = classification_report(y_true[:, tag_id], preds_val_all[:, tag_id], output_dict=True)
+            cls_rprt = metrics.classification_report(y_true[:, tag_id], preds_val_all[:, tag_id], output_dict=True)
             precisions.append(cls_rprt["macro avg"]["precision"])
             recalls.append(cls_rprt["macro avg"]["recall"])
             f1_scores.append(cls_rprt["macro avg"]["f1-score"])

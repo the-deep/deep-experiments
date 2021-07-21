@@ -35,52 +35,27 @@ def tagname_to_id (target):
 
 ########################################### DATA PREPROCESSING AND AUGMENTATION ####################################   
 
-def preprocess_data (TRAIN_PATH, VAL_PATH, data_format:str='csv'):
-
-    if data_format=='pickle':
-        train_df = pd.read_pickle(os.path.join(TRAIN_PATH,"train.pickle"))
-        val_df = pd.read_pickle(os.path.join(VAL_PATH,"val.pickle"))
-    
-    else:
-        tot_train = pd.read_csv(TRAIN_PATH)
-        tot_test = pd.read_csv(VAL_PATH)
-
-    all_dataset = pd.concat([tot_train, tot_test])
-
-    # Keep only unique values in pillars
-    all_dataset["pillars"] = all_dataset["pillars"].apply(lambda x: clean_rows (x))
-    all_dataset["subpillars"] = all_dataset["subpillars"].apply(lambda x: clean_rows (x))
-
-    # Keep only rows with a not empty pillar
-    all_dataset = all_dataset[all_dataset.pillars.apply(lambda x: len(x)>0)]
-    return all_dataset.sample(n=1000)
-
-def get_subpillar_datasets (subpillar_name:str,
-                            dataset,
-                            n_synonym_augmenter=1,
-                            n_swap=1,
-                            perform_augmentation:bool=True,
-                            method='keep all',
-                            language_chosen:str='en'):
+def preprocess_data (dataset,
+                    n_synonym_augmenter=1,
+                    n_swap=1,
+                    perform_augmentation:bool=True,
+                    method='keep all',
+                    language_chosen:str='en'):
     """
-    1) keep rows where the sub-pillar name is contained in the column 'subpillars'
-    2) keep only subpillar names in the column 'subpillar' (omit pillar name)
+    1) filter with respect to language
+    2) perform augmentation
+    3) split to training and test set
     """
 
-    df = dataset[['entry_id', 'excerpt', 'pillars', 'subpillars', 'language']]
-    df['target'] = df.subpillars\
-                        .apply(lambda x: list(filter(lambda y: subpillar_name in y, x)))\
-                        .apply(lambda x: [y.split('->')[1] for y in (x)])
-
-    df = df[df.target.apply(lambda x: len(x)>0)]
+    df = dataset.copy()
 
     if method=='keep en':
         df = df[df.language==language_chosen]
     elif method=='omit en':
         df = df[df.language!=language_chosen]
 
-    df = df[['entry_id', 'excerpt', 'pillars', 'target']]
-    
+    df = df[['entry_id', 'excerpt', 'target']]
+
     if perform_augmentation:
         train_data, test_data = train_test_split(df, test_size=0.3)
         return augment_data(train_data, n_synonym_augmenter, n_swap), test_data
