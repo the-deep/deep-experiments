@@ -31,6 +31,7 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
+    parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
@@ -80,6 +81,8 @@ if __name__ == "__main__":
         source="excerpt",
         target="subpillars_1d",
         groups=SUBPILLARS_1D,
+        group_names=PILLARS_1D,
+        filter=args.split,
         flatten=True,
     )
     test_dataset = MultiHeadDataFrame(
@@ -88,6 +91,8 @@ if __name__ == "__main__":
         source="excerpt",
         target="subpillars_1d",
         groups=SUBPILLARS_1D,
+        group_names=PILLARS_1D,
+        filter=args.split,
         flatten=True,
     )
 

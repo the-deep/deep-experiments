@@ -20,6 +20,13 @@ class MultiHeadDataFrame(Dataset):
         target: target classification field that will be the output of models
         groups: transforms target into a multi-target (each multi-label)
             that is, each sample is associated with 2D one-hot target matrix
+        group_names: name assoaciated with each classification head
+        filter: (None, str, List of strings) filter dataset according
+            to given group. `None` uses all of the data points. Single str key
+            uses all data points with at least one target key value. If a list of
+            strings is given, each key is used to check positivity of the sample,
+            e.g., ['sector', 'pillar2d'] checks whether the data point has at
+            least one target in `sector` or in `pillar2d` fields.
         flatten: flatten group targets to 1D for convenience
     """
 
@@ -31,21 +38,35 @@ class MultiHeadDataFrame(Dataset):
         target: str = "target",
         groups: Optional[List[List[str]]] = None,
         group_names: Optional[List[str]] = None,
+        filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
     ):
-        self.logger = logging.getLogger()
+        self.group_names = group_names
         self.flatten = flatten
+        self.logger = logging.getLogger()
 
         # read dataframe manually if given as path
         if isinstance(dataframe, str):
             self.logger.info(f"Loading dataframe: {dataframe}")
             dataframe = pd.read_pickle(dataframe)
 
-        # tokenize and save source data
-        self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
-
         # apply literal eval to have lists in target
         dataframe[target] = dataframe[target].apply(literal_eval)
+
+        # cast filter to array
+        if isinstance(filter, str):
+            filter = [filter]
+
+        # filter data frame
+        if filter is not None:
+            pos = np.zeros(len(dataframe), dtype=np.bool)
+            for f in filter:
+                pos |= np.array([len(item) > 0 for item in dataframe[f].tolist()], dtype=np.bool)
+            dataframe = dataframe[pos]
+            self.logger.info(f"Filtered data points with non-empty (or) {','.join(filter)} values")
+
+        # tokenize and save source data
+        self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
 
         # prepare target encoding
         all_targets = np.hstack(dataframe[target].to_numpy())
@@ -122,7 +143,7 @@ class MultiHeadDataFrame(Dataset):
         else:
             item.update(
                 {
-                    f"labels_{i}": torch.tensor(self.target[idx][i])
+                    f"labels_{self.group_names[i]}": torch.tensor(self.target[idx][i])
                     for i in range(len(self.target_classes))
                 }
             )
