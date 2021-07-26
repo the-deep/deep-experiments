@@ -32,6 +32,7 @@ if __name__ == "__main__":
         default=False,
     )
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
+    parser.add_argument("--iterative", action="store_true", default=False)
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
@@ -134,6 +135,7 @@ if __name__ == "__main__":
     # set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment(args.experiment_name)
+    mlflow.set_tags({"split": args.split, "iterative": args.iterative})
 
     try:
         # train model

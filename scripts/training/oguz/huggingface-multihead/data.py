@@ -93,6 +93,18 @@ class MultiHeadDataFrame(Dataset):
 
         # prepare targets
         self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
+        self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+
+    def group_encode(self, targets: List[str]) -> np.ndarray:
+        """Encodes given targets to group representation"""
+
+        onehot = np.zeros(len(self.target_classes), dtype=np.int)
+
+        # flip all groups
+        for target in targets:
+            onehot[self.group_encoding[target]] = 1
+
+        return onehot
 
     def onehot_encode(self, targets: List[str]) -> Union[np.ndarray, List[np.ndarray]]:
         """Encodes given targets to one-hot representation"""
@@ -147,5 +159,6 @@ class MultiHeadDataFrame(Dataset):
                     for i in range(len(self.target_classes))
                 }
             )
+        item["groups"] = torch.tensor(self.group[idx])
 
         return item
