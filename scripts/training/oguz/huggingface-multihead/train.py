@@ -31,6 +31,13 @@ if __name__ == "__main__":
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--loss",
+        type=str,
+        default="ce",
+        choices=["ce", "focal"],
+        help="Loss function: 'ce', 'focal'",
+    )
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
     parser.add_argument("--iterative", action="store_true", default=False)
     parser.add_argument("--save_model", action="store_true", default=False)
@@ -131,6 +138,7 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        focal_loss=(args.loss == "focal"),
     )
 
     # set remote mlflow server
