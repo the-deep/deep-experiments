@@ -25,12 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--num_layers", type=int, default=1)
-    parser.add_argument(
-        "--freeze_backbone",
-        dest="freeze_backbone",
-        action="store_true",
-        default=False,
-    )
+    parser.add_argument("--freeze_backbone", type=bool, default=False)
     parser.add_argument(
         "--loss",
         type=str,
@@ -39,8 +34,8 @@ if __name__ == "__main__":
         help="Loss function: 'ce', 'focal'",
     )
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
-    parser.add_argument("--iterative", action="store_true", default=False)
-    parser.add_argument("--save_model", action="store_true", default=False)
+    parser.add_argument("--iterative", type=bool, default=False)
+    parser.add_argument("--save_model", type=bool, default=False)
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
