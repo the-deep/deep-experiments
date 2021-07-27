@@ -102,7 +102,9 @@ class MultiHeadDataFrame(Dataset):
 
         # prepare targets
         self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
-        self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+
+        if groups:
+            self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
 
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
@@ -172,6 +174,8 @@ class MultiHeadDataFrame(Dataset):
                     for i in range(len(self.target_classes))
                 }
             )
-        item["groups"] = torch.tensor(self.group[idx])
+
+        if self.group is not None:
+            item["groups"] = torch.tensor(self.group[idx])
 
         return item
