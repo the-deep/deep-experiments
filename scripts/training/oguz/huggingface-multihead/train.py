@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--num_layers", type=int, default=1)
+    parser.add_argument("--pooling", type=bool, default=False)
     parser.add_argument("--freeze_backbone", type=bool, default=False)
     parser.add_argument(
         "--loss",
@@ -75,6 +76,7 @@ if __name__ == "__main__":
         num_classes=[len(group) for group in SUBPILLARS_1D],
         num_layers=args.num_layers,
         dropout=args.dropout,
+        pooling=args.pooling,
         freeze_backbone=args.freeze_backbone,
     )
 

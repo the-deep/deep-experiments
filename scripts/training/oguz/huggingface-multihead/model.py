@@ -15,19 +15,22 @@ class MultiHeadTransformer(torch.nn.Module):
         num_classes: List[int],
         num_layers: int = 1,
         dropout: float = 0.3,
+        pooling: bool = False,
         freeze_backbone: bool = False,
         iterative: bool = False,
         use_gt_training: bool = True,
     ):
         super().__init__()
+        self.pooling = pooling
+        self.iterative = iterative
+        self.use_gt_training = use_gt_training
+
         self.backbone = backbone
         self.backbone.config.problem_type = "multi_label_classification"
         self.backbone.trainable = not freeze_backbone
 
         self.dropout = torch.nn.Dropout(dropout)
         self.heads = torch.nn.ModuleList()
-        self.iterative = iterative
-        self.use_gt_training = use_gt_training
 
         mlp_params = {
             "depth": num_layers,
@@ -56,7 +59,10 @@ class MultiHeadTransformer(torch.nn.Module):
     def forward(self, inputs, gt_groups=None):
         # get hidden representation
         backbone_outputs = self.backbone(**inputs)
-        last_hidden_states = torch.mean(backbone_outputs.last_hidden_state, axis=1)
+        if self.pooling:
+            last_hidden_states = torch.mean(backbone_outputs.last_hidden_state, axis=1)
+        else:
+            last_hidden_states = backbone_outputs.last_hidden_state[:, 0, :]
         hidden = self.dropout(last_hidden_states)
 
         if self.iterative:
