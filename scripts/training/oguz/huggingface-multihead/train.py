@@ -33,6 +33,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
     parser.add_argument("--iterative", action="store_true", default=False)
+    parser.add_argument("--save_model", action="store_true", default=False)
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
@@ -135,7 +136,6 @@ if __name__ == "__main__":
     # set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment(args.experiment_name)
-    mlflow.set_tags({"split": args.split, "iterative": args.iterative})
 
     try:
         # train model
@@ -157,9 +157,15 @@ if __name__ == "__main__":
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
 
-        # Saves the model to s3
-        trainer.save_model(args.model_dir)
+        # set tags
+        mlflow.set_tags({"split": args.split, "iterative": args.iterative})
+
+        # finish mlflow run
         mlflow.end_run()
     except Exception as e:
         logger.exception(e)
         mlflow.end_run("FAILED")
+
+    # save the model to s3
+    if args.save_model:
+        trainer.save_model(args.model_dir)
