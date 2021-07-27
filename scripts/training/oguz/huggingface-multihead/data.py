@@ -28,6 +28,7 @@ class MultiHeadDataFrame(Dataset):
             e.g., ['sector', 'pillar2d'] checks whether the data point has at
             least one target in `sector` or in `pillar2d` fields.
         flatten: flatten group targets to 1D for convenience
+        online: online or offline tokenization
     """
 
     def __init__(
@@ -40,9 +41,12 @@ class MultiHeadDataFrame(Dataset):
         group_names: Optional[List[str]] = None,
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
+        online: bool = False,
     ):
         self.group_names = group_names
         self.flatten = flatten
+        self.tokenizer = tokenizer
+        self.online = online
         self.logger = logging.getLogger()
 
         # read dataframe manually if given as path
@@ -65,8 +69,13 @@ class MultiHeadDataFrame(Dataset):
             dataframe = dataframe[pos]
             self.logger.info(f"Filtered data points with non-empty (or) {','.join(filter)} values")
 
-        # tokenize and save source data
-        self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
+        if self.online:
+            # save data as exceprt
+            self.data = dataframe[source].tolist()
+        else:
+            # tokenize and save source data
+            self.logger.info(f"Applying offline tokenization")
+            self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
 
         # prepare target encoding
         all_targets = np.hstack(dataframe[target].to_numpy())
@@ -148,7 +157,11 @@ class MultiHeadDataFrame(Dataset):
         return len(self.target)
 
     def __getitem__(self, idx):
-        item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
+        if self.online:
+            data = self.tokenizer(self.data[idx : idx + 1], truncation=True, padding=True)
+            item = {key: torch.tensor(val[0]) for key, val in data.items()}
+        else:
+            item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
 
         if self.flatten:
             item["labels"] = torch.tensor(self.target[idx])

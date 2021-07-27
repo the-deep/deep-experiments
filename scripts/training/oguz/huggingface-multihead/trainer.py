@@ -2,9 +2,9 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+from torch.utils.data.dataset import Dataset
 from transformers import (
     DataCollator,
-    Dataset,
     EvalPrediction,
     PreTrainedModel,
     PreTrainedTokenizerBase,
