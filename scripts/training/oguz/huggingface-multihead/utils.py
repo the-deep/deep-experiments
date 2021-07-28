@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from typing import Dict
+import argparse
 
 import torch
 import torch.nn.functional as F
@@ -11,6 +12,17 @@ def revdict(d: Dict):
     for k in d:
         r[d[k]] = k
     return r
+
+
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ("1", "y", "t", "yes", "true"):
+        return True
+    elif v.lower() in ("0", "n", "f", "no", "false"):
+        return False
+    else:
+        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
 def build_mlp(

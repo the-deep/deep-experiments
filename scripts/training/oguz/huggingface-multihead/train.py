@@ -13,6 +13,7 @@ from constants import PILLARS_1D, SUBPILLARS_1D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
 from trainer import MultiHeadTrainer
+from utils import str2bool
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -25,8 +26,8 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--dropout", type=float, default=0.3)
     parser.add_argument("--num_layers", type=int, default=1)
-    parser.add_argument("--pooling", type=bool, default=False)
-    parser.add_argument("--freeze_backbone", type=bool, default=False)
+    parser.add_argument("--pooling", type=str2bool, default=False)
+    parser.add_argument("--freeze_backbone", type=str2bool, default=False)
     parser.add_argument(
         "--loss",
         type=str,
@@ -35,8 +36,8 @@ if __name__ == "__main__":
         help="Loss function: 'ce', 'focal'",
     )
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
-    parser.add_argument("--iterative", type=bool, default=False)
-    parser.add_argument("--save_model", type=bool, default=False)
+    parser.add_argument("--iterative", type=str2bool, default=False)
+    parser.add_argument("--save_model", type=str2bool, default=False)
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
@@ -58,6 +59,7 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler(sys.stdout)],
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    logger.info(f"Args: {args}")
 
     # load datasets
     train_df = pd.read_pickle(f"{args.training_dir}/train_df.pickle")
