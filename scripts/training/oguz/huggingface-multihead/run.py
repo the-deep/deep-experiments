@@ -20,6 +20,10 @@ job_name = f"1D-test-{formatted_time()}"
 train_df = pd.read_csv("data/frameworks_data/data_v0.5/data_v0.5_train.csv")
 val_df = pd.read_csv("data/frameworks_data/data_v0.5/data_v0.5_val.csv")
 
+if "DEBUG" in os.environ and os.environ["DEBUG"]:
+    train_df = train_df.sample(n=1000)
+    val_df = val_df.sample(n=1000)
+
 # upload dataset to s3
 input_path = DEV_BUCKET / "training" / "input_data" / job_name  # Do not change this
 train_path = str(input_path / "train_df.pickle")
@@ -36,9 +40,9 @@ hyperparameters = {
     "model_name": "distilbert-base-uncased",
     "tracking_uri": MLFLOW_SERVER,
     "experiment_name": "1D-multihead-transformers",
-    "loss": "focal",
-    "iterative": True,
-    "pooling": True,
+    "loss": "ce",
+    "iterative": False,
+    "pooling": False,
     "save_model": False,
 }
 
