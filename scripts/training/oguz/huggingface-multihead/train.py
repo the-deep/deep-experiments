@@ -208,6 +208,10 @@ if __name__ == "__main__":
         focal_loss=(args.loss == "focal"),
     )
 
+    # set env variable for MLFlow artifact logging
+    if args.save_model:
+        os.environ["HF_MLFLOW_LOG_ARTIFACTS"] = "TRUE"
+
     # set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     mlflow.set_experiment(args.experiment_name)
