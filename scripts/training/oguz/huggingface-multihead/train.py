@@ -104,6 +104,86 @@ if __name__ == "__main__":
         flatten=True,
     )
 
+    # compute metrics function for multi-class classification
+    def compute_metrics(pred, threshold=0.5):
+        # add prefix to dictionary keys
+        def _prefix(dic, prefix):
+            return {(prefix + k): v for k, v in dic}
+
+        # compute metrics given preds and labels
+        def _compute(preds, labels, average="micro"):
+            preds = preds > threshold
+            precision, recall, f1, _ = precision_recall_fscore_support(
+                labels, preds, average=average
+            )
+            accuracy = accuracy_score(labels, preds)
+            return {
+                "accuracy": accuracy,
+                "f1": f1,
+                "precision": precision,
+                "recall": recall,
+            }
+
+        metrics = {}
+
+        if args.iterative:
+            preds_group, preds = pred.predictions
+            labels_group, labels = pred.label_ids
+
+            # group micro evaluation
+            metrics.update(_prefix(_compute(preds_group, labels_group, "micro"), "pillar_micro_"))
+            # group macro evaluation
+            metrics.update(_prefix(_compute(preds_group, labels_group, "macro"), "pillar_macro_"))
+            # per group evaluation
+            for i, pillar in enumerate(PILLARS_1D):
+                metrics.update(
+                    _prefix(
+                        _compute(preds_group[:, i], labels_group[:, i], "binary"),
+                        f"{pillar}_binary_",
+                    )
+                )
+        else:
+            labels = pred.label_ids
+            preds = pred.predictions > threshold
+
+        # micro evaluation
+        metrics.update(_prefix(_compute(preds, labels, "micro"), "subpillar_micro_"))
+        # macro evaluation
+        metrics.update(_prefix(_compute(preds, labels, "macro"), "subpillar_macro_"))
+        # per head evaluation
+        idx = 0
+        for i, pillar in enumerate(PILLARS_1D):
+            idx_end = idx + len(SUBPILLARS_1D[i])
+
+            # per head micro evaluation
+            metrics.update(
+                _prefix(
+                    _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "micro"),
+                    f"{pillar}_micro_",
+                )
+            )
+            # per head macro evaluation
+            metrics.update(
+                _prefix(
+                    _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "macro"),
+                    f"{pillar}_macro_",
+                )
+            )
+
+            # per head target evaluation
+            for j, subpillar in enumerate(SUBPILLARS_1D[i]):
+                metrics.update(
+                    _prefix(
+                        _compute(preds[:, idx + j], labels[:, idx + j], "binary"),
+                        f"{subpillar}_binary_",
+                    )
+                )
+
+            # update index
+            idx = idx_end
+
+        return metrics
+
     # define training args
     training_args = TrainingArguments(
         output_dir=args.model_dir,
@@ -115,20 +195,8 @@ if __name__ == "__main__":
         logging_dir=f"{args.output_data_dir}/logs",
         learning_rate=float(args.learning_rate),
         skip_memory_metrics=False,
+        label_names=["labels", "groups"] if args.iterative else ["labels"],
     )
-
-    # compute metrics function for binary classification
-    def compute_metrics(pred, threshold=0.5):
-        labels = pred.label_ids
-        preds = pred.predictions > threshold
-        precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average="macro")
-        acc = accuracy_score(labels, preds)
-        return {
-            "accuracy": acc,
-            "f1": f1,
-            "precision": precision,
-            "recall": recall,
-        }
 
     # create trainer instance
     trainer = MultiHeadTrainer(
