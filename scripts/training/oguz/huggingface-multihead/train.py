@@ -126,6 +126,14 @@ if __name__ == "__main__":
                 "recall": recall,
             }
 
+        # process pillar texts for MLFlow
+        def _process(text):
+            text = text.lower()
+            text = text.replace(" ", "_")
+            text = text.replace(">", "")
+            text = text.replace("&", "_")
+            return text
+
         metrics = {}
 
         if args.iterative:
@@ -142,7 +150,7 @@ if __name__ == "__main__":
                 metrics.update(
                     _prefix(
                         _compute(preds_group[:, i], labels_group[:, i], "binary"),
-                        f"{pillar}_binary_",
+                        f"{_process(pillar)}_binary_",
                     )
                 )
         else:
@@ -162,14 +170,14 @@ if __name__ == "__main__":
             metrics.update(
                 _prefix(
                     _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "micro"),
-                    f"{pillar}_micro_",
+                    f"{_process(pillar)}_micro_",
                 )
             )
             # per head macro evaluation
             metrics.update(
                 _prefix(
                     _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "macro"),
-                    f"{pillar}_macro_",
+                    f"{_process(pillar)}_macro_",
                 )
             )
 
@@ -178,7 +186,7 @@ if __name__ == "__main__":
                 metrics.update(
                     _prefix(
                         _compute(preds[:, idx + j], labels[:, idx + j], "binary"),
-                        f"{subpillar}_binary_",
+                        f"{_process(subpillar)}_binary_",
                     )
                 )
 
