@@ -41,10 +41,12 @@ class MultiHeadTransformer(torch.nn.Module):
         }
 
         if iterative:
-            build_mlp(
-                middle_features=np.sqrt(len(num_classes) * self.backbone.config.dim),
-                out_features=len(num_classes),
-                **mlp_params
+            self.heads.append(
+                build_mlp(
+                    middle_features=np.sqrt(len(num_classes) * self.backbone.config.dim),
+                    out_features=len(num_classes),
+                    **mlp_params
+                )
             )
 
         for i in range(num_heads):
@@ -79,7 +81,7 @@ class MultiHeadTransformer(torch.nn.Module):
                 out_target = head(hidden)
                 out_targets.append(
                     torch.where(
-                        torch.repeat(groups[:, i], out_target.shape[1]),
+                        torch.repeat_interleave(groups[:, i : i + 1], out_target.shape[1], dim=1),
                         out_target,
                         torch.zeros_like(out_target),
                     )

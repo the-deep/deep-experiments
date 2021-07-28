@@ -109,7 +109,7 @@ class MultiHeadDataFrame(Dataset):
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
 
-        onehot = np.zeros(len(self.target_classes), dtype=np.int)
+        onehot = np.zeros(len(self.target_classes), dtype=np.bool)
 
         # flip all groups
         for target in targets:
@@ -120,7 +120,7 @@ class MultiHeadDataFrame(Dataset):
     def onehot_encode(self, targets: List[str]) -> Union[np.ndarray, List[np.ndarray]]:
         """Encodes given targets to one-hot representation"""
 
-        onehot = [np.zeros(num_class, dtype=np.int) for num_class in self.target_classes]
+        onehot = [np.zeros(num_class, dtype=np.bool) for num_class in self.target_classes]
 
         # 2D label matrix (group, class)
         for target in targets:

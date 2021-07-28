@@ -80,6 +80,8 @@ if __name__ == "__main__":
         dropout=args.dropout,
         pooling=args.pooling,
         freeze_backbone=args.freeze_backbone,
+        iterative=args.iterative,
+        use_gt_training=True,
     )
 
     # form datasets out of pandas data frame
@@ -108,7 +110,7 @@ if __name__ == "__main__":
     def compute_metrics(pred, threshold=0.5):
         # add prefix to dictionary keys
         def _prefix(dic, prefix):
-            return {(prefix + k): v for k, v in dic}
+            return {(prefix + k): v for k, v in dic.items()}
 
         # compute metrics given preds and labels
         def _compute(preds, labels, average="micro"):
@@ -127,8 +129,9 @@ if __name__ == "__main__":
         metrics = {}
 
         if args.iterative:
-            preds_group, preds = pred.predictions
-            labels_group, labels = pred.label_ids
+            # TODO: ensure the ordering is stable
+            preds, preds_group = pred.predictions
+            labels, labels_group = pred.label_ids
 
             # group micro evaluation
             metrics.update(_prefix(_compute(preds_group, labels_group, "micro"), "pillar_micro_"))
