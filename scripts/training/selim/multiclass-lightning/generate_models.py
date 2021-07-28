@@ -3,11 +3,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 from transformers import AutoTokenizer
 
-
 from classes import CustomDataset, Transformer
-from utils import (
-    tagname_to_id,
-)
+from utils import tagname_to_id
 
 
 def train_on_specific_targets(

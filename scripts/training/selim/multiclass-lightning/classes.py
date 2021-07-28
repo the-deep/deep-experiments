@@ -33,9 +33,12 @@ class CustomDataset(Dataset):
 
         self.excerpt_text = dataframe["excerpt"].tolist() if dataframe is not None else None
 
-        self.targets = self.data["target"].tolist() if dataframe is not None else None
-
-        self.entry_ids = self.data["entry_id"].tolist() if dataframe is not None else None
+        try:
+            self.targets = list(dataframe["target"])
+            self.entry_ids = list(dataframe["entry_id"])
+        except Exception:
+            self.targets = None
+            self.entry_ids = None
 
         self.tagname_to_tagid = tagname_to_tagid
         self.tagid_to_tagname = list(tagname_to_tagid.keys())
@@ -56,6 +59,12 @@ class CustomDataset(Dataset):
         mask = inputs["attention_mask"]
         token_type_ids = inputs["token_type_ids"]
 
+        encoded = {
+            "ids": torch.tensor(ids, dtype=torch.long),
+            "mask": torch.tensor(mask, dtype=torch.long),
+            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+        }
+
         targets = None
         if self.targets:
             target_indices = [
@@ -65,13 +74,11 @@ class CustomDataset(Dataset):
             ]
             targets = np.zeros(len(self.tagname_to_tagid), dtype=np.int)
             targets[target_indices] = 1
-        encoded = {
-            "ids": torch.tensor(ids, dtype=torch.long),
-            "mask": torch.tensor(mask, dtype=torch.long),
-            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
-            "targets": torch.tensor(targets, dtype=torch.float32) if targets is not None else None,
-            "entry_id": self.entry_ids[index],
-        }
+
+            encoded["targets"] = (
+                torch.tensor(targets, dtype=torch.float32) if targets is not None else None
+            )
+            encoded["entry_id"] = self.entry_ids[index]
 
         if as_batch:
             return {
@@ -94,18 +101,23 @@ class Model(nn.Module):
         self, model_name_or_path: str, num_labels: int, dropout_rate=0.3, output_length=384
     ):
         super().__init__()
-        self.l1 = AutoModel.from_pretrained(model_name_or_path)
-        self.l2 = torch.nn.Dropout(dropout_rate)
-        self.l3 = torch.nn.Linear(output_length, num_labels)
+        self.l0 = AutoModel.from_pretrained(model_name_or_path)
+        # batch normlisation to be integrated
+        self.l1 = torch.nn.Linear(output_length, 128)
+        self.l2 = torch.nn.BatchNorm1d(128)
+        self.l3 = torch.nn.Dropout(dropout_rate)
+        self.l4 = torch.nn.Linear(128, num_labels)
 
     def forward(self, inputs):
-        output = self.l1(
+        output = self.l0(
             inputs["ids"],
             attention_mask=inputs["mask"],
         )
         output = output.last_hidden_state
+        output = F.selu(self.l1(output))
         output = self.l2(output)
         output = self.l3(output)
+        output = self.l4(output)
         return output[:, 0, :]
 
 
@@ -253,7 +265,10 @@ class Transformer(pl.LightningModule):
             pred_classes.append(pred_classes_i)
         self.log({"pred_classes": pred_classes})
 
-    def custom_predict(self, validation_dataset, return_all=False):
+    def custom_predict(self, validation_dataset, return_all=False, testing=False):
+        def sigmoid(x):
+            return 1 / (1 + np.exp(-x))
+
         validation_loader = self.get_loaders(
             validation_dataset, self.val_params, self.tagname_to_tagid, self.tokenizer, self.max_len
         )
@@ -264,47 +279,90 @@ class Transformer(pl.LightningModule):
         indexes = []
         y_true = []
         logit_predictions = []
+        list_tags = np.array(list(self.tagname_to_tagid.keys()))
 
-        with torch.no_grad():
-            for batch in tqdm(
-                validation_loader,
-                total=len(validation_loader.dataset) // validation_loader.batch_size,
-            ):
+        if testing:
+            with torch.no_grad():
+                for batch in tqdm(
+                    validation_loader,
+                    total=len(validation_loader.dataset) // validation_loader.batch_size,
+                ):
 
-                logits = self(
-                    {
-                        "ids": batch["ids"].to("cuda"),
-                        "mask": batch["mask"].to("cuda"),
-                        "token_type_ids": batch["token_type_ids"].to("cuda"),
-                    }
+                    logits = self(
+                        {
+                            "ids": batch["ids"].to("cuda"),
+                            "mask": batch["mask"].to("cuda"),
+                            "token_type_ids": batch["token_type_ids"].to("cuda"),
+                        }
+                    )
+                    logits_to_array = np.array([np.array(t) for t in logits.cpu()])
+                    logit_predictions.append(logits_to_array)
+            logit_predictions = np.concatenate(logit_predictions)
+
+            logit_predictions = sigmoid(logit_predictions)
+            predictions = []
+            # postprocess predictions
+            for i in range(logit_predictions.shape[0]):
+                row_pred = np.array([0] * self.num_labels)
+                row_logits = logit_predictions[i, :]
+
+                predictions.append(list(list_tags[row_logits > self.pred_threshold]))
+
+            return pd.Series(predictions)
+
+        else:
+
+            with torch.no_grad():
+                for batch in tqdm(
+                    validation_loader,
+                    total=len(validation_loader.dataset) // validation_loader.batch_size,
+                ):
+
+                    logits = self(
+                        {
+                            "ids": batch["ids"].to("cuda"),
+                            "mask": batch["mask"].to("cuda"),
+                            "token_type_ids": batch["token_type_ids"].to("cuda"),
+                        }
+                    )
+
+                    y_true.append(batch["targets"].numpy().astype(np.int))
+                    indexes.append(batch["entry_id"].numpy().astype(np.int))
+
+                    logits_to_array = np.array([np.array(t) for t in logits.cpu()])
+                    logit_predictions.append(logits_to_array)
+
+            y_true = np.concatenate(y_true)
+            indexes = np.concatenate(indexes)
+            logit_predictions = np.concatenate(logit_predictions)
+
+            list_tags = np.array(list(self.tagname_to_tagid.keys()))
+
+            logit_predictions = sigmoid(logit_predictions)
+            predictions = []
+            y_true_final = []
+            indexes_final = []
+            # postprocess predictions
+            for i in range(logit_predictions.shape[0]):
+                row_pred = np.array([0] * self.num_labels)
+                row_logits = logit_predictions[i, :]
+
+                if np.any(row_logits >= self.pred_threshold):
+
+                    row_pred[row_logits > self.pred_threshold] = 1
+                    predictions.append(row_pred)
+                    y_true_final.append(y_true[i])
+                    indexes_final.append(indexes[i])
+
+            if return_all:
+                return (
+                    np.array(predictions),
+                    y_true_final,
+                    indexes_final,
+                    zip(indexes, logit_predictions),
                 )
 
-                y_true.append(batch["targets"].numpy().astype(np.int))
-                indexes.append(batch["entry_id"].numpy().astype(np.int))
-
-                logits_to_array = np.array([np.array(t) for t in logits.cpu()])
-                logit_predictions.append(logits_to_array)
-
-        y_true = np.concatenate(y_true)
-        indexes = np.concatenate(indexes)
-        logit_predictions = np.concatenate(logit_predictions)
-
-        predictions = []
-        # postprocess predictions
-        for i in range(logit_predictions.shape[0]):
-            row_pred = np.array([0] * self.num_labels)
-            row_logits = logit_predictions[i, :]
-            if np.all(row_logits < self.pred_threshold):
-                row_pred[np.argmax(row_logits)] = 1
-            else:
-                row_pred[row_logits > self.pred_threshold] = 1
-
-            predictions.append(row_pred)
-
-        if return_all:
-            return np.array(predictions), y_true, indexes, logit_predictions
-
-        return np.array(predictions), y_true
+            return np.array(predictions), np.array(y_true_final)
 
     def total_steps(self) -> int:
         """The number of total training steps that will be run. Used for lr scheduler purposes."""
@@ -380,7 +438,7 @@ class Transformer(pl.LightningModule):
         metrics_df.loc["mean"] = metrics_df.mean()
         return metrics_df
 
-    def get_results_pillar(self, preds_val_all, y_true):
+    def get_results_pillar_from_subpillar(self, preds_val_all, y_true):
         list_tags_subpillars = list(self.tagname_to_tagid.keys())
         list_tags_pillars = sorted(
             list(set([tags.split("->")[0] for tags in list_tags_subpillars]))
@@ -421,16 +479,11 @@ class Transformer(pl.LightningModule):
 
         return self.compute_metrics(preds_val_pillars, y_true_pillars, pillars_tagname_to_tagid)
 
-    def custom_eval(
-        self, validation_dataset, save_results=True, subpillar_path=None, pillar_path=None
-    ):
+    def custom_eval(self, validation_dataset):
 
         preds_val_all, y_true = self.custom_predict(validation_dataset)
+        ratio_evaluated_sentences = len(y_true) * 100 / validation_dataset.shape[0]
         metrics_subpillars = self.compute_metrics(preds_val_all, y_true, self.tagname_to_tagid)
-        metrics_pillars = self.get_results_pillar(preds_val_all, y_true)
+        metrics_pillars = self.get_results_pillar_from_subpillar(preds_val_all, y_true)
 
-        if save_results:
-            metrics_subpillars.to_csv(subpillar_path)
-            metrics_pillars.to_csv(pillar_path)
-
-        return metrics_pillars, metrics_subpillars
+        return metrics_pillars, metrics_subpillars, ratio_evaluated_sentences

@@ -1,5 +1,4 @@
 from ast import literal_eval
-
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -15,6 +14,8 @@ nltk.download("omw")
 import warnings
 
 warnings.filterwarnings("ignore")
+
+# GENERAL UTIL FUNCTIONS
 
 
 def clean_rows(row):

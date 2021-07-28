@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import logging
+import json
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
@@ -15,6 +16,8 @@ from utils import (
 )
 from generate_models import train_on_specific_targets
 
+logging.basicConfig(level=logging.INFO)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -24,11 +27,11 @@ if __name__ == "__main__":
     parser.add_argument("--val_batch_size", type=int, default=64)
 
     parser.add_argument("--max_len", type=int, default=128)
-    parser.add_argument("--warmup_steps", type=int, default=100)
+    parser.add_argument("--warmup_steps", type=int, default=50)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--learning_rate", type=float, default=3e-5)
     parser.add_argument("--dropout_rate", type=float, default=0.3)
-    parser.add_argument("--pred_threshold", type=float, default=0.5)
+    parser.add_argument("--pred_threshold", type=float, default=0.4)
     parser.add_argument("--output_length", type=int, default=384)
 
     parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
@@ -41,7 +44,7 @@ if __name__ == "__main__":
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
-    parser.add_argument("--model-dir", type=str, default=os.environ["SM_MODEL_DIR"])
+    parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
     parser.add_argument("--n_gpus", type=str, default=os.environ["SM_NUM_GPUS"])
     parser.add_argument("--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"])
     parser.add_argument("--val_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
@@ -83,10 +86,9 @@ if __name__ == "__main__":
     weights = [weight if weight < 5 else weight ** 2 for weight in weights]
 
     log_dir_name = "-".join(args.model_name.split("/"))
-    PATH_NAME = log_dir_name + "-subpillars-" + args.method_language
+    PATH_NAME = args.model_dir
     if not os.path.exists(PATH_NAME):
         os.makedirs(PATH_NAME)
-    os.chdir(PATH_NAME)
 
     early_stopping_callback = EarlyStopping(monitor="val_f1", patience=2, mode="max")
 
@@ -96,12 +98,12 @@ if __name__ == "__main__":
         "monitor": "val_f1",
         "mode": "max",
     }
-    dirpath_pillars = f"./checkpoints-subpillars-{log_dir_name}"
+    dirpath_pillars = str(f"{args.model_dir}/checkpoints-subpillars-{log_dir_name}")
     checkpoint_callback_pillars = ModelCheckpoint(
         dirpath=dirpath_pillars, **checkpoint_callback_params
     )
 
-    en_model_subpillars = train_on_specific_targets(
+    model_subpillars = train_on_specific_targets(
         train_df,
         val_df,
         f"subpillars-{log_dir_name}-",
@@ -125,15 +127,18 @@ if __name__ == "__main__":
     )
 
     start = timeit.default_timer()
-
-    metrics_pillars, metrics_subpillars = en_model_subpillars.custom_eval(
-        val_df,
-        f"{args.output_data_dir} / results_subpillars.csv",
-        f"{args.output_data_dir} / results_pillars.csv",
+    metrics_pillars, metrics_subpillars, ratio_evaluated_sentences = model_subpillars.custom_eval(
+        val_df
     )
-
     stop = timeit.default_timer()
 
-    print("Time to predict 100 sentences: ", 100 * (stop - start) / val_df.shape[0])
-    print("subpillars: ", metrics_subpillars.loc["mean"])
-    print("pillars: ", metrics_pillars.loc["mean"])
+    time_per_hundred_sentences = 100 * (stop - start) / val_df.shape[0]
+    general_stats = {
+        "time to predicti 100 sentences:": time_per_hundred_sentences,
+        "ratio of evaluated sentences": ratio_evaluated_sentences,
+    }
+
+    metrics_subpillars.to_csv(f"{args.output_data_dir}/results_subpillars.csv")
+    metrics_pillars.to_csv(f"{args.output_data_dir}/results_pillars.csv")
+    with open(f"{args.output_data_dir}/general_stats.json", "w") as f:
+        json.dump(general_stats, f)
