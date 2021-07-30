@@ -15,6 +15,7 @@ def revdict(d: Dict):
 
 
 def str2bool(v):
+    """Maps given string into a boolean value"""
     if isinstance(v, bool):
         return v
     if v.lower() in ("1", "y", "t", "yes", "true"):
@@ -23,6 +24,16 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError("Boolean value expected.")
+
+
+def str2list(v, sep=","):
+    """Maps given string into a list of string with separator"""
+    if isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        return v.split(sep)
+    else:
+        raise argparse.ArgumentTypeError("String value expected.")
 
 
 def build_mlp(
@@ -34,6 +45,8 @@ def build_mlp(
     batchnorm: bool = True,
     final_norm: bool = False,
 ) -> torch.nn.Sequential:
+    """Builds a multi-layer perceptron network"""
+
     # initial dense layer
     layers = []
     layers.append(
