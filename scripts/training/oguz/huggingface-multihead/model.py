@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -19,6 +19,7 @@ class MultiHeadTransformer(torch.nn.Module):
         freeze_backbone: bool = False,
         iterative: bool = False,
         use_gt_training: bool = True,
+        backbone_dim: Optional[int] = None,
     ):
         super().__init__()
         self.pooling = pooling
@@ -29,12 +30,18 @@ class MultiHeadTransformer(torch.nn.Module):
         self.backbone.config.problem_type = "multi_label_classification"
         self.backbone.trainable = not freeze_backbone
 
+        if not hasattr(self.backbone.config, "dim"):
+            assert backbone_dim is not None, "Model config does not include output dim!"
+            dim = backbone_dim
+        else:
+            dim = self.backbone.config.dim
+
         self.dropout = torch.nn.Dropout(dropout)
         self.heads = torch.nn.ModuleList()
 
         mlp_params = {
             "depth": num_layers,
-            "in_features": self.backbone.config.dim,
+            "in_features": dim,
             "bias": True,
             "batchnorm": False,
             "final_norm": False,
@@ -43,7 +50,7 @@ class MultiHeadTransformer(torch.nn.Module):
         if iterative:
             self.heads.append(
                 build_mlp(
-                    middle_features=np.sqrt(len(num_classes) * self.backbone.config.dim),
+                    middle_features=np.floor(np.sqrt(len(num_classes) * dim)).astype(int),
                     out_features=len(num_classes),
                     **mlp_params
                 )
@@ -52,7 +59,7 @@ class MultiHeadTransformer(torch.nn.Module):
         for i in range(num_heads):
             self.heads.append(
                 build_mlp(
-                    middle_features=np.sqrt(num_classes[i] * self.backbone.config.dim),
+                    middle_features=np.floor(np.sqrt(num_classes[i] * dim)).astype(int),
                     out_features=num_classes[i],
                     **mlp_params
                 )

@@ -38,6 +38,7 @@ if __name__ == "__main__":
     parser.add_argument("--split", type=str, nargs="+", default="subpillars_1d")
     parser.add_argument("--iterative", type=str2bool, default=False)
     parser.add_argument("--save_model", type=str2bool, default=False)
+    parser.add_argument("--model_dim", type=int, default=None, required=False)
     parser.add_argument("--model_name", type=str)
 
     # MLFlow related parameters
@@ -82,6 +83,7 @@ if __name__ == "__main__":
         freeze_backbone=args.freeze_backbone,
         iterative=args.iterative,
         use_gt_training=True,
+        backbone_dim=args.model_dim,
     )
 
     # form datasets out of pandas data frame
