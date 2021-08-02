@@ -95,7 +95,7 @@ class MultiHeadDataFrame(Dataset):
 
             self.target_encoding = {t: idx for idx, t in enumerate(uniq_targets)}
             self.target_encoding = revdict(self.target_encoding)
-            self.target_classes = len(self.target_encoding.keys())
+            self.target_classes = [len(self.target_encoding.keys())]
 
         self.logger.info(f"Automatically set target encodings: {self.target_encoding}")
         self.logger.info(f"Target size: [{self.target_classes}]")

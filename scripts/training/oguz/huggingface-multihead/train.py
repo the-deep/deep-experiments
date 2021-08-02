@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from transformers import AutoModel, AutoTokenizer, TrainingArguments
 
-from constants import PILLARS_1D, SUBPILLARS_1D
+from constants import PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
 from trainer import MultiHeadTrainer
@@ -34,6 +34,21 @@ if __name__ == "__main__":
         default="ce",
         choices=["ce", "focal"],
         help="Loss function: 'ce', 'focal'",
+    )
+    parser.add_argument(
+        "--target",
+        type=str,
+        default="subpillars_1d",
+        choices=[
+            "pillars",
+            "subpillars",
+            "pillars_1d",
+            "subpillars_1d",
+            "pillars_2d",
+            "subpillars_2d",
+            "sectors",
+        ],
+        help="Prediction target",
     )
     parser.add_argument("--split", type=str2list, default="subpillars_1d")
     parser.add_argument("--iterative", type=str2bool, default=False)
@@ -72,11 +87,22 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     backbone = AutoModel.from_pretrained(args.model_name)
 
+    # get target groups
+    if args.target == "subpillars_1d":
+        groups = SUBPILLARS_1D
+        group_names = PILLARS_1D
+    elif args.target == "subpillars" or args.target == "subpillars_2d":
+        groups = SUBPILLARS_2D
+        group_names = PILLARS_2D
+    else:
+        groups = None
+        group_names = None
+
     # build classifier model from backbone
     model = MultiHeadTransformer(
         backbone,
-        num_heads=len(PILLARS_1D),
-        num_classes=[len(group) for group in SUBPILLARS_1D],
+        num_heads=len(groups),
+        num_classes=[len(group) for group in groups],
         num_layers=args.num_layers,
         dropout=args.dropout,
         pooling=args.pooling,
@@ -91,9 +117,9 @@ if __name__ == "__main__":
         train_df,
         tokenizer=tokenizer,
         source="excerpt",
-        target="subpillars_1d",
-        groups=SUBPILLARS_1D,
-        group_names=PILLARS_1D,
+        target=args.target,
+        groups=groups,
+        group_names=group_names,
         filter=args.split,
         flatten=True,
     )
@@ -101,9 +127,9 @@ if __name__ == "__main__":
         test_df,
         tokenizer=tokenizer,
         source="excerpt",
-        target="subpillars_1d",
-        groups=SUBPILLARS_1D,
-        group_names=PILLARS_1D,
+        target=args.target,
+        groups=groups,
+        group_names=group_names,
         filter=args.split,
         flatten=True,
     )
@@ -148,7 +174,7 @@ if __name__ == "__main__":
             # group macro evaluation
             metrics.update(_prefix(_compute(preds_group, labels_group, "macro"), "pillar_macro_"))
             # per group evaluation
-            for i, pillar in enumerate(PILLARS_1D):
+            for i, pillar in enumerate(group_names):
                 metrics.update(
                     _prefix(
                         _compute(preds_group[:, i], labels_group[:, i], "binary"),
@@ -157,7 +183,7 @@ if __name__ == "__main__":
                 )
         else:
             labels = pred.label_ids
-            preds = pred.predictions > threshold
+            preds = pred.predictions
 
         # micro evaluation
         metrics.update(_prefix(_compute(preds, labels, "micro"), "subpillar_micro_"))
@@ -165,8 +191,8 @@ if __name__ == "__main__":
         metrics.update(_prefix(_compute(preds, labels, "macro"), "subpillar_macro_"))
         # per head evaluation
         idx = 0
-        for i, pillar in enumerate(PILLARS_1D):
-            idx_end = idx + len(SUBPILLARS_1D[i])
+        for i, pillar in enumerate(group_names):
+            idx_end = idx + len(groups[i])
 
             # per head micro evaluation
             metrics.update(
@@ -184,7 +210,7 @@ if __name__ == "__main__":
             )
 
             # per head target evaluation
-            for j, subpillar in enumerate(SUBPILLARS_1D[i]):
+            for j, subpillar in enumerate(groups[i]):
                 metrics.update(
                     _prefix(
                         _compute(preds[:, idx + j], labels[:, idx + j], "binary"),
@@ -248,6 +274,7 @@ if __name__ == "__main__":
 
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
+        mlflow.log_params({"groups": groups, "group_names": group_names})
 
         # set tags
         mlflow.set_tags({"split": args.split, "iterative": args.iterative})
