@@ -64,7 +64,6 @@ class CustomDataset(Dataset):
             "mask": torch.tensor(mask, dtype=torch.long),
             "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
         }
-
         targets = None
         if self.targets:
             target_indices = [
@@ -197,7 +196,6 @@ class Transformer(pl.LightningModule):
             process_group=None,
             dist_sync_fn=None,
         )
-
     @auto_move_data
     def forward(self, inputs):
         output = self.model(inputs)

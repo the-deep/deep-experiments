@@ -1,4 +1,6 @@
 from ast import literal_eval
+
+import os
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -122,6 +124,7 @@ def augment_data(df, n_synonym, n_swap):
 
     if n_swap:
         swap = naw.RandomWordAug(action="swap", aug_min=3, aug_max=5)
+
         swap_df = df
         swap_df.excerpt = swap_df.excerpt.apply(lambda x: swap.augment(x, n=n_swap))
 
@@ -155,7 +158,6 @@ def compute_weights(number_data_classes, n_tot):
 
 
 # EVALUATION
-
 
 def perfectEval(anonstring):
     try:
