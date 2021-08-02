@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 
 # import main folder for imports
 sys.path.append(os.path.abspath(os.getcwd()))
@@ -12,15 +13,33 @@ from sagemaker.pytorch import PyTorch
 from deep.constants import DEV_BUCKET, MLFLOW_SERVER, SAGEMAKER_ROLE
 from deep.utils import formatted_time
 
+# get args
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--task",
+    type=str,
+    default="1D",
+    choices=["1D", "2D"],
+)
+parser.add_argument("--debug", action="store_true", default=False)
+args, _ = parser.parse_known_args()
+
 # create SageMaker session
 sess = sagemaker.Session(default_bucket=DEV_BUCKET.name)
-job_name = f"1D-test-{formatted_time()}"
+job_name = f"{args.task}-test-{formatted_time()}"
 
 # load dataset
-train_df = pd.read_csv("data/frameworks_data/data_v0.5/data_v0.5_train.csv")
-val_df = pd.read_csv("data/frameworks_data/data_v0.5/data_v0.5_val.csv")
+dataset_version = "0.5" if args.task == "1D" else "0.4.4"
+target_field = "subpillars_1d" if args.task == "1D" else "subpillars"
+train_df = pd.read_csv(
+    f"data/frameworks_data/data_v{dataset_version}/data_v{dataset_version}_train.csv"
+)
+val_df = pd.read_csv(
+    f"data/frameworks_data/data_v{dataset_version}/data_v{dataset_version}_val.csv"
+)
 
-if "DEBUG" in os.environ and os.environ["DEBUG"]:
+# resample if debug
+if args.debug:
     train_df = train_df.sample(n=1000)
     val_df = val_df.sample(n=1000)
 
@@ -39,11 +58,14 @@ hyperparameters = {
     "epochs": 10,
     "model_name": "distilbert-base-uncased",
     "tracking_uri": MLFLOW_SERVER,
-    "experiment_name": "1D-multihead-transformers",
+    "experiment_name": f"{args.task}-multihead-transformers",
     "loss": "ce",
     "iterative": False,
     "pooling": False,
     "save_model": False,
+    "num_layers": 1,
+    "split": target_field,
+    "target": target_field,
 }
 
 # create SageMaker estimator
