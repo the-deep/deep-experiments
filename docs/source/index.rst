@@ -27,3 +27,8 @@
    aws/s3
    aws/terraform
 
+.. toctree::
+   :maxdepth: 1
+   :caption: Deployment:
+
+   deployment/deployment
