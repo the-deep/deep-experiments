@@ -9,7 +9,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 from transformers import AutoModel, AutoTokenizer, TrainingArguments
 
-from constants import PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
+from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
 from trainer import MultiHeadTrainer
@@ -61,8 +61,8 @@ if __name__ == "__main__":
     parser.add_argument("--experiment_name", type=str)
 
     # SageMaker parameters - data, model, and output directories
-    parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
-    parser.add_argument("--model-dir", type=str, default=os.environ["SM_MODEL_DIR"])
+    parser.add_argument("--output_data_dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
+    parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
     parser.add_argument("--n_gpus", type=str, default=os.environ["SM_NUM_GPUS"])
     parser.add_argument("--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"])
     parser.add_argument("--test_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
@@ -263,10 +263,32 @@ if __name__ == "__main__":
         eval_result = trainer.evaluate(eval_dataset=test_dataset)
 
         # write eval result to file which can be accessed later in s3 ouput
-        with open(os.path.join(args.output_data_dir, "eval_results.txt"), "w") as writer:
+        eval_file = os.path.join(args.output_data_dir, "eval_results.txt")
+        with open(eval_file, "w") as writer:
             print("***** Eval results *****")
             for key, value in sorted(eval_result.items()):
                 writer.write(f"{key} = {value}\n")
+        mlflow.log_artifact(eval_file)
+
+        # get labels
+        if args.target == "sectors":
+            labels = SECTORS
+        elif groups is not None:
+            if args.iterative:
+                labels = [[gn + ":"] + gs for gs, gn in zip(groups, group_names)]
+                labels = [label for ls in labels for label in ls]
+            else:
+                labels = [label for gs in groups for label in gs]
+        else:
+            labels = None
+
+        # write groups to a file which can be accessed later in s3 ouput
+        label_file = os.path.join(args.output_data_dir, "labels.txt")
+        with open(label_file, "w") as writer:
+            print("***** Labels *****")
+            for label in labels:
+                writer.write(f"{label}\n")
+        mlflow.log_artifact(label_file)
 
         # write eval result to MLFlow
         for key, value in sorted(eval_result.items()):
@@ -274,10 +296,14 @@ if __name__ == "__main__":
 
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
-        mlflow.log_params({"groups": groups, "group_names": group_names})
 
         # set tags
         mlflow.set_tags({"split": args.split, "iterative": args.iterative})
+
+        # log model
+        mlflow.pytorch.log_model(
+            trainer.model, artifact_path="model", registered_model_name="multi-head-transformer"
+        )
 
         # finish mlflow run
         mlflow.end_run()
