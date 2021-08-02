@@ -27,11 +27,16 @@ from transformers.optimization import (
 
 
 class CustomDataset(Dataset):
-    def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 128):
+    def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 150):
         self.tokenizer = tokenizer
         self.data = dataframe
 
-        self.excerpt_text = dataframe["excerpt"].tolist() if dataframe is not None else None
+        if dataframe is None:
+            self.excerpt_text = None
+        elif type(dataframe) is pd.Series:
+            self.excerpt_text = dataframe.tolist()
+        else:
+            self.excerpt_text = dataframe["excerpt"].tolist()
 
         try:
             self.targets = list(dataframe["target"])
@@ -64,6 +69,7 @@ class CustomDataset(Dataset):
             "mask": torch.tensor(mask, dtype=torch.long),
             "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
         }
+
         targets = None
         if self.targets:
             target_indices = [
@@ -97,15 +103,20 @@ class CustomDataset(Dataset):
 
 class Model(nn.Module):
     def __init__(
-        self, model_name_or_path: str, num_labels: int, dropout_rate=0.3, output_length=384
+        self,
+        model_name_or_path: str,
+        num_labels: int,
+        token_len: int,
+        dropout_rate=0.3,
+        output_length=384,
     ):
         super().__init__()
         self.l0 = AutoModel.from_pretrained(model_name_or_path)
         # batch normlisation to be integrated
-        self.l1 = torch.nn.Linear(output_length, 128)
-        self.l2 = torch.nn.BatchNorm1d(128)
+        self.l1 = torch.nn.Linear(output_length, token_len)
+        self.l2 = torch.nn.BatchNorm1d(token_len)
         self.l3 = torch.nn.Dropout(dropout_rate)
-        self.l4 = torch.nn.Linear(128, num_labels)
+        self.l4 = torch.nn.Linear(token_len, num_labels)
 
     def forward(self, inputs):
         output = self.l0(
@@ -141,7 +152,7 @@ class Transformer(pl.LightningModule):
         eval_batch_size: int = 32,
         eval_splits: Optional[list] = None,
         dropout_rate: float = 0.3,
-        max_len: int = 128,
+        max_len: int = 150,
         output_length=384,
         **kwargs,
     ):
@@ -152,7 +163,9 @@ class Transformer(pl.LightningModule):
         self.tagname_to_tagid = tagname_to_tagid
         self.num_labels = len(tagname_to_tagid)
         self.max_len = max_len
-        self.model = Model(model_name_or_path, self.num_labels, dropout_rate, self.output_length)
+        self.model = Model(
+            model_name_or_path, self.num_labels, max_len, dropout_rate, self.output_length
+        )
         self.tokenizer = tokenizer
         self.val_params = val_params
 
@@ -356,9 +369,8 @@ class Transformer(pl.LightningModule):
             if return_all:
                 return (
                     np.array(predictions),
-                    y_true_final,
-                    indexes_final,
-                    zip(indexes, logit_predictions),
+                    np.array(y_true_final),
+                    zip(indexes, logit_predictions, y_true),
                 )
 
             return np.array(predictions), np.array(y_true_final)

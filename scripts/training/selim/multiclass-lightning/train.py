@@ -18,7 +18,6 @@ from generate_models import train_on_specific_targets
 
 logging.basicConfig(level=logging.INFO)
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -75,7 +74,6 @@ if __name__ == "__main__":
     )
 
     tags_ids = tagname_to_id(all_dataset.target)
-
     list_tags = list(tags_ids.keys())
 
     number_data_classes = []
@@ -101,9 +99,7 @@ if __name__ == "__main__":
         "mode": "max",
     }
     dirpath_pillars = str(f"{args.model_dir}/checkpoints-subpillars-{log_dir_name}")
-    checkpoint_callback_pillars = ModelCheckpoint(
-        dirpath=dirpath_pillars, **checkpoint_callback_params
-    )
+    checkpoint_callback_pillars = ModelCheckpoint(filename="model", **checkpoint_callback_params)
 
     model_subpillars = train_on_specific_targets(
         train_df,

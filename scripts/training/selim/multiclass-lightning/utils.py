@@ -1,6 +1,5 @@
 from ast import literal_eval
 
-
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -39,7 +38,9 @@ def tagname_to_id(target):
     return tagname_to_tagid
 
 
-def read_merge_data(TRAIN_PATH, VAL_PATH, data_format: str = "csv"):
+def read_merge_data(
+    TRAIN_PATH, VAL_PATH, training_column: str = "subpillars", data_format: str = "csv"
+):
 
     if data_format == "pickle":
         train_df = pd.read_pickle(f"{TRAIN_PATH}/train.pickle")
@@ -50,8 +51,8 @@ def read_merge_data(TRAIN_PATH, VAL_PATH, data_format: str = "csv"):
         val_df = pd.read_csv(VAL_PATH)
 
     all_dataset = pd.concat([train_df, val_df])[
-        ["entry_id", "excerpt", "subpillars", "language"]
-    ].rename(columns={"subpillars": "target"})
+        ["entry_id", "excerpt", training_column, "language"]
+    ].rename(columns={training_column: "target"})
 
     # Keep only unique values in pillars
     all_dataset["target"] = all_dataset["target"].apply(lambda x: clean_rows(x))
@@ -124,7 +125,6 @@ def augment_data(df, n_synonym, n_swap):
 
     if n_swap:
         swap = naw.RandomWordAug(action="swap", aug_min=3, aug_max=5)
-
         swap_df = df
         swap_df.excerpt = swap_df.excerpt.apply(lambda x: swap.augment(x, n=n_swap))
 
@@ -148,7 +148,7 @@ def compute_weights(number_data_classes, n_tot):
     list of weights used for training
     """
 
-    number_classes = len(number_data_classes)
+    number_classes = 2
     return list(
         [
             np.sqrt(n_tot / (number_classes * number_data_class))
