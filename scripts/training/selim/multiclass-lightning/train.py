@@ -43,7 +43,6 @@ if __name__ == "__main__":
     # parser.add_argument("--n_classes", type=int, default=6)
     parser.add_argument("--method_language", type=str, default="keep all")
 
-
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
@@ -51,7 +50,6 @@ if __name__ == "__main__":
     parser.add_argument("--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"])
     parser.add_argument("--val_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
     args, _ = parser.parse_known_args()
-
 
     # Set up logging
     logger = logging.getLogger(__name__)
@@ -64,28 +62,19 @@ if __name__ == "__main__":
     # load datasets
 
     ########################################
-    
 
-    print('importing data ............')
-    all_dataset = read_merge_data (args.training_dir, args.val_dir, data_format='pickle')
+    print("importing data ............")
+    all_dataset = read_merge_data(args.training_dir, args.val_dir, data_format="pickle")
 
-    train_params = {
-        'batch_size': args.train_batch_size,
-        'shuffle': True,
-        'num_workers': 4
-    }
+    train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 4}
 
-    val_params = {
-        'batch_size': args.val_batch_size,
-        'shuffle': False,
-        'num_workers': 4
-        }
+    val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 4}
 
-    train_df, val_df = preprocess_data(all_dataset, 
-                                   perform_augmentation=False,
-                                   method=args.method_language)
-    
-    tags_ids = tagname_to_id (all_dataset.target)
+    train_df, val_df = preprocess_data(
+        all_dataset, perform_augmentation=False, method=args.method_language
+    )
+
+    tags_ids = tagname_to_id(all_dataset.target)
 
     list_tags = list(tags_ids.keys())
 
@@ -155,4 +144,3 @@ if __name__ == "__main__":
     metrics_pillars.to_csv(f"{args.output_data_dir}/results_pillars.csv")
     with open(f"{args.output_data_dir}/general_stats.json", "w") as f:
         json.dump(general_stats, f)
-

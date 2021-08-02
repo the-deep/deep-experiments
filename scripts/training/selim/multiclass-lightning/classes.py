@@ -196,6 +196,7 @@ class Transformer(pl.LightningModule):
             process_group=None,
             dist_sync_fn=None,
         )
+
     @auto_move_data
     def forward(self, inputs):
         output = self.model(inputs)

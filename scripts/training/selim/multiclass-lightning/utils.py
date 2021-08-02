@@ -1,6 +1,6 @@
 from ast import literal_eval
 
-import os
+
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -158,6 +158,7 @@ def compute_weights(number_data_classes, n_tot):
 
 
 # EVALUATION
+
 
 def perfectEval(anonstring):
     try:
