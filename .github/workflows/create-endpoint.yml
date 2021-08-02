@@ -1,0 +1,31 @@
+name: create-endpoint
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'scripts/deployment/create_endpoint/*'
+      - '.github/workflows/create-endpoint.yml'
+
+
+jobs:
+  documentation:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v1
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    - name: Build Docker
+      run: |
+        docker build . -f scripts/deployment/create_endpoint/Dockerfile -t create-endpoint --no-cache
+    - name: Deploy on ECR
+      run: |
+        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 961104659532.dkr.ecr.us-east-1.amazonaws.com
+        docker tag create-endpoint 961104659532.dkr.ecr.us-east-1.amazonaws.com/create-endpoint
+        docker push 961104659532.dkr.ecr.us-east-1.amazonaws.com/create-endpoint

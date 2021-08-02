@@ -1,8 +1,0 @@
-streamlit==0.84.1
-pdfminer==20191125
-nltk==3.6.2
-pandas==1.2.4
-watchdog==2.1.2
-streamlit-aggrid==0.1.9
-boto3==1.17.76
-cloudpathlib==0.4.0

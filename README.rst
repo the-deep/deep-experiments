@@ -74,25 +74,6 @@ Pull the data:
 
     dvc pull
 
-Test Environment
-~~~~~~~~~~~~~~~~~
-
-We incorporated in the repo the ``streamlit`` web application. In the future we will put it in
-another repo.
-
-To use it locally:
-
-.. code-block:: bash
-
-    make streamlit-install
-    streamlit run scripts/testing/subpillar_pred_with_st.py
-
-The ``streamlit`` web app is automatically built and pushed to ECR via the Github CI.
-We use Beanstalk to serve the docker image.
-`Here <http://test-env.eba-crsiq2wb.us-east-1.elasticbeanstalk.com>`_ you can see the
-live test environment.
-
-
 Folder Structure
 ----------------
 
