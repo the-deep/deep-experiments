@@ -29,6 +29,7 @@ class MultiHeadDataFrame(Dataset):
             least one target in `sector` or in `pillar2d` fields.
         flatten: flatten group targets to 1D for convenience
         online: online or offline tokenization
+        inference: if True, does not process target or groups
         tokenizer_max_len: maximum output length for the tokenizer
     """
 
@@ -43,21 +44,20 @@ class MultiHeadDataFrame(Dataset):
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
         online: bool = False,
+        inference: bool = False,
         tokenizer_max_len: int = 200,
     ):
         self.group_names = group_names
         self.flatten = flatten
         self.tokenizer = tokenizer
         self.online = online
+        self.inference = inference
         self.logger = logging.getLogger()
 
         # read dataframe manually if given as path
         if isinstance(dataframe, str):
             self.logger.info(f"Loading dataframe: {dataframe}")
             dataframe = pd.read_pickle(dataframe)
-
-        # apply literal eval to have lists in target
-        dataframe[target] = dataframe[target].apply(literal_eval)
 
         # cast filter to array
         if isinstance(filter, str):
@@ -86,6 +86,9 @@ class MultiHeadDataFrame(Dataset):
             )
 
         if self.online:
+            # ensure that we are in training
+            assert not self.inference, "Online tokenization is only supported in training-time"
+
             # save data as exceprt
             self.data = dataframe[source].tolist()
         else:
@@ -93,34 +96,40 @@ class MultiHeadDataFrame(Dataset):
             self.logger.info("Applying offline tokenization")
             self.data = tokenizer(dataframe[source].tolist(), **self.tokenizer_options)
 
-        # prepare target encoding
-        all_targets = np.hstack(dataframe[target].to_numpy())
-        uniq_targets = np.unique(all_targets)
+        if not self.inference:
+            # apply literal eval to have lists in target
+            dataframe[target] = dataframe[target].apply(literal_eval)
 
-        # cluster into groups
-        if groups:
-            self.group_encoding = {t: idx for idx, group in enumerate(groups) for t in group}
-            self.group_decoding = {idx: group for idx, group in enumerate(groups)}
+            # prepare target encoding
+            all_targets = np.hstack(dataframe[target].to_numpy())
+            uniq_targets = np.unique(all_targets)
 
-            self.target_encoding = [{t: idx for idx, t in enumerate(group)} for group in groups]
-            self.target_decoding = [revdict(encoding) for encoding in self.target_encoding]
-            self.target_classes = [len(encoding.keys()) for encoding in self.target_encoding]
-        else:
-            self.group_encoding = {t: 0 for t in uniq_targets}
-            self.group_decoding = {0: uniq_targets}
+            if groups:
+                # process given groups
+                self.group_encoding = {t: idx for idx, group in enumerate(groups) for t in group}
+                self.group_decoding = {idx: group for idx, group in enumerate(groups)}
 
-            self.target_encoding = {t: idx for idx, t in enumerate(uniq_targets)}
-            self.target_encoding = revdict(self.target_encoding)
-            self.target_classes = [len(self.target_encoding.keys())]
+                self.target_encoding = [{t: idx for idx, t in enumerate(group)} for group in groups]
+                self.target_decoding = [revdict(encoding) for encoding in self.target_encoding]
+                self.target_classes = [len(encoding.keys()) for encoding in self.target_encoding]
+            else:
+                # single group encoding - decoding
+                self.group_encoding = {t: 0 for t in uniq_targets}
+                self.group_decoding = {0: uniq_targets}
 
-        self.logger.info(f"Automatically set target encodings: {self.target_encoding}")
-        self.logger.info(f"Target size: [{self.target_classes}]")
+                self.target_encoding = {t: idx for idx, t in enumerate(uniq_targets)}
+                self.target_encoding = revdict(self.target_encoding)
+                self.target_classes = [len(self.target_encoding.keys())]
 
-        # prepare targets
-        self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
+                self.logger.info(f"Using target encodings: {self.target_encoding}")
+                self.logger.info(f"Target size: [{self.target_classes}]")
 
-        if groups:
-            self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+                # prepare targets
+                self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
+
+                # prepare group targets
+                if groups:
+                    self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
 
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
@@ -181,17 +190,18 @@ class MultiHeadDataFrame(Dataset):
         else:
             item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
 
-        if self.flatten:
-            item["labels"] = torch.tensor(self.target[idx])
-        else:
-            item.update(
-                {
-                    f"labels_{self.group_names[i]}": torch.tensor(self.target[idx][i])
-                    for i in range(len(self.target_classes))
-                }
-            )
+        if self.inference:
+            if self.flatten:
+                item["labels"] = torch.tensor(self.target[idx])
+            else:
+                item.update(
+                    {
+                        f"labels_{self.group_names[i]}": torch.tensor(self.target[idx][i])
+                        for i in range(len(self.target_classes))
+                    }
+                )
 
-        if self.group is not None:
-            item["groups"] = torch.tensor(self.group[idx])
+            if self.group is not None:
+                item["groups"] = torch.tensor(self.group[idx])
 
         return item
