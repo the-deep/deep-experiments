@@ -1,2 +1,2 @@
 transformers==4.6.1
-mlflow==1.12.1
+mlflow==1.18.0

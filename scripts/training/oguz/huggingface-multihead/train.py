@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import sys
+import json
 
 import mlflow
 import pandas as pd
@@ -12,16 +13,17 @@ from transformers import AutoModel, AutoTokenizer, TrainingArguments
 from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
+from mlflow import MLFlowWrapper
 from trainer import MultiHeadTrainer
-from utils import str2bool, str2list
+from utils import str2bool, str2list, get_conda_env_specs
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # hyperparameters sent by the client
     parser.add_argument("--epochs", type=int, default=3)
-    parser.add_argument("--train-batch-size", type=int, default=32)
-    parser.add_argument("--eval-batch-size", type=int, default=64)
+    parser.add_argument("--train_batch_size", type=int, default=32)
+    parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--warmup_steps", type=int, default=500)
     parser.add_argument("--learning_rate", type=str, default=5e-5)
     parser.add_argument("--dropout", type=float, default=0.3)
@@ -97,6 +99,10 @@ if __name__ == "__main__":
     else:
         groups = None
         group_names = None
+
+    # sanity check for iterative option
+    if args.iterative:
+        assert groups is not None, "Provide groups for the 'iterative' option"
 
     # build classifier model from backbone
     model = MultiHeadTransformer(
@@ -270,39 +276,72 @@ if __name__ == "__main__":
                 writer.write(f"{key} = {value}\n")
         mlflow.log_artifact(eval_file)
 
+        # write eval result to mlflow
+        for key, value in sorted(eval_result.items()):
+            mlflow.log_metric(key, value)
+
         # get labels
-        if args.target == "sectors":
+        if groups is not None:
+            labels = [label for gs in groups for label in gs]
+        elif args.target == "sectors":
             labels = SECTORS
-        elif groups is not None:
-            if args.iterative:
-                labels = [[gn + ":"] + gs for gs, gn in zip(groups, group_names)]
-                labels = [label for ls in labels for label in ls]
-            else:
-                labels = [label for gs in groups for label in gs]
         else:
             labels = None
 
-        # write groups to a file which can be accessed later in s3 ouput
+        # output labels artifact
         label_file = os.path.join(args.output_data_dir, "labels.txt")
         with open(label_file, "w") as writer:
-            print("***** Labels *****")
             for label in labels:
                 writer.write(f"{label}\n")
         mlflow.log_artifact(label_file)
 
-        # write eval result to MLFlow
-        for key, value in sorted(eval_result.items()):
-            mlflow.log_metric(key, value)
+        if args.iterative:
+            # get gorups
+            labels = [label for label in group_names]
+
+            # output groups artifact
+            group_file = os.path.join(args.output_data_dir, "groups.txt")
+            with open(group_file, "w") as writer:
+                for label in labels:
+                    writer.write(f"{label}\n")
+            mlflow.log_artifact(group_file)
 
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
 
-        # set tags
+        # set experiment tags
         mlflow.set_tags({"split": args.split, "iterative": args.iterative})
 
-        # log model
+        # output inference artifact
+        infer_file = os.path.join(args.output_data_dir, "infer_params.json")
+        with open(infer_file, "w") as writer:
+            json.dump(
+                {
+                    "dataset": {
+                        "source": "excerpt",
+                        "target": args.target,
+                        "flatten": True,
+                    },
+                    "dataloader": {
+                        "batch_size": args.eval_batch_size,
+                        "shuffle": False,
+                        "num_workers": 0,
+                    },
+                    "threshold": {"group": 0.5, "target": 0.5},
+                },
+                writer,
+            )
+        mlflow.log_artifact(infer_file)
+
+        # log model with an inference wrapper
+        mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
         mlflow.pytorch.log_model(
-            trainer.model, artifact_path="model", registered_model_name="multi-head-transformer"
+            mlflow_wrapper,
+            artifact_path="model",
+            registered_model_name="multi-head-transformer",
+            artifacts={"infer_params": infer_file},
+            conda_env=get_conda_env_specs(),
+            code_path=[__file__, "data.py", "model.py"],
         )
 
         # finish mlflow run

@@ -1,9 +1,12 @@
 from collections import OrderedDict
 from typing import Dict
+
 import argparse
+from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+import mlflow
 
 
 def revdict(d: Dict):
@@ -34,6 +37,18 @@ def str2list(v, sep=","):
         return v.split(sep)
     else:
         raise argparse.ArgumentTypeError("String value expected.")
+
+
+def get_conda_env_specs():
+    requirement_file = str(Path(__file__).parent / "requirements.txt")
+    with open(requirement_file, "r") as f:
+        requirements = f.readlines()
+    requirements = [x.replace("\n", "") for x in requirements]
+
+    default_env = mlflow.pytorch.get_default_conda_env()
+    pip_dependencies = default_env["dependencies"][2]["pip"]
+    pip_dependencies.extend(requirements)
+    return default_env
 
 
 def build_mlp(
