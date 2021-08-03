@@ -29,6 +29,7 @@ class MultiHeadDataFrame(Dataset):
             least one target in `sector` or in `pillar2d` fields.
         flatten: flatten group targets to 1D for convenience
         online: online or offline tokenization
+        tokenizer_max_len: maximum output length for the tokenizer
     """
 
     def __init__(
@@ -42,6 +43,7 @@ class MultiHeadDataFrame(Dataset):
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
         online: bool = False,
+        tokenizer_max_len: int = 200,
     ):
         self.group_names = group_names
         self.flatten = flatten
@@ -69,13 +71,27 @@ class MultiHeadDataFrame(Dataset):
             dataframe = dataframe[pos]
             self.logger.info(f"Filtered data points with non-empty (or) {','.join(filter)} values")
 
+        # prepare tokenizer options
+        self.tokenizer_options = {
+            "truncation": True,
+            "padding": "max_length",
+            "add_special_tokens": True,
+            "return_token_type_ids": True,
+            "max_length": min(tokenizer_max_len, tokenizer.model_max_length),
+        }
+        if tokenizer.model_max_length < tokenizer_max_len:
+            self.logger.info(
+                f"Using maximum model length: {tokenizer.model_max_length} instead"
+                f"of given length: {tokenizer_max_len}"
+            )
+
         if self.online:
             # save data as exceprt
             self.data = dataframe[source].tolist()
         else:
             # tokenize and save source data
-            self.logger.info(f"Applying offline tokenization")
-            self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
+            self.logger.info("Applying offline tokenization")
+            self.data = tokenizer(dataframe[source].tolist(), **self.tokenizer_options)
 
         # prepare target encoding
         all_targets = np.hstack(dataframe[target].to_numpy())
@@ -160,7 +176,7 @@ class MultiHeadDataFrame(Dataset):
 
     def __getitem__(self, idx):
         if self.online:
-            data = self.tokenizer(self.data[idx : idx + 1], truncation=True, padding=True)
+            data = self.tokenizer(self.data[idx : idx + 1], **self.tokenizer_options)
             item = {key: torch.tensor(val[0]) for key, val in data.items()}
         else:
             item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
