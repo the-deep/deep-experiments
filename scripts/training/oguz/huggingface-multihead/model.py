@@ -65,7 +65,7 @@ class MultiHeadTransformer(torch.nn.Module):
                 )
             )
 
-    def forward(self, inputs, gt_groups=None):
+    def forward(self, inputs, gt_groups=None, group_threshold=0.5):
         # get hidden representation
         backbone_outputs = self.backbone(**inputs)
         if self.pooling:
@@ -79,8 +79,12 @@ class MultiHeadTransformer(torch.nn.Module):
             out_groups = self.heads[0](hidden)
 
             # get sample groups
-            # TODO: dynamic threshold?
-            groups = gt_groups if self.training and self.use_gt_training else out_groups > 0.5
+            # TODO: dynamic threshold (per group?)
+            groups = (
+                gt_groups
+                if self.training and self.use_gt_training
+                else out_groups > group_threshold
+            )
 
             # execute each classification task
             out_targets = []
