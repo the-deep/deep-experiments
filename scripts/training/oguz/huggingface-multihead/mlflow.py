@@ -63,9 +63,11 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
                     batch_groups, batch_targets = self.model.forward(
                         batch, group_threshold=self.infer_params["threshold"]["group"]
                     )
+                    batch_groups = torch.sigmoid(batch_groups)
+                    batch_targets = torch.sigmoid(batch_targets)
                     logits_groups.append(batch_groups.detach().numpy())
                 else:
-                    batch_targets = self.model.forward(batch)
+                    batch_targets = torch.sigmoid(self.model.forward(batch))
                 logits_targets.append(batch_targets.detach().numpy())
 
         logits_targets = np.concatenate(logits_targets, axis=0)
@@ -82,7 +84,7 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
         }
 
         if self.model.iterative:
-            logits_groups = np.concatenate(logits_groups, axis=0)
+            logits_groups = np.sigmoidnp.concatenate(logits_groups, axis=0)
             preds_groups = extract_predictions(
                 logits_groups, self.infer_params["threshold"]["group"]
             )
