@@ -13,7 +13,7 @@ from transformers import AutoModel, AutoTokenizer, TrainingArguments
 from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
-from mlflow import MLFlowWrapper
+from infer import MLFlowWrapper
 from trainer import MultiHeadTrainer
 from utils import str2bool, str2list, get_conda_env_specs
 
