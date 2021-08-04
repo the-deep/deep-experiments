@@ -52,9 +52,9 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
         dataloader = DataLoader(dataset, **self.infer_params["dataloader"])
 
         # containers for logits
-        logits_targets = []
+        probs_targets = []
         if self.model.iterative:
-            logits_groups = []
+            probs_groups = []
 
         # forward pass
         with torch.no_grad():
@@ -65,35 +65,33 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
                     )
                     batch_groups = torch.sigmoid(batch_groups)
                     batch_targets = torch.sigmoid(batch_targets)
-                    logits_groups.append(batch_groups.detach().numpy())
+                    probs_groups.append(batch_groups.detach().numpy())
                 else:
                     batch_targets = torch.sigmoid(self.model.forward(batch))
-                logits_targets.append(batch_targets.detach().numpy())
+                probs_targets.append(batch_targets.detach().numpy())
 
-        logits_targets = np.concatenate(logits_targets, axis=0)
-        preds_targets = extract_predictions(
-            logits_targets, self.infer_params["threshold"]["target"]
-        )
+        probs_targets = np.concatenate(probs_targets, axis=0)
+        preds_targets = extract_predictions(probs_targets, self.infer_params["threshold"]["target"])
         output = {
-            "logits": [
+            "probabilities_target": [
                 ",".join(f"{score:.3f}")
-                for i in range(logits_targets.shape[0])
-                for score in logits_targets[i, :].tolist()
+                for i in range(probs_targets.shape[0])
+                for score in probs_targets[i, :].tolist()
             ],
-            "predictions": [",".join(preds) for preds in preds_targets],
+            "predictions_target": [",".join(preds) for preds in preds_targets],
         }
 
         if self.model.iterative:
-            logits_groups = np.sigmoidnp.concatenate(logits_groups, axis=0)
+            probs_groups = np.concatenate(probs_groups, axis=0)
             preds_groups = extract_predictions(
-                logits_groups, self.infer_params["threshold"]["group"]
+                probs_groups, self.infer_params["threshold"]["group"]
             )
             output.extend(
                 {
-                    "logits_group": [
+                    "probabilities_group": [
                         ",".join(f"{score:.3f}")
-                        for i in range(logits_groups.shape[0])
-                        for score in logits_groups[i, :].tolist()
+                        for i in range(probs_groups.shape[0])
+                        for score in probs_groups[i, :].tolist()
                     ],
                     "predictions_group": [",".join(preds) for preds in preds_groups],
                 }
