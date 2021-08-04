@@ -333,17 +333,18 @@ if __name__ == "__main__":
                 writer,
             )
         mlflow.log_artifact(infer_file)
+        infer_file_uri = mlflow.get_artifact_uri(infer_file)
 
         # log model with an inference wrapper
         if args.deploy:
             mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
             mlflow.pyfunc.log_model(
-                mlflow_wrapper,
+                python_model=mlflow_wrapper,
                 artifact_path="model",
                 registered_model_name="multi-head-transformer",
-                artifacts={"infer_params": infer_file},
+                artifacts={"infer_params": infer_file_uri},
                 conda_env=get_conda_env_specs(),
-                code_path=[__file__, "data.py", "model.py"],
+                code_path=[__file__, "data.py", "model.py", "wrapper.py"],
             )
 
         # finish mlflow run
