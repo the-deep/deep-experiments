@@ -295,7 +295,7 @@ if __name__ == "__main__":
         with open(label_file, "w") as writer:
             for label in labels:
                 writer.write(f"{label}\n")
-        mlflow.log_artifact(label_file)
+        artifacts = {"labels": label_file}
 
         if args.iterative:
             # get gorups
@@ -307,7 +307,7 @@ if __name__ == "__main__":
             with open(group_file, "w") as writer:
                 for label in labels:
                     writer.write(f"{label}\n")
-            mlflow.log_artifact(group_file)
+            artifacts.update({"groups": group_file})
 
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
@@ -335,10 +335,7 @@ if __name__ == "__main__":
                 },
                 writer,
             )
-        mlflow.log_artifact(infer_file)
-        infer_file_uri = mlflow.get_artifact_uri("infer_params.json")
-
-        # log model with an inference wrapper
+            artifacts.update({"infer_params": infer_file})
 
         if args.deploy:
             # log model with an inference wrapper
@@ -350,7 +347,7 @@ if __name__ == "__main__":
                 python_model=mlflow_wrapper,
                 artifact_path="model",
                 registered_model_name="multi-head-transformer",
-                artifacts={"infer_params": infer_file_uri},
+                artifacts=artifacts,
                 conda_env=get_conda_env_specs(),
                 code_path=[__file__, data_file],
             )

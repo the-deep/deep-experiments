@@ -26,7 +26,7 @@ args, _ = parser.parse_known_args()
 
 # create SageMaker session
 sess = sagemaker.Session(default_bucket=DEV_BUCKET.name)
-job_name = f"{args.task}-test-{formatted_time()}"
+job_name = f"{args.task}-train-{formatted_time()}"
 
 # load dataset
 dataset_version = "0.5" if args.task == "1D" else "0.4.4"
@@ -55,7 +55,7 @@ val_df.to_pickle(val_path, protocol=4)
 
 # hyperparameters for the run
 hyperparameters = {
-    "epochs": 10,
+    "epochs": 1,
     "model_name": "distilbert-base-uncased",
     "tracking_uri": MLFLOW_SERVER,
     "experiment_name": f"{args.task}-multihead-transformers",
