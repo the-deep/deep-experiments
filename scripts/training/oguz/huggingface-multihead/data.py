@@ -124,12 +124,12 @@ class MultiHeadDataFrame(Dataset):
                 self.logger.info(f"Using target encodings: {self.target_encoding}")
                 self.logger.info(f"Target size: [{self.target_classes}]")
 
-                # prepare targets
-                self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
+            # prepare targets
+            self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
 
-                # prepare group targets
-                if groups:
-                    self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+            # prepare group targets
+            if groups:
+                self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
 
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
