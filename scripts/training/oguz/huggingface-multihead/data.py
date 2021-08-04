@@ -190,7 +190,7 @@ class MultiHeadDataFrame(Dataset):
         else:
             item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
 
-        if self.inference:
+        if not self.inference:
             if self.flatten:
                 item["labels"] = torch.tensor(self.target[idx])
             else:
