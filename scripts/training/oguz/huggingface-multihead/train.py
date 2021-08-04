@@ -270,9 +270,9 @@ if __name__ == "__main__":
         eval_result = trainer.evaluate(eval_dataset=test_dataset)
 
         # write eval result to file which can be accessed later in s3 ouput
+        logging.info("Logging eval results")
         eval_file = os.path.join(args.output_data_dir, "eval_results.txt")
         with open(eval_file, "w") as writer:
-            print("***** Eval results *****")
             for key, value in sorted(eval_result.items()):
                 writer.write(f"{key} = {value}\n")
         mlflow.log_artifact(eval_file)
@@ -282,6 +282,7 @@ if __name__ == "__main__":
             mlflow.log_metric(key, value)
 
         # get labels
+        logging.info("Logging model labels")
         if groups is not None:
             labels = [label for gs in groups for label in gs]
         elif args.target == "sectors":
@@ -298,6 +299,7 @@ if __name__ == "__main__":
 
         if args.iterative:
             # get gorups
+            logging.info("Logging model groups")
             labels = [label for label in group_names]
 
             # output groups artifact
@@ -314,6 +316,7 @@ if __name__ == "__main__":
         mlflow.set_tags({"split": args.split, "iterative": args.iterative})
 
         # output inference artifact
+        logging.info("Logging inference params")
         infer_file = os.path.join(args.output_data_dir, "infer_params.json")
         with open(infer_file, "w") as writer:
             json.dump(
@@ -333,10 +336,15 @@ if __name__ == "__main__":
                 writer,
             )
         mlflow.log_artifact(infer_file)
-        infer_file_uri = mlflow.get_artifact_uri(infer_file)
+        infer_file_uri = mlflow.get_artifact_uri("infer_params.json")
 
         # log model with an inference wrapper
+
         if args.deploy:
+            # log model with an inference wrapper
+            logging.info("Logging deployment model")
+            data_file = os.path.join(os.path.dirname(__file__), "data.py")
+
             mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
             mlflow.pyfunc.log_model(
                 python_model=mlflow_wrapper,
@@ -344,7 +352,7 @@ if __name__ == "__main__":
                 registered_model_name="multi-head-transformer",
                 artifacts={"infer_params": infer_file_uri},
                 conda_env=get_conda_env_specs(),
-                code_path=[__file__, "data.py", "model.py", "wrapper.py"],
+                code_path=[__file__, data_file],
             )
 
         # finish mlflow run
