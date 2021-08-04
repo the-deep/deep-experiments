@@ -76,7 +76,7 @@ class MultiHeadDataFrame(Dataset):
             "truncation": True,
             "padding": "max_length",
             "add_special_tokens": True,
-            "return_token_type_ids": True,
+            "return_token_type_ids": "token_type_ids" in tokenizer.model_input_names,
             "max_length": min(tokenizer_max_len, tokenizer.model_max_length),
         }
         if tokenizer.model_max_length < tokenizer_max_len:
