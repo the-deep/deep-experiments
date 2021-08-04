@@ -13,7 +13,7 @@ from transformers import AutoModel, AutoTokenizer, TrainingArguments
 from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
 from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
-from infer import MLFlowWrapper
+from wrapper import MLFlowWrapper
 from trainer import MultiHeadTrainer
 from utils import str2bool, str2list, get_conda_env_specs
 
@@ -61,6 +61,7 @@ if __name__ == "__main__":
     # MLFlow related parameters
     parser.add_argument("--tracking_uri", type=str)
     parser.add_argument("--experiment_name", type=str)
+    parser.add_argument("--deploy", type=str2bool, default=True)
 
     # SageMaker parameters - data, model, and output directories
     parser.add_argument("--output_data_dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -334,15 +335,16 @@ if __name__ == "__main__":
         mlflow.log_artifact(infer_file)
 
         # log model with an inference wrapper
-        mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
-        mlflow.pytorch.log_model(
-            mlflow_wrapper,
-            artifact_path="model",
-            registered_model_name="multi-head-transformer",
-            artifacts={"infer_params": infer_file},
-            conda_env=get_conda_env_specs(),
-            code_path=[__file__, "data.py", "model.py"],
-        )
+        if args.deploy:
+            mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
+            mlflow.pyfunc.log_model(
+                mlflow_wrapper,
+                artifact_path="model",
+                registered_model_name="multi-head-transformer",
+                artifacts={"infer_params": infer_file},
+                conda_env=get_conda_env_specs(),
+                code_path=[__file__, "data.py", "model.py"],
+            )
 
         # finish mlflow run
         mlflow.end_run()
