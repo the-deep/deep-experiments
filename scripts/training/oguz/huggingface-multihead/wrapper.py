@@ -6,7 +6,7 @@ sys.path.append(".")
 import pandas as pd
 import numpy as np
 import torch
-from mlflow.pyfunc import PythonModel
+import mlflow
 from torch.utils.data import DataLoader
 
 from data import MultiHeadDataFrame
@@ -21,7 +21,7 @@ def extract_predictions(logits, threshold):
     return preds
 
 
-class MLFlowWrapper(PythonModel):
+class MLFlowWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self, tokenizer, model):
         self.tokenizer = tokenizer
         self.model = model.eval()
