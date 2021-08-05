@@ -21,10 +21,10 @@ parser.add_argument(
     default="1D",
     choices=["1D", "2D"],
 )
+parser.add_argument("--dataset", type=str, default=None, required=True)
+parser.add_argument("--model_uri", type=str, default=None, required=True)
+parser.add_argument("--source", type=str, default="excerpt")
 parser.add_argument("--debug", action="store_true", default=False)
-parser.add_argument("--dataset", type=str, default=None)
-parser.add_argument("--target", type=str, default="target")
-parser.add_argument("--model_uri", type=str, default=None)
 args, _ = parser.parse_known_args()
 
 # create SageMaker session
@@ -35,6 +35,7 @@ job_name = f"{args.task}-infer-{formatted_time()}"
 
 # load dataset
 infer_df = pd.read_csv(args.dataset)
+infer_df.rename(columns={args.source: "excerpt"}, inplace=True)
 if args.debug:
     infer_df = infer_df.sample(n=1000)
 
@@ -49,7 +50,6 @@ infer_df.to_pickle(
 # hyperparameters for inference
 hyperparameters = {
     "model_uri": args.model_uri,
-    "target": args.target,
 }
 
 # create SageMaker estimator
