@@ -55,7 +55,7 @@ val_df.to_pickle(val_path, protocol=4)
 
 # hyperparameters for the run
 hyperparameters = {
-    "epochs": 1,
+    "epochs": 10,
     "model_name": "distilbert-base-uncased",
     "tracking_uri": MLFLOW_SERVER,
     "experiment_name": f"{args.task}-multihead-transformers",
