@@ -28,8 +28,17 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
         super().__init__()
 
     def load_context(self, context):
+        # process labels
+        with open(context.artifacts["labels"], "r") as f:
+            self.labels = [line.strip() for line in f.readlines()]
+
+        # process groups
+        if self.model.iterative:
+            with open(context.artifacts["groups"], "r") as f:
+                self.groups = [line.strip() for line in f.readlines()]
+
         # process inference params
-        with open(context["infer_params"], "r") as f:
+        with open(context.artifacts["infer_params"], "r") as f:
             self.infer_params = json.load(f)
 
         # sanity checks for dataset params
