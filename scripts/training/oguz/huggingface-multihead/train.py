@@ -316,6 +316,9 @@ if __name__ == "__main__":
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
 
+        # log tokenizer parameters
+        mlflow.log_params(train_dataset.tokenizer_options)
+
         # set experiment tags
         mlflow.set_tags({"split": args.split, "iterative": args.iterative})
 
