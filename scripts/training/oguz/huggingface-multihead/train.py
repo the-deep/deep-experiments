@@ -242,6 +242,10 @@ if __name__ == "__main__":
         learning_rate=float(args.learning_rate),
         skip_memory_metrics=False,
         label_names=["labels", "groups"] if args.iterative else ["labels"],
+        metric_for_best_model="eval_subpillar_micro_f1",
+        greater_is_better=True,
+        load_best_model_at_end=True,
+        save_total_limit=1,
     )
 
     # create trainer instance
