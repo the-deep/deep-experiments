@@ -69,7 +69,10 @@ class MultiHeadDataFrame(Dataset):
             for f in filter:
                 pos |= np.array([len(item) > 0 for item in dataframe[f].tolist()], dtype=np.bool)
             dataframe = dataframe[pos]
-            self.logger.info(f"Filtered data points with non-empty (or) {','.join(filter)} values")
+            self.logger.info(
+                f"Filtered data points with non-empty {','.join(filter)} values"
+                "(using 'or' if multiple fields)"
+            )
 
         # prepare tokenizer options
         self.tokenizer_options = {
