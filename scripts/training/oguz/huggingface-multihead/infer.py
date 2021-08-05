@@ -10,13 +10,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # hyperparameters sent by the client
-    parser.add_argument("--eval_batch_size", type=int, default=64)
-    parser.add_argument(
-        "--target",
-        type=str,
-        default="target",
-        help="Prediction target",
-    )
+    # parser.add_argument("--eval_batch_size", type=int, default=64)
     parser.add_argument("--model_uri", type=str, required=True)
 
     # SageMaker parameters - data, model, and output directories
@@ -38,14 +32,18 @@ if __name__ == "__main__":
     # load datasets
     infer_df = pd.read_pickle(f"{args.test_dir}/infer_df.pickle")
     logger.info(f" loaded infer_dataset length is: {infer_df.shape}")
+    logger.info(infer_df.head())
 
     # get model
-    loaded_model = mlflow.pyfunc.load_model(args.model_uri)
-    logging.info(loaded_model.infer_params)
+    pyfunc_wrapper = mlflow.pyfunc.load_model(args.model_uri)
 
-    loaded_model.infer_params["dataset"]["target"] = args.target
-    loaded_model.infer_params["dataloader"]["batch_size"] = args.eval_batch_size
-    pred_df = loaded_model.predict(infer_df)
+    # set eval batch size
+    # python_model = pyfunc_wrapper._model_impl.python_model
+    # logging.info(python_model.infer_params)
+    # python_model.infer_params["dataloader"]["batch_size"] = args.eval_batch_size
+
+    # predict
+    pred_df = pyfunc_wrapper.predict(infer_df)
 
     # save predictions
     pred_df.to_csv(f"{args.output_data_dir}/preds.csv", header=True, index=True)
