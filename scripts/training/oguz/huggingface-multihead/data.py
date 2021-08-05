@@ -45,7 +45,7 @@ class MultiHeadDataFrame(Dataset):
         flatten: bool = True,
         online: bool = False,
         inference: bool = False,
-        tokenizer_max_len: int = 200,
+        tokenizer_max_len: Optional[int] = None,
     ):
         self.group_names = group_names
         self.flatten = flatten
@@ -77,23 +77,24 @@ class MultiHeadDataFrame(Dataset):
         # prepare tokenizer options
         self.tokenizer_options = {
             "truncation": True,
-            "padding": "max_length",
-            "add_special_tokens": True,
-            "return_token_type_ids": "token_type_ids" in tokenizer.model_input_names,
-            "max_length": min(tokenizer_max_len, tokenizer.model_max_length),
+            "padding": True,
         }
-        if tokenizer.model_max_length < tokenizer_max_len:
-            self.logger.info(
-                f"Using maximum model length: {tokenizer.model_max_length} instead"
-                f"of given length: {tokenizer_max_len}"
+        if tokenizer_max_len:
+            self.tokenizer_options.update(
+                {
+                    "padding": "max_length",
+                    "max_length": min(tokenizer_max_len, tokenizer.model_max_length),
+                }
             )
+            if tokenizer.model_max_length < tokenizer_max_len:
+                self.logger.info(
+                    f"Using maximum model length: {tokenizer.model_max_length} instead"
+                    f"of given length: {tokenizer_max_len}"
+                )
 
         if self.online:
             # ensure that we are in training
             assert not self.inference, "Online tokenization is only supported in training-time"
-
-            # save data as exceprt
-            self.data = dataframe[source].tolist()
         else:
             # tokenize and save source data
             self.logger.info("Applying offline tokenization")
