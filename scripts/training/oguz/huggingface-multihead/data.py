@@ -92,13 +92,17 @@ class MultiHeadDataFrame(Dataset):
                     f"of given length: {tokenizer_max_len}"
                 )
 
+        # save data as exceprt
+        self.data = dataframe[source].tolist()
+        self.data_len = len(self.data)
+
         if self.online:
             # ensure that we are in training
             assert not self.inference, "Online tokenization is only supported in training-time"
         else:
             # tokenize and save source data
             self.logger.info("Applying offline tokenization")
-            self.data = tokenizer(dataframe[source].tolist(), **self.tokenizer_options)
+            self.data = tokenizer(self.data, **self.tokenizer_options)
 
         if not self.inference:
             # apply literal eval to have lists in target
@@ -185,7 +189,7 @@ class MultiHeadDataFrame(Dataset):
         ]
 
     def __len__(self):
-        return len(self.target)
+        return self.data_len
 
     def __getitem__(self, idx):
         if self.online:
