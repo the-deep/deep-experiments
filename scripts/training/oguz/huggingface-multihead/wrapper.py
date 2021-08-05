@@ -12,16 +12,33 @@ from torch.utils.data import DataLoader
 from data import MultiHeadDataFrame
 
 
-def extract_predictions(logits, threshold):
-    logits = logits > threshold
+def extract_predictions(probs, threshold):
+    """Extracts predictions from probabilities and threshold"""
+    probs = probs > threshold
 
     preds = []
-    for i in range(logits.shape[0]):
-        preds.append(logits[i, np.nonzero(logits[i, :])].tolist())
+    for i in range(probs.shape[0]):
+        preds.append(np.nonzero(probs[i, :])[0].tolist())
     return preds
 
 
+def list2str(items, is_int=False):
+    """Converts an array of lists of integers into an array of strings"""
+
+    arr = []
+    for item in items:
+        if len(item) == 0:
+            arr.append("")
+        elif is_int:
+            arr.append(",".join([str(i) for i in item]))
+        else:
+            arr.append(",".join([f"{i:.3f}" for i in item]))
+    return arr
+
+
 class MLFlowWrapper(mlflow.pyfunc.PythonModel):
+    """MLFlow Wrapper class for inference"""
+
     def __init__(self, tokenizer, model):
         self.tokenizer = tokenizer
         self.model = model.eval()
@@ -68,26 +85,25 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
         # forward pass
         with torch.no_grad():
             for batch in dataloader:
+                for k, v in batch.items():
+                    batch[k] = v.to("cuda")
+
                 if self.model.iterative:
                     batch_groups, batch_targets = self.model.forward(
                         batch, group_threshold=self.infer_params["threshold"]["group"]
                     )
                     batch_groups = torch.sigmoid(batch_groups)
                     batch_targets = torch.sigmoid(batch_targets)
-                    probs_groups.append(batch_groups.detach().numpy())
+                    probs_groups.append(batch_groups.detach().cpu().numpy())
                 else:
                     batch_targets = torch.sigmoid(self.model.forward(batch))
-                probs_targets.append(batch_targets.detach().numpy())
+                probs_targets.append(batch_targets.detach().cpu().numpy())
 
         probs_targets = np.concatenate(probs_targets, axis=0)
         preds_targets = extract_predictions(probs_targets, self.infer_params["threshold"]["target"])
         output = {
-            "probabilities_target": [
-                ",".join(f"{score:.3f}")
-                for i in range(probs_targets.shape[0])
-                for score in probs_targets[i, :].tolist()
-            ],
-            "predictions_target": [",".join(preds) for preds in preds_targets],
+            "probabilities_target": list2str(probs_targets.tolist()),
+            "predictions_target": list2str(preds_targets, is_int=True),
         }
 
         if self.model.iterative:
@@ -95,14 +111,10 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
             preds_groups = extract_predictions(
                 probs_groups, self.infer_params["threshold"]["group"]
             )
-            output.extend(
+            output.update(
                 {
-                    "probabilities_group": [
-                        ",".join(f"{score:.3f}")
-                        for i in range(probs_groups.shape[0])
-                        for score in probs_groups[i, :].tolist()
-                    ],
-                    "predictions_group": [",".join(preds) for preds in preds_groups],
+                    "probabilities_group": list2str(probs_groups.tolist()),
+                    "predictions_group": list2str(preds_groups, is_int=True),
                 }
             )
 
