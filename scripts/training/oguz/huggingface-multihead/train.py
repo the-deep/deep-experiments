@@ -347,7 +347,7 @@ if __name__ == "__main__":
         if args.deploy:
             # log model with an inference wrapper
             logging.info("Logging deployment model")
-            data_file = os.path.join(os.path.dirname(__file__), "data.py")
+            code_path = os.path.abspath(os.path.dirname(__file__))
 
             mlflow_wrapper = MLFlowWrapper(tokenizer, trainer.model)
             mlflow.pyfunc.log_model(
@@ -356,7 +356,7 @@ if __name__ == "__main__":
                 registered_model_name="multi-head-transformer",
                 artifacts=artifacts,
                 conda_env=get_conda_env_specs(),
-                code_path=[__file__, data_file],
+                code_path=os.listdir(code_path),
             )
 
         # finish mlflow run
