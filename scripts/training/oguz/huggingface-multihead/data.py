@@ -67,7 +67,13 @@ class MultiHeadDataFrame(Dataset):
         if filter is not None:
             pos = np.zeros(len(dataframe), dtype=np.bool)
             for f in filter:
+                # apply literal eval to have lists
+                dataframe[f] = dataframe[f].apply(literal_eval)
+
+                # get positive fields
                 pos |= np.array([len(item) > 0 for item in dataframe[f].tolist()], dtype=np.bool)
+
+            # filter negative rows
             dataframe = dataframe[pos]
             self.logger.info(
                 f"Filtered data points with non-empty {','.join(filter)} values"
@@ -105,8 +111,9 @@ class MultiHeadDataFrame(Dataset):
             self.data = tokenizer(self.data, **self.tokenizer_options)
 
         if not self.inference:
-            # apply literal eval to have lists in target
-            dataframe[target] = dataframe[target].apply(literal_eval)
+            if filter is None or target not in filter:
+                # apply literal eval to have lists in target
+                dataframe[target] = dataframe[target].apply(literal_eval)
 
             # prepare target encoding
             all_targets = np.hstack(dataframe[target].to_numpy())
