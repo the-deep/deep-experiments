@@ -3,7 +3,7 @@ import json
 
 sys.path.append(".")
 
-import pandas as pd
+# import pandas as pd
 import numpy as np
 import torch
 import mlflow
@@ -118,4 +118,9 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
                 }
             )
 
-        return pd.DataFrame.from_dict(output)
+        # return pd.DataFrame.from_dict(output)
+
+        return [
+            {k: probs_targets[i, k] for k in range(probs_targets.shape[1])}
+            for i in range(probs_targets.shape[0])
+        ]
