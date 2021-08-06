@@ -34,8 +34,8 @@ if __name__ == "__main__":
         "--loss",
         type=str,
         default="ce",
-        choices=["ce", "focal"],
-        help="Loss function: 'ce', 'focal'",
+        choices=["ce", "focal", "focal_star"],
+        help="Loss function: 'ce', 'focal', 'focal_star'",
     )
     parser.add_argument(
         "--target",
@@ -255,7 +255,7 @@ if __name__ == "__main__":
         compute_metrics=compute_metrics,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        focal_loss=(args.loss == "focal"),
+        loss_fn=args.loss,
     )
 
     # set env variable for MLFlow artifact logging

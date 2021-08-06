@@ -13,10 +13,16 @@ from transformers import (
     TrainingArguments,
 )
 
-from utils import sigmoid_focal_loss
+from loss import sigmoid_focal_loss, sigmoid_focal_loss_star
 
 
 class MultiHeadTrainer(Trainer):
+    """HuggingFace Trainer compatible with MultiHeadTransformer models.
+
+    Args:
+        loss_fn: 'ce', 'focal', 'focal_star'
+    """
+
     def __init__(
         self,
         model: Union[PreTrainedModel, nn.Module] = None,
@@ -29,7 +35,7 @@ class MultiHeadTrainer(Trainer):
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-        focal_loss: bool = False,
+        loss_fn: str = "ce",
     ):
         super().__init__(
             model=model,
@@ -43,7 +49,14 @@ class MultiHeadTrainer(Trainer):
             callbacks=callbacks,
             optimizers=optimizers,
         )
-        self.loss_fn = sigmoid_focal_loss if focal_loss else torch.nn.BCEWithLogitsLoss()
+        if loss_fn == "ce":
+            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+        elif loss_fn == "focal":
+            self.loss_fn = sigmoid_focal_loss
+        elif loss_fn == "focal_star":
+            self.loss_fn = sigmoid_focal_loss_star
+        else:
+            raise "Unknown loss function"
 
     def compute_loss(self, model, inputs, return_outputs=False):
         labels = inputs.pop("labels")
