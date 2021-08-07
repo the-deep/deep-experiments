@@ -4,6 +4,7 @@ sys.path.append(".")
 
 import mlflow
 
+
 class TransformersQAWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self, model):
         self.model = model

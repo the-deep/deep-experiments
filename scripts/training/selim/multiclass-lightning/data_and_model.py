@@ -281,6 +281,9 @@ class Transformer(pl.LightningModule):
         def sigmoid(x):
             return 1 / (1 + np.exp(-x))
 
+        if testing:
+            self.val_params['num_workers']=0
+
         validation_loader = self.get_loaders(
             validation_dataset, self.val_params, self.tagname_to_tagid, self.tokenizer, self.max_len
         )
@@ -313,14 +316,27 @@ class Transformer(pl.LightningModule):
 
             logit_predictions = sigmoid(logit_predictions)
             predictions = []
+            probabilities_dict = []
             # postprocess predictions
-            for i in range(logit_predictions.shape[0]):
-                row_pred = np.array([0] * self.num_labels)
+            for i in range (logit_predictions.shape[0]):
+
+                # Return predictions
+                #row_pred = np.array([0] * self.num_labels)
                 row_logits = logit_predictions[i, :]
 
-                predictions.append(list(list_tags[row_logits > self.pred_threshold]))
+                #predictions.append(list(list_tags[row_logits > self.pred_threshold]))
 
-            return pd.Series(predictions)
+                # Return probabilities
+                probabilities_item_dict = {}
+                for j in range (logit_predictions.shape[1]):
+                    probabilities_item_dict[j] = row_logits[j]
+
+                probabilities_dict.append(probabilities_item_dict)
+
+            #df_returned = pd.DataFrame(predictions, columns=['predictions_2d_subpillars'])
+            #df_returned['probabilities_2d_subpillars'] = probabilities_dict
+            
+            return probabilities_dict
 
         else:
 
