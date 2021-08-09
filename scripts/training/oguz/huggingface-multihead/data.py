@@ -1,6 +1,6 @@
 import logging
 from ast import literal_eval
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -47,6 +47,7 @@ class MultiHeadDataFrame(Dataset):
         inference: bool = False,
         tokenizer_max_len: Optional[int] = None,
     ):
+        self.groups = groups
         self.group_names = group_names
         self.flatten = flatten
         self.tokenizer = tokenizer
@@ -115,10 +116,6 @@ class MultiHeadDataFrame(Dataset):
                 # apply literal eval to have lists in target
                 dataframe[target] = dataframe[target].apply(literal_eval)
 
-            # prepare target encoding
-            all_targets = np.hstack(dataframe[target].to_numpy())
-            uniq_targets = np.unique(all_targets)
-
             if groups:
                 # process given groups
                 self.group_encoding = {t: idx for idx, group in enumerate(groups) for t in group}
@@ -128,9 +125,15 @@ class MultiHeadDataFrame(Dataset):
                 self.target_decoding = [revdict(encoding) for encoding in self.target_encoding]
                 self.target_classes = [len(encoding.keys()) for encoding in self.target_encoding]
             else:
+                # prepare target encoding
+                all_targets = np.hstack(dataframe[target].to_numpy())
+                uniq_targets = np.unique(all_targets)
+
                 # single group encoding - decoding
                 self.group_encoding = {t: 0 for t in uniq_targets}
                 self.group_decoding = {0: uniq_targets}
+                self.groups = [uniq_targets.tolist()]
+                self.group_names = ["ALL"]
 
                 self.target_encoding = {t: idx for idx, t in enumerate(uniq_targets)}
                 self.target_encoding = revdict(self.target_encoding)
@@ -145,6 +148,29 @@ class MultiHeadDataFrame(Dataset):
             # prepare group targets
             if groups:
                 self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+
+    def compute_stats(self) -> Dict[str, int]:
+        """Computes occurences of each target and group"""
+
+        counts = {}
+        classes = [target for group in self.groups for target in group]
+        if self.flatten:
+            sums = np.sum(np.stack(self.target, axis=-1), axis=-1)
+            counts.update({c: s for c, s in zip(classes, sums.tolist())})
+        else:
+            for i, _ in enumerate(self.group_names):
+                targets = [target[i] for target in self.target]
+                sums = np.sum(np.stack(targets, axis=-1), axis=-1)
+                counts.update({c: s for c, s in zip(self.groups[i], sums)})
+
+        for i, group_name in enumerate(self.group_names):
+            counts.update(
+                {group_name: np.sum(np.array([counts[group] for group in self.groups[i]]))}
+            )
+        counts.update(
+            {"ALL": np.sum(np.array([counts[group_name] for group_name in self.group_names]))}
+        )
+        return counts
 
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
