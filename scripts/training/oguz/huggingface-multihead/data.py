@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
-from utils import revdict
+from utils import revdict, read_dataframe
 
 
 class MultiHeadDataFrame(Dataset):
@@ -58,7 +58,7 @@ class MultiHeadDataFrame(Dataset):
         # read dataframe manually if given as path
         if isinstance(dataframe, str):
             self.logger.info(f"Loading dataframe: {dataframe}")
-            dataframe = pd.read_pickle(dataframe)
+            dataframe = read_dataframe(dataframe)
 
         # cast filter to array
         if isinstance(filter, str):

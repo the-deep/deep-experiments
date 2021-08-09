@@ -4,6 +4,8 @@ from typing import Dict
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 import torch
 import mlflow
 
@@ -48,6 +50,18 @@ def get_conda_env_specs():
     pip_dependencies = default_env["dependencies"][2]["pip"]
     pip_dependencies.extend(requirements)
     return default_env
+
+
+def read_dataframe(path: str, **kwargs):
+    """Reads a Pandas DataFrame respecting the file extension"""
+
+    if path.endswith(".pickle"):
+        return pd.read_pickle(path, **kwargs)
+    if path.endswith(".csv"):
+        return pd.read_csv(path, **kwargs)
+    if path.endswith(".xlsx"):
+        return pd.read_excel(path, **kwargs)
+    raise "Unknown data format"
 
 
 def build_mlp(
