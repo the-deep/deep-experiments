@@ -54,6 +54,11 @@ class MultiHeadTrainer(Trainer):
             optimizers=optimizers,
         )
         if loss_fn == "ce":
+            if loss_weights:
+                loss_weights = torch.FloatTensor(loss_weights).to('cuda')
+            if loss_pos_weights:
+                loss_pos_weights = torch.FloatTensor(loss_pos_weights).to('cuda')
+
             self.loss_fn = torch.nn.BCEWithLogitsLoss(
                 weight=loss_weights, pos_weight=loss_pos_weights
             )

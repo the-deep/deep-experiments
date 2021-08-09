@@ -253,7 +253,7 @@ if __name__ == "__main__":
 
     # calculate weighting coefficients
     loss_weights, loss_pos_weights = None, None
-    if args.weighting == "square":
+    if args.weighting == "inverse":
         classes = [target for group in groups for target in group]
         stats = train_dataset.compute_stats()
 
