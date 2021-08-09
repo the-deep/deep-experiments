@@ -8,6 +8,29 @@ from utils import build_mlp
 
 
 class MultiHeadTransformer(torch.nn.Module):
+    """Multi-task MLP classifier using the same transformer backbone.
+
+    Args:
+        backbone: Pre-trained transformer.
+        num_heads: Number of classification tasks.
+        num_classes: List of number of classes in each task.
+        num_layers: Depth of MLP classfier heads.
+        dropout: Rate of dropout in tranformer output before MLP classifiers.
+        pooling: If true, classifiers use averaged representations of all symbols.
+                 If false, classifiers use representation of the start symbol.
+        freeze_backbone: Only train classifiers with backbone.
+        iterative: Adds an additional classification head for coarser _group_ task.
+            Only relevant if the task involves (coarse, fine-grained) labels.
+            If enabled, an additional classifier is first used to predict the coarse
+            label and the other heads predict the coarse label. The coarse classifier
+            acts as a filter, i.e., if a negative prediction occurs for a coarse label,
+            all predictions for labels in that group are set to high negative values.
+        use_gt_training: uses ground truth group values in the training
+            Only relevant if iterative is set to True.
+        backbone_dim: dimension of the backbone transformer
+            Set if the dimension is not accessible through the config of backbone.
+    """
+
     def __init__(
         self,
         backbone: PreTrainedModel,
