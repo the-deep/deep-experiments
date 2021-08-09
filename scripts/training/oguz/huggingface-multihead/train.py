@@ -38,6 +38,9 @@ if __name__ == "__main__":
         help="Loss function: 'ce', 'focal', 'focal_star'",
     )
     parser.add_argument(
+        "--weighting", type=str, default=None, choices=["inverse", "inverse_square"]
+    )
+    parser.add_argument(
         "--target",
         type=str,
         default="subpillars_1d",
@@ -98,8 +101,7 @@ if __name__ == "__main__":
         groups = SUBPILLARS_2D
         group_names = PILLARS_2D
     else:
-        groups = None
-        group_names = None
+        raise NotImplementedError
 
     # sanity check for iterative option
     if args.iterative:
@@ -248,6 +250,17 @@ if __name__ == "__main__":
         save_total_limit=1,
     )
 
+    # calculate weighting coefficients
+    loss_weights, loss_pos_weights = None, None
+    if args.weighting == "square":
+        classes = [target for group in groups for target in group]
+        stats = train_dataset.compute_stats()
+
+        loss_weights = [(stats["ALL"] / stats[c]) for c in classes]
+        loss_pos_weights = [weight - 1 for weight in loss_weights]
+    if args.weighting == "inverse_square":
+        raise NotImplementedError
+
     # create trainer instance
     trainer = MultiHeadTrainer(
         model=model,
@@ -256,6 +269,8 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         loss_fn=args.loss,
+        loss_weights=loss_weights,
+        loss_pos_weights=loss_pos_weights,
     )
 
     # set env variable for MLFlow artifact logging

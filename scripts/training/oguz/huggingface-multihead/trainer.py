@@ -21,6 +21,8 @@ class MultiHeadTrainer(Trainer):
 
     Args:
         loss_fn: 'ce', 'focal', 'focal_star'
+        loss_weights: weighting applied to different classes
+        loss_pos_weights: weighting applied to positive versus negative instances
     """
 
     def __init__(
@@ -36,6 +38,8 @@ class MultiHeadTrainer(Trainer):
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
         loss_fn: str = "ce",
+        loss_weights: Optional[List[float]] = None,
+        loss_pos_weights: Optional[List[float]] = None,
     ):
         super().__init__(
             model=model,
@@ -50,10 +54,18 @@ class MultiHeadTrainer(Trainer):
             optimizers=optimizers,
         )
         if loss_fn == "ce":
-            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+            self.loss_fn = torch.nn.BCEWithLogitsLoss(
+                weight=loss_weights, pos_weight=loss_pos_weights
+            )
         elif loss_fn == "focal":
+            assert (
+                loss_weights is None and loss_pos_weights is None
+            ), "Does not support weighting with focal loss"
             self.loss_fn = sigmoid_focal_loss
         elif loss_fn == "focal_star":
+            assert (
+                loss_weights is None and loss_pos_weights is None
+            ), "Does not support weighting with focal loss-star"
             self.loss_fn = sigmoid_focal_loss_star
         else:
             raise "Unknown loss function"
