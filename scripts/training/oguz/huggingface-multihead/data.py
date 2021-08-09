@@ -47,8 +47,6 @@ class MultiHeadDataFrame(Dataset):
         inference: bool = False,
         tokenizer_max_len: Optional[int] = None,
     ):
-        self.groups = groups
-        self.group_names = group_names
         self.flatten = flatten
         self.tokenizer = tokenizer
         self.online = online
@@ -110,6 +108,18 @@ class MultiHeadDataFrame(Dataset):
             # tokenize and save source data
             self.logger.info("Applying offline tokenization")
             self.data = tokenizer(self.data, **self.tokenizer_options)
+
+        # process groups
+        if groups is not None:
+            if group_names is not None:
+                assert len(groups) == len(
+                    group_names
+                ), "Group names should be at equal length with groups"
+            else:
+                group_names = [f"Group {i}" for i in range(len(groups))]
+
+        self.groups = groups
+        self.group_names = group_names
 
         if not self.inference:
             if filter is None or target not in filter:

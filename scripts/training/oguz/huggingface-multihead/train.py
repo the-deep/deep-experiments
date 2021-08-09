@@ -101,7 +101,8 @@ if __name__ == "__main__":
         groups = SUBPILLARS_2D
         group_names = PILLARS_2D
     else:
-        raise NotImplementedError
+        groups = [SECTORS]
+        group_names = ["Sectors"]
 
     # sanity check for iterative option
     if args.iterative:
