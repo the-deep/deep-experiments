@@ -6,6 +6,8 @@ from transformers import PreTrainedModel
 
 from utils import build_mlp
 
+ZERO_SIGMOID_INVERSE = -10
+
 
 class MultiHeadTransformer(torch.nn.Module):
     """Multi-task MLP classifier using the same transformer backbone.
@@ -101,7 +103,7 @@ class MultiHeadTransformer(torch.nn.Module):
             # execute super-classification task
             out_groups = self.heads[0](hidden)
 
-            # get sample groups
+            # get group predictions
             # TODO: dynamic threshold (per group?)
             groups = (
                 gt_groups
@@ -116,8 +118,9 @@ class MultiHeadTransformer(torch.nn.Module):
                 out_targets.append(
                     torch.where(
                         torch.repeat_interleave(groups[:, i : i + 1], out_target.shape[1], dim=1),
-                        out_target,
-                        torch.zeros_like(out_target),
+                        out_target,  # classifer output if group is predicted as `positive`
+                        torch.zeros_like(out_target)
+                        + ZERO_SIGMOID_INVERSE,  # zero if group is predicted as `negative`
                     )
                 )
             out_targets = torch.cat(out_targets, axis=-1)
