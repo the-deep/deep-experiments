@@ -97,12 +97,15 @@ if __name__ == "__main__":
     if args.target == "subpillars_1d":
         groups = SUBPILLARS_1D
         group_names = PILLARS_1D
+        target_group = "pillars_1d"
     elif args.target == "subpillars" or args.target == "subpillars_2d":
         groups = SUBPILLARS_2D
         group_names = PILLARS_2D
+        target_group = "pillars_2d"
     else:
         groups = [SECTORS]
         group_names = ["Sectors"]
+        target_group = None
 
     # sanity check for iterative option
     if args.iterative:
@@ -329,6 +332,15 @@ if __name__ == "__main__":
                     writer.write(f"{label}\n")
             artifacts.update({"groups": group_file})
 
+        # output target names artifact
+        logging.info("Logging target names")
+        target_file = os.path.join(args.output_data_dir, "targets.txt")
+        with open(target_file, "w") as writer:
+            writer.write(f"{args.target}\n")
+            if target_group:
+                writer.write(f"{target_group}\n")
+        artifacts.update({"targets": target_file})
+
         # log experiment params to MLFlow
         mlflow.log_params(vars(args))
 
@@ -355,6 +367,7 @@ if __name__ == "__main__":
                         "num_workers": 0,
                     },
                     "threshold": {"group": 0.5, "target": 0.5},
+                    "output": {"probs_only": True, "flatten": True},
                 },
                 writer,
             )

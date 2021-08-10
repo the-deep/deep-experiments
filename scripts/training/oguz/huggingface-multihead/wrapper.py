@@ -1,9 +1,5 @@
-import sys
 import json
 
-sys.path.append(".")
-
-import pandas as pd
 import numpy as np
 import torch
 import mlflow
@@ -12,7 +8,7 @@ from torch.utils.data import DataLoader
 from data import MultiHeadDataFrame
 
 
-def extract_predictions(probs, threshold):
+def _extract_predictions(probs, threshold):
     """Extracts predictions from probabilities and threshold"""
     probs = probs > threshold
 
@@ -20,20 +16,6 @@ def extract_predictions(probs, threshold):
     for i in range(probs.shape[0]):
         preds.append(np.nonzero(probs[i, :])[0].tolist())
     return preds
-
-
-def list2str(items, is_int=False):
-    """Converts an array of lists of integers into an array of strings"""
-
-    arr = []
-    for item in items:
-        if len(item) == 0:
-            arr.append("")
-        elif is_int:
-            arr.append(",".join([str(i) for i in item]))
-        else:
-            arr.append(",".join([f"{i:.3f}" for i in item]))
-    return arr
 
 
 class MLFlowWrapper(mlflow.pyfunc.PythonModel):
@@ -54,6 +36,10 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
             with open(context.artifacts["groups"], "r") as f:
                 self.groups = [line.strip() for line in f.readlines()]
 
+        # process target name
+        with open(context.artifacts["targets"], "r") as f:
+            self.targets = [line.strip() for line in f.readlines()]
+
         # process inference params
         with open(context.artifacts["infer_params"], "r") as f:
             self.infer_params = json.load(f)
@@ -65,6 +51,12 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
         if "inference" in dataset_params:
             assert dataset_params["inference"], "Can only use an inference dataset!"
             dataset_params.pop("inference")
+
+        # sanity check for output params
+        output_params = self.infer_params["output"]
+        assert (
+            output_params["flatten"] and output_params["probs_only"]
+        ), "Flattened output is only supported when preds_only is enabled"
 
     def predict(self, context, model_input):
         # get dataset and data loader
@@ -100,22 +92,70 @@ class MLFlowWrapper(mlflow.pyfunc.PythonModel):
                 probs_targets.append(batch_targets.detach().cpu().numpy())
 
         probs_targets = np.concatenate(probs_targets, axis=0)
-        preds_targets = extract_predictions(probs_targets, self.infer_params["threshold"]["target"])
-        output = {
-            "probabilities_target": list2str(probs_targets.tolist()),
-            "predictions_target": list2str(preds_targets, is_int=True),
-        }
+        preds_targets = _extract_predictions(
+            probs_targets, self.infer_params["threshold"]["target"]
+        )
+
+        if self.infer_params["output"]["flatten"]:
+            # prepare flattened output
+            output = [
+                {self.labels[j]: probs_targets[i, j] for j in range(probs_targets.shape[1])}
+                for i in range(probs_targets.shape[0])
+            ]
+        else:
+            # put probabilities inside a nested dictionary
+            output = [
+                {
+                    "probabilities": {
+                        self.targets[0]: {
+                            self.labels[j]: probs_targets[i, j]
+                            for j in range(probs_targets.shape[1])
+                        }
+                    }
+                }
+                for i in range(probs_targets.shape[0])
+            ]
+
+            if not self.infer_params["output"]["probs_only"]:
+                # append predictions
+                output = [
+                    out.update({"predictions": {self.targets[0]: preds_targets[i]}})
+                    for i, out in enumerate(output)
+                ]
 
         if self.model.iterative:
             probs_groups = np.concatenate(probs_groups, axis=0)
-            preds_groups = extract_predictions(
+            preds_groups = _extract_predictions(
                 probs_groups, self.infer_params["threshold"]["group"]
             )
-            output.update(
-                {
-                    "probabilities_group": list2str(probs_groups.tolist()),
-                    "predictions_group": list2str(preds_groups, is_int=True),
-                }
-            )
 
-        return pd.DataFrame.from_dict(output)
+            if self.infer_params["output"]["flatten"]:
+                # append group preds in a flattened format
+                output = [
+                    out.update(
+                        {self.groups[j]: probs_groups[i, j] for j in range(probs_groups.shape[1])}
+                    )
+                    for i, out in enumerate(output)
+                ]
+            else:
+                # update probabilities field for the group output
+                output = [
+                    out["probabilities"].update(
+                        {
+                            self.targets[1]: {
+                                self.groups[j]: probs_groups[i, j]
+                                for j in range(probs_groups.shape[1])
+                            }
+                        }
+                    )
+                    for i, out in enumerate(output)
+                ]
+
+            if not self.infer_params["output"]["probs_only"]:
+                # append group predictions
+                output = [
+                    out["predictions"].update({self.targets[1]: preds_groups[i]})
+                    for i, out in enumerate(output)
+                ]
+
+        return output
