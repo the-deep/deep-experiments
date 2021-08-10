@@ -86,10 +86,12 @@ class MultiTargetDataFrame(Dataset):
     Args:
         dataframe: path to a DataFrame or a DataFrame
         target: target classification field that will be the output of models
-        groups: transforms target into a multi-target (each multi-label)
+        groups: transforms target into a multi-target problem (each multi-label)
             that is, each sample is associated with 2D one-hot target matrix
+            e.g., 6 label classification with two groups: [A, B, C], [D, E, F]
         group_names: name assoaciated with each classification head
-        flatten: flatten group targets to 1D for convenience
+            e.g., 2 group names: ABC and DEF
+        flatten: flatten targets to 1D for convenience
     """
 
     def __init__(
@@ -100,14 +102,6 @@ class MultiTargetDataFrame(Dataset):
         group_names: Optional[List[str]] = None,
         flatten: bool = True,
     ):
-        self.flatten = flatten
-        self.logger = logging.getLogger()
-
-        # read dataframe manually if given as path
-        if isinstance(dataframe, str):
-            self.logger.info(f"Loading dataframe: {dataframe}")
-            dataframe = read_dataframe(dataframe)
-
         # process groups
         if groups is not None:
             if group_names is not None:
@@ -116,9 +110,18 @@ class MultiTargetDataFrame(Dataset):
                 ), "Group names should be at equal length with groups"
             else:
                 group_names = [f"Group {i}" for i in range(len(groups))]
+        else:
+            assert flatten, "Use flatten if no group information is provided"
 
         self.groups = groups
         self.group_names = group_names
+        self.flatten = flatten
+        self.logger = logging.getLogger()
+
+        # read dataframe manually if given as path
+        if isinstance(dataframe, str):
+            self.logger.info(f"Loading dataframe: {dataframe}")
+            dataframe = read_dataframe(dataframe)
 
         if not isinstance(dataframe[target].iloc[0], list):
             # apply literal eval to have lists in target
@@ -262,7 +265,7 @@ class MultiHeadDataFrame(Dataset):
         dataframe: path to a DataFrame or a DataFrame
         tokenizer: tokenizer to pre-process source text
         source: textual source field that will be the input of models
-        target: target classification field that will be the output of models
+        targets: target classification fields that will be the output of models
         groups: transforms target into a multi-target (each multi-label)
             that is, each sample is associated with 2D one-hot target matrix
         group_names: name assoaciated with each classification head
@@ -283,9 +286,9 @@ class MultiHeadDataFrame(Dataset):
         dataframe: Union[str, pd.DataFrame],
         tokenizer: PreTrainedTokenizer,
         source: str = "excerpt",
-        target: str = "target",
-        groups: Optional[List[List[str]]] = None,
-        group_names: Optional[List[str]] = None,
+        targets: Union[str, List[str]] = "target",
+        groups: Optional[Union[List[List[str]], List[List[List[str]]]]] = None,
+        group_names: Optional[Union[List[str], List[List[str]]]] = None,
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
         online: bool = False,
@@ -333,17 +336,39 @@ class MultiHeadDataFrame(Dataset):
             tokenizer_max_len=tokenizer_max_len,
         )
 
+        # prepare targets
+        if isinstance(targets, str):
+            assert isinstance(groups, List[List[str]]), "Expecting `groups` to be a list of lists"
+            assert isinstance(group_names, List[str]), "Expecting `group_names` to be a list"
+
+            targets = [targets]
+            groups = [groups]
+            group_names = [group_names]
+            self.single = True
+        else:
+            assert isinstance(
+                groups, List[List[List[str]]]
+            ), "Expecting `groups` to be a list of lists of lists"
+            assert isinstance(
+                group_names, List[List[str]]
+            ), "Expecting `group_names` to be a list of lists"
+            self.single = False
+
+        self.targets = []
         if not inference:
-            self.target = MultiTargetDataFrame(
-                dataframe=dataframe,
-                target=target,
-                groups=groups,
-                group_names=group_names,
-                flatten=flatten,
-            )
-            assert len(self.data) == len(
-                self.target
-            ), "Text source and target have different lengths!"
+            for _target, _groups, _group_names in zip(targets, groups, group_names):
+                self.targets.append(
+                    MultiTargetDataFrame(
+                        dataframe=dataframe,
+                        target=_target,
+                        groups=_groups,
+                        group_names=_group_names,
+                        flatten=flatten,
+                    )
+                )
+                assert len(self.data) == len(
+                    self.targets[-1]
+                ), "Text source and target have different lengths!"
         self.data_len = self.data.data_len
 
     def __len__(self):
@@ -352,7 +377,10 @@ class MultiHeadDataFrame(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
 
-        if self.target:
-            item.update(self.target[idx])
+        if self.single:
+            item.update(self.target[0])
+        else:
+            for i, target in enumerate(self.targets):
+                item.update({(f"head{i}_" + k): v for k, v in target[idx].items()})
 
         return item
