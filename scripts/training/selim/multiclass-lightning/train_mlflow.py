@@ -2,6 +2,7 @@ import os
 import argparse
 import logging
 
+import pandas as pd
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pathlib import Path
 import timeit
@@ -48,6 +49,8 @@ if __name__ == "__main__":
     parser.add_argument("--method_language", type=str, default="keep all")
     parser.add_argument("--training_column", type=str, default="subpillars")
 
+    parser.add_argument("--train_with_whole_dataset", type=bool, default=False)
+
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
@@ -78,6 +81,9 @@ if __name__ == "__main__":
     train_df, val_df = preprocess_data(
         all_dataset, perform_augmentation=False, method=args.method_language
     )
+
+    if args.train_with_whole_dataset:
+        train_df = pd.concat([train_df, val_df])
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -134,7 +140,7 @@ if __name__ == "__main__":
             "mode": "max",
         }
 
-        FILENAME = "model_subpillars"
+        FILENAME = "model_" + args.training_column
         dirpath_pillars = str(PATH_NAME)
         checkpoint_callback_pillars = ModelCheckpoint(
             dirpath=dirpath_pillars, filename=FILENAME, **checkpoint_callback_params

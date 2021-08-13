@@ -282,7 +282,7 @@ class Transformer(pl.LightningModule):
             return 1 / (1 + np.exp(-x))
 
         if testing:
-            self.val_params['num_workers']=0
+            self.val_params["num_workers"] = 0
 
         validation_loader = self.get_loaders(
             validation_dataset, self.val_params, self.tagname_to_tagid, self.tokenizer, self.max_len
@@ -294,7 +294,6 @@ class Transformer(pl.LightningModule):
         indexes = []
         y_true = []
         logit_predictions = []
-        list_tags = np.array(list(self.tagname_to_tagid.keys()))
 
         if testing:
             with torch.no_grad():
@@ -315,27 +314,27 @@ class Transformer(pl.LightningModule):
             logit_predictions = np.concatenate(logit_predictions)
 
             logit_predictions = sigmoid(logit_predictions)
-            predictions = []
+            target_list = list(self.tagname_to_tagid.keys())
             probabilities_dict = []
             # postprocess predictions
-            for i in range (logit_predictions.shape[0]):
+            for i in range(logit_predictions.shape[0]):
 
                 # Return predictions
-                #row_pred = np.array([0] * self.num_labels)
+                # row_pred = np.array([0] * self.num_labels)
                 row_logits = logit_predictions[i, :]
 
-                #predictions.append(list(list_tags[row_logits > self.pred_threshold]))
+                # predictions.append(list(list_tags[row_logits > self.pred_threshold]))
 
                 # Return probabilities
                 probabilities_item_dict = {}
-                for j in range (logit_predictions.shape[1]):
-                    probabilities_item_dict[j] = row_logits[j]
+                for j in range(logit_predictions.shape[1]):
+                    probabilities_item_dict[target_list[j]] = row_logits[j]
 
                 probabilities_dict.append(probabilities_item_dict)
 
-            #df_returned = pd.DataFrame(predictions, columns=['predictions_2d_subpillars'])
-            #df_returned['probabilities_2d_subpillars'] = probabilities_dict
-            
+            # df_returned = pd.DataFrame(predictions, columns=['predictions_2d_subpillars'])
+            # df_returned['probabilities_2d_subpillars'] = probabilities_dict
+
             return probabilities_dict
 
         else:
@@ -363,8 +362,6 @@ class Transformer(pl.LightningModule):
             y_true = np.concatenate(y_true)
             indexes = np.concatenate(indexes)
             logit_predictions = np.concatenate(logit_predictions)
-
-            list_tags = np.array(list(self.tagname_to_tagid.keys()))
 
             logit_predictions = sigmoid(logit_predictions)
             predictions = []

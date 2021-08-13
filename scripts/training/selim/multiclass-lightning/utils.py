@@ -3,7 +3,7 @@ from ast import literal_eval
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
-from sklearn.metrics import classification_report
+
 import nlpaug.augmenter.word as naw
 
 import nltk
@@ -214,27 +214,3 @@ def return_results_matrixes(VAL_PATH, INDEXES_PATH, PREDICTIONS_PATH):
     pred_y = np.array([true_yss for true_yss in preds["predictions"]])
 
     return true_y, pred_y, tagname_to_tagid
-
-
-def print_results(true_y, pred_y, tagname_to_tagid):
-    precisions = []
-    recalls = []
-    f1_scores = []
-    accuracies = []
-
-    for i in range(true_y.shape[1]):
-        cls_rprt = classification_report(true_y[:, i], pred_y[:, i], output_dict=True)
-        precisions.append(cls_rprt["macro avg"]["precision"])
-        recalls.append(cls_rprt["macro avg"]["recall"])
-        f1_scores.append(cls_rprt["macro avg"]["f1-score"])
-        accuracies.append(cls_rprt["accuracy"])
-
-    results_df = pd.DataFrame.from_dict(tagname_to_tagid, orient="index")
-    results_df["accuracy"] = accuracies
-    results_df["recalls"] = recalls
-    results_df["precisions"] = precisions
-    results_df["f1_scores"] = f1_scores
-    results_df = results_df[["accuracy", "f1_scores", "precisions", "recalls"]]
-    results_df.loc["mean"] = np.average(results_df, axis=0)
-
-    return results_df
