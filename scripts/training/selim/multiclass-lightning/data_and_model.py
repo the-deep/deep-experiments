@@ -143,6 +143,7 @@ class Transformer(pl.LightningModule):
         val_params,
         weight_classes,
         tokenizer,
+        multiclass=True,
         pred_threshold: float = 0.5,
         learning_rate: float = 1e-5,
         adam_epsilon: float = 1e-8,
@@ -174,6 +175,8 @@ class Transformer(pl.LightningModule):
             self.weight_classes = torch.tensor(weight_classes).to("cuda")
         else:
             self.use_weights = False
+
+        self.multiclass = multiclass
         self.empty_dataset = empty_dataset
         self.pred_threshold = pred_threshold
         self.training_loader = self.get_loaders(
@@ -182,33 +185,40 @@ class Transformer(pl.LightningModule):
         self.val_loader = self.get_loaders(
             val_dataset, val_params, tagname_to_tagid, self.tokenizer, max_len
         )
-        self.f1_score_train = torchmetrics.F1(
-            num_classes=2,
-            threshold=self.pred_threshold,
-            average="macro",
-            mdmc_average="samplewise",
-            ignore_index=None,
-            top_k=None,
-            multiclass=True,
-            compute_on_step=True,
-            dist_sync_on_step=False,
-            process_group=None,
-            dist_sync_fn=None,
-        )
 
-        self.f1_score_val = torchmetrics.F1(
-            num_classes=2,
-            threshold=self.pred_threshold,
-            average="macro",
-            mdmc_average="samplewise",
-            ignore_index=None,
-            top_k=None,
-            multiclass=True,
-            compute_on_step=True,
-            dist_sync_on_step=False,
-            process_group=None,
-            dist_sync_fn=None,
-        )
+        if multiclass:
+            self.f1_score_train = torchmetrics.F1(
+                num_classes=2,
+                threshold=self.pred_threshold,
+                average="macro",
+                mdmc_average="samplewise",
+                ignore_index=None,
+                top_k=None,
+                multiclass=True,
+                compute_on_step=True,
+                dist_sync_on_step=False,
+                process_group=None,
+                dist_sync_fn=None,
+            )
+
+            self.f1_score_val = torchmetrics.F1(
+                num_classes=2,
+                threshold=self.pred_threshold,
+                average="macro",
+                mdmc_average="samplewise",
+                ignore_index=None,
+                top_k=None,
+                multiclass=True,
+                compute_on_step=True,
+                dist_sync_on_step=False,
+                process_group=None,
+                dist_sync_fn=None,
+            )
+
+        else:
+            self.f1_score_train = torchmetrics.F1()
+
+            self.f1_score_val = torchmetrics.F1()
 
     @auto_move_data
     def forward(self, inputs):
@@ -224,7 +234,13 @@ class Transformer(pl.LightningModule):
         else:
             loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
 
-        self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        if self.multiclass:
+            self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        else:
+            argmax = outputs.argmax(1)
+            processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
+            self.f1_score_train(processed_output, batch["targets"].to(dtype=torch.long))
+
         self.log("train_f1", self.f1_score_train, prog_bar=True)
         return loss
 
@@ -232,7 +248,13 @@ class Transformer(pl.LightningModule):
         outputs = self(batch)
         val_loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
 
-        self.f1_score_val(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        if self.multiclass:
+            self.f1_score_val(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        else:
+            argmax = outputs.argmax(1)
+            processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
+            self.f1_score_val(processed_output, batch["targets"].to(dtype=torch.long))
+
         self.log(
             "val_f1", self.f1_score_val, on_step=True, on_epoch=True, prog_bar=True, logger=False
         )
@@ -373,8 +395,11 @@ class Transformer(pl.LightningModule):
                 row_logits = logit_predictions[i, :]
 
                 if np.any(row_logits >= self.pred_threshold):
+                    if self.multiclass:
+                        row_pred[row_logits > self.pred_threshold] = 1
+                    else:
+                        row_pred[np.argmax(row_logits)] = 1
 
-                    row_pred[row_logits > self.pred_threshold] = 1
                     predictions.append(row_pred)
                     y_true_final.append(y_true[i])
                     indexes_final.append(indexes[i])

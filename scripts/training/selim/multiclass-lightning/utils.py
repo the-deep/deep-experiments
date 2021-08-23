@@ -50,16 +50,16 @@ def read_merge_data(
         train_df = pd.read_csv(TRAIN_PATH)
         val_df = pd.read_csv(VAL_PATH)
 
-    all_dataset = pd.concat([train_df, val_df])[
-        ["entry_id", "excerpt", training_column, "language"]
-    ].rename(columns={training_column: "target"})
+    all_dataset = pd.concat([train_df, val_df])[["entry_id", "excerpt", training_column]].rename(
+        columns={training_column: "target"}
+    )
 
     # Keep only unique values in pillars
     all_dataset["target"] = all_dataset["target"].apply(lambda x: clean_rows(x))
 
     # Keep only rows with a not empty pillar
     all_dataset = all_dataset[all_dataset.target.apply(lambda x: len(x) > 0)][
-        ["entry_id", "excerpt", "target", "language"]
+        ["entry_id", "excerpt", "target"]
     ]
     return all_dataset
 

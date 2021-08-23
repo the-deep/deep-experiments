@@ -23,6 +23,7 @@ def train_on_specific_targets(
     warmup_steps=500,
     output_length=384,
     max_len=150,
+    multiclass_bool=True,
     weight_classes=None,
     learning_rate=3e-5,
     pred_threshold: float = 0.5,
@@ -85,6 +86,7 @@ def train_on_specific_targets(
         output_length=output_length,
         learning_rate=learning_rate,
         pred_threshold=pred_threshold,
+        multiclass=multiclass_bool,
     )
 
     trainer.fit(model)

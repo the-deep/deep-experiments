@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("--training_column", type=str, default="subpillars")
 
     parser.add_argument("--train_with_whole_dataset", type=bool, default=False)
-
+    parser.add_argument("--multiclass_bool", type=bool, default=True)
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
@@ -166,6 +166,7 @@ if __name__ == "__main__":
             warmup_steps=args.warmup_steps,
             pred_threshold=float(args.pred_threshold),
             output_length=args.output_length,
+            multiclass_bool=args.multiclass_bool,
         )
 
         # This class is logged as a pickle artifact and used at inference time
@@ -191,16 +192,31 @@ if __name__ == "__main__":
         stop = timeit.default_timer()
 
         sentences_per_second = val_df.shape[0] / (stop - start)
-
-        mlflow.log_metric("supillar f1 score", metrics_subpillars.loc["mean"]["F1 Score"])
-        mlflow.log_metric("supillar accuracy", metrics_subpillars.loc["mean"]["Accuracy"])
-        mlflow.log_metric("supillar precision", metrics_subpillars.loc["mean"]["Precision"])
-        mlflow.log_metric("supillar recall", metrics_subpillars.loc["mean"]["Recall"])
-
-        mlflow.log_metric("pillar f1 score", metrics_pillars.loc["mean"]["F1 Score"])
-        mlflow.log_metric("pillar accuracy", metrics_pillars.loc["mean"]["Accuracy"])
-        mlflow.log_metric("pillar precision", metrics_pillars.loc["mean"]["Precision"])
-        mlflow.log_metric("pillar recall", metrics_pillars.loc["mean"]["Recall"])
-
         mlflow.log_metric("nb sentences per second", sentences_per_second)
         mlflow.log_metric("ratio of evaluated sentences", ratio_evaluated_sentences)
+
+        if metrics_pillars.equals(metrics_subpillars):
+            mlflow.log_metric("average macro f1 score", metrics_subpillars.loc["mean"]["F1 Score"])
+            mlflow.log_metric("average accuracy", metrics_subpillars.loc["mean"]["Accuracy"])
+            mlflow.log_metric("average precision", metrics_subpillars.loc["mean"]["Precision"])
+            mlflow.log_metric("average recall", metrics_subpillars.loc["mean"]["Recall"])
+
+            list_names = list(metrics_subpillars["Sector"])
+
+            for i in range(len(list_names) - 1):
+                try:
+                    name = "f1 score " + list_names[i].split("(")[0]
+                    mlflow.log_metric(name, metrics_subpillars.iloc[i]["F1 Score"])
+                except ValueError:
+                    pass
+
+        else:
+            mlflow.log_metric("supillar f1 score", metrics_subpillars.loc["mean"]["F1 Score"])
+            mlflow.log_metric("supillar accuracy", metrics_subpillars.loc["mean"]["Accuracy"])
+            mlflow.log_metric("supillar precision", metrics_subpillars.loc["mean"]["Precision"])
+            mlflow.log_metric("supillar recall", metrics_subpillars.loc["mean"]["Recall"])
+
+            mlflow.log_metric("pillar f1 score", metrics_pillars.loc["mean"]["F1 Score"])
+            mlflow.log_metric("pillar accuracy", metrics_pillars.loc["mean"]["Accuracy"])
+            mlflow.log_metric("pillar precision", metrics_pillars.loc["mean"]["Precision"])
+            mlflow.log_metric("pillar recall", metrics_pillars.loc["mean"]["Recall"])
