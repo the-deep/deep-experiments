@@ -113,10 +113,10 @@ def get_list_adult():
     synonyms = wordnet.synsets("adult")
     # synonyms_person = wordnet.synsets('person')
     # synonyms_population = wordnet.synsets('population')
-    synonyms_man = wordnet.synsets("man")
-    synonyms_male = wordnet.synsets("male")
-    synonyms_woman = wordnet.synsets("woman")
-    synonyms_female = wordnet.synsets("female")
+    # synonyms_man = wordnet.synsets("man")
+    # synonyms_male = wordnet.synsets("male")
+    # synonyms_woman = wordnet.synsets("woman")
+    # synonyms_female = wordnet.synsets("female")
 
     syn_tot_adults = [synonyms]
 
@@ -207,7 +207,7 @@ def get_demographic_groups(import_data, data_path: str = None, data: pd.DataFram
     if import_data:
         try:
             demo_groups_data = pd.read_csv(data_path, index_col=0)[["excerpt"]]
-        except:
+        except Exception:
             demo_groups_data = pd.read_csv(data_path, index_col=0, lineterminator="\n")[["excerpt"]]
     else:
         demo_groups_data = data[["excerpt", "tag_value"]].dropna()

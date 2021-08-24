@@ -1,4 +1,3 @@
-import pandas as pd
 import spacy
 
 nlp = spacy.load("xx_ent_wiki_sm")
@@ -37,24 +36,24 @@ not_equal_list = [
     "Northwest",
     "northeast",
     "centre",
-    'Bol',
-    'lac',
-    'Est',
-    'ouest',
-    'nord',
-    'sud',
+    "Bol",
+    "lac",
+    "Est",
+    "ouest",
+    "nord",
+    "sud",
     "l’Est",
     "l’Ouest",
     "l'Est",
     "l'Ouest",
-    'Grand Nord',
-    'Sud-Ouest',
-    'Nord-Ouest',
+    "Grand Nord",
+    "Sud-Ouest",
+    "Nord-Ouest",
     "l'UE",
     "Sud - Ouest",
     "nord - Ouest",
-    'Sud - est',
-    'nord - est'
+    "Sud - est",
+    "nord - est",
 ]
 not_equal_list_up = [name.upper() for name in not_equal_list]
 
@@ -98,43 +97,42 @@ wrong_locations_list = [
     "unama",
     "covid",
     "gbv",
-    'exploitation',
-    'province',
-    'provinces',
-    'eau',
-    'arrêté',
-    'lac',
-    'Gouvernement',
-    'Réfug',
+    "exploitation",
+    "province",
+    "provinces",
+    "eau",
+    "arrêté",
+    "lac",
+    "Gouvernement",
+    "Réfug",
     "l'exploitation",
-    'Camerounais',
-    'Soudanais',
-    'Nigérien',
-    'Sur',
-    'Femme',
+    "Camerounais",
+    "Soudanais",
+    "Nigérien",
+    "Sur",
+    "Femme",
     "l'ont",
     "besoin",
-    'Centrafricains',
-    'lake',
-    'this',
-    'canal',
-    'Business',
-    'Extrême',
-    'analyse',
-    'les',
-    'état',
-    'emploi',
-    'Infantil',
-    'pacífico',
-    'afin',
-    'approvision',
-    'patrimoine',
-    'covid',
-    'haram',
-    'entrée'
+    "Centrafricains",
+    "lake",
+    "this",
+    "canal",
+    "Business",
+    "Extrême",
+    "analyse",
+    "les",
+    "état",
+    "emploi",
+    "Infantil",
+    "pacífico",
+    "afin",
+    "approvision",
+    "patrimoine",
+    "covid",
+    "haram",
+    "entrée",
 ]
 wrong_locations_list_up = [name.upper() for name in wrong_locations_list]
-
 
 
 def word_is_valid(word: str, contains_invalid, equals_invalid) -> bool:
@@ -172,7 +170,7 @@ def most_frequent(List):
 
 
 def get_place(
-    text:str,
+    text: str,
     contains_invalid=wrong_locations_list_up,
     equals_invalid=not_equal_list_up,
     augment_predictions=False,
@@ -226,26 +224,27 @@ def get_place(
         return list(np.unique(cleaned_list))
 
 
-def postprocess_predictions(predicted_tag:list, max_tag:str):
-    
-    postprocessed_tag = [list(np.unique(x+[max_tag])) if x != "EMPTY ENTRY" else [max_tag]\
-                        for x in predicted_tag]
+def postprocess_predictions(predicted_tag: list, max_tag: str):
+
+    postprocessed_tag = [
+        list(np.unique(x + [max_tag])) if x != "EMPTY ENTRY" else [max_tag] for x in predicted_tag
+    ]
 
     return postprocessed_tag
 
-def get_most_tagged_place(text:str):
+
+def get_most_tagged_place(text: str):
     """
     Function to get the most tagged place: returns one entry
     """
     return most_frequent(get_place(text))
 
-def get_locations(
-    entries:list, max_place:str, augment_predictions=False
-):
+
+def get_locations(entries: list, max_place: str, augment_predictions=False):
     """
     Main function: returns list of predictions for list of entries
     """
     predicted_tag = [get_place(x, augment_predictions=augment_predictions) for x in entries]
-    
+
     postprocessed_tag = postprocess_predictions(predicted_tag, max_place)
     return postprocessed_tag
