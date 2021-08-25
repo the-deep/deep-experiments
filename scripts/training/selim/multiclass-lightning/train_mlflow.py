@@ -110,6 +110,7 @@ if __name__ == "__main__":
             "languages_trained": args.method_language,
             "augmentation_performed": "no augmentation",
             "weighted_loss": "sqrt weights",
+            "train with whole dataset":args.train_with_whole_dataset
         }
 
         mlflow.log_params(params)
@@ -205,9 +206,12 @@ if __name__ == "__main__":
 
             for i in range(len(list_names) - 1):
                 try:
-                    name = "f1 score " + list_names[i].split("(")[0]
-                    mlflow.log_metric(name, metrics_subpillars.iloc[i]["F1 Score"])
-                except ValueError:
+                    name = list_names[i]
+                    cleaned_name = ''.join(x for x in name if x.isalpha())
+                    final_name = "f1 score " + cleaned_name
+                    
+                    mlflow.log_metric(final_name, metrics_subpillars.iloc[i]["F1 Score"])
+                except Exception:
                     pass
 
         else:
