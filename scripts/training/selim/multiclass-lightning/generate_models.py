@@ -1,19 +1,18 @@
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 from transformers import AutoTokenizer
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+import os
 
-from data_and_model import CustomDataset, Transformer
-from utils import tagname_to_id
-
+from data_and_model import Transformer
 
 def train_on_specific_targets(
     train_dataset,
     val_dataset,
-    name_classifier: str,
+    training_column:str,
+    MODEL_DIR: str,
     MODEL_NAME: str,
     TOKENIZER_NAME: str,
-    early_stopping_callback,
-    checkpoint_callback,
     dropout_rate: float,
     train_params,
     val_params,
@@ -24,7 +23,6 @@ def train_on_specific_targets(
     output_length=384,
     max_len=150,
     multiclass_bool=True,
-    weight_classes=None,
     learning_rate=3e-5,
     pred_threshold: float = 0.5,
 ):
@@ -34,15 +32,30 @@ def train_on_specific_targets(
     # if not os.path.exists(dirpath):
     #    os.makedirs(dirpath)
 
-    train_dataset = train_dataset[["entry_id", "excerpt", "target"]]
-    val_dataset = val_dataset[["entry_id", "excerpt", "target"]]
+    # specific_train_dataset = preprocess_df(train_dataset, training_column)
+    # specific_val_dataset = preprocess_df(val_dataset, training_column)
 
-    logger = TensorBoardLogger("lightning_logs", name=name_classifier)
 
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-    tagname_to_tagid = tagname_to_id(train_dataset["target"])
+    PATH_NAME = MODEL_DIR
+    if not os.path.exists(PATH_NAME):
+        os.makedirs(PATH_NAME)
 
-    empty_dataset = CustomDataset(None, tagname_to_tagid, tokenizer, max_len)
+    early_stopping_callback = EarlyStopping(monitor="val_f1", patience=2, mode="max")
+
+    checkpoint_callback_params = {
+        "save_top_k": 1,
+        "verbose": True,
+        "monitor": "val_f1",
+        "mode": "max",
+    }
+
+    FILENAME = "model_" + training_column
+    dirpath_pillars = str(PATH_NAME)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=dirpath_pillars, filename=FILENAME, **checkpoint_callback_params
+    )
+
+    logger = TensorBoardLogger("lightning_logs", name=FILENAME)
 
     trainer = pl.Trainer(
         logger=logger,
@@ -64,17 +77,15 @@ def train_on_specific_targets(
         # limit_val_batches=1,
         # limit_test_batches: Union[int, float] = 1.0,
     )
-
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
     model = Transformer(
-        MODEL_NAME,
-        tagname_to_tagid,
-        empty_dataset,
+        model_name_or_path=MODEL_NAME,
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         train_params=train_params,
         val_params=val_params,
-        weight_classes=weight_classes,
         tokenizer=tokenizer,
+        column_name=training_column,
         gpus=gpu_nb,
         precision=16,
         plugin="deepspeed_stage_3_offload",

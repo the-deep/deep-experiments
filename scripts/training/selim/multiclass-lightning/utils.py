@@ -25,8 +25,7 @@ def clean_rows(row):
     2) Drop values that are repeated multiple times in rows
     """
     return list(set(literal_eval(row)))
-
-
+    
 def tagname_to_id(target):
     """
     Assign id to each tag
@@ -37,9 +36,20 @@ def tagname_to_id(target):
     tagname_to_tagid = {tag: i for i, tag in enumerate(list(sorted(tag_set)))}
     return tagname_to_tagid
 
+def preprocess_df(df:pd.DataFrame, column_name:str):
+    all_dataset = df.copy()
+    # Keep only unique values in pillars
+    all_dataset[column_name] = all_dataset[column_name].apply(lambda x: clean_rows(x))
+
+    # Keep only rows with a not empty pillar
+    all_dataset = all_dataset[all_dataset[column_name].apply(lambda x: len(x) > 0)][
+        ["entry_id", "excerpt", column_name]
+    ].rename(columns={column_name: "target"}).dropna()
+
+    return train_test_split(all_dataset, test_size=0.2)
 
 def read_merge_data(
-    TRAIN_PATH, VAL_PATH, training_column: str = "subpillars", data_format: str = "csv"
+    TRAIN_PATH, VAL_PATH, data_format: str = "csv"
 ):
 
     if data_format == "pickle":
@@ -50,17 +60,8 @@ def read_merge_data(
         train_df = pd.read_csv(TRAIN_PATH)
         val_df = pd.read_csv(VAL_PATH)
 
-    all_dataset = pd.concat([train_df, val_df])[["entry_id", "excerpt", training_column]].rename(
-        columns={training_column: "target"}
-    )
+    all_dataset = pd.concat([train_df, val_df])
 
-    # Keep only unique values in pillars
-    all_dataset["target"] = all_dataset["target"].apply(lambda x: clean_rows(x))
-
-    # Keep only rows with a not empty pillar
-    all_dataset = all_dataset[all_dataset.target.apply(lambda x: len(x) > 0)][
-        ["entry_id", "excerpt", "target"]
-    ]
     return all_dataset
 
 

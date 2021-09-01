@@ -24,7 +24,10 @@ from transformers import (
 from transformers.optimization import (
     get_linear_schedule_with_warmup,
 )
-
+from utils import (
+    compute_weights,
+    tagname_to_id
+)
 
 class CustomDataset(Dataset):
     def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 150):
@@ -135,14 +138,12 @@ class Transformer(pl.LightningModule):
     def __init__(
         self,
         model_name_or_path: str,
-        tagname_to_tagid,
-        empty_dataset: CustomDataset,
         train_dataset,
         val_dataset,
         train_params,
         val_params,
-        weight_classes,
         tokenizer,
+        column_name,
         multiclass=True,
         pred_threshold: float = 0.5,
         learning_rate: float = 1e-5,
@@ -160,9 +161,11 @@ class Transformer(pl.LightningModule):
 
         super().__init__()
         self.output_length = output_length
+        self.column_name = column_name
         self.save_hyperparameters()
-        self.tagname_to_tagid = tagname_to_tagid
-        self.num_labels = len(tagname_to_tagid)
+        self.targets = train_dataset["target"]
+        self.tagname_to_tagid = tagname_to_id(train_dataset["target"])
+        self.num_labels = len(self.tagname_to_tagid)
         self.max_len = max_len
         self.model = Model(
             model_name_or_path, self.num_labels, max_len, dropout_rate, self.output_length
@@ -170,20 +173,21 @@ class Transformer(pl.LightningModule):
         self.tokenizer = tokenizer
         self.val_params = val_params
 
-        if any(weight_classes):
-            self.use_weights = True
-            self.weight_classes = torch.tensor(weight_classes).to("cuda")
-        else:
-            self.use_weights = False
+        # if any(weight_classes):
+        self.use_weights = True
+        weight_classes = self.get_weights()
+        self.weight_classes = torch.tensor(weight_classes).to("cuda")
+        # else:
+        #     self.use_weights = False
 
         self.multiclass = multiclass
-        self.empty_dataset = empty_dataset
+        self.empty_dataset = CustomDataset(None, self.tagname_to_tagid, tokenizer, max_len)
         self.pred_threshold = pred_threshold
         self.training_loader = self.get_loaders(
-            train_dataset, train_params, tagname_to_tagid, self.tokenizer, max_len
+            train_dataset, train_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
         self.val_loader = self.get_loaders(
-            val_dataset, val_params, tagname_to_tagid, self.tokenizer, max_len
+            val_dataset, val_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
 
         if multiclass:
@@ -219,6 +223,20 @@ class Transformer(pl.LightningModule):
             self.f1_score_train = torchmetrics.F1()
 
             self.f1_score_val = torchmetrics.F1()
+
+    def get_weights(self)->list:
+
+        list_tags = list(self.tagname_to_tagid.keys())
+
+        number_data_classes = []
+        for tag in list_tags:
+            nb_data_in_class = self.targets.apply(lambda x: tag in (x)).sum()
+            number_data_classes.append(nb_data_in_class)
+
+        weights = compute_weights(number_data_classes, self.targets.shape[0])
+
+        weights = [weight if weight < 5 else weight ** 2 for weight in weights]
+        return weights
 
     @auto_move_data
     def forward(self, inputs):
@@ -453,6 +471,7 @@ class Transformer(pl.LightningModule):
         )
         scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
         return [optimizer], [scheduler]
+
 
     def train_dataloader(self):
         return self.training_loader
