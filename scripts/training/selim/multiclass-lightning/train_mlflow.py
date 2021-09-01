@@ -198,7 +198,7 @@ if __name__ == "__main__":
         subpillars_tot = []
         ratio_tot = []
 
-        for one_model in list(models_dict.values()):
+        for one_model in models:
             (
                 metrics_pillars,
                 metrics_subpillars,
