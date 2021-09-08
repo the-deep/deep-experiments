@@ -2,6 +2,7 @@ import os
 import re
 import argparse
 import logging
+import pickle
 
 import pandas as pd
 from pandas.core.frame import DataFrame
@@ -72,41 +73,31 @@ if __name__ == "__main__":
         pip_dependencies.extend(requirements)
         return default_env
 
-    def log_metrics_MLflow(subpillars_df: pd.DataFrame, pillars_df: pd.DataFrame, ratio_eval_sentences, column_name: str):
+    def log_metrics_MLflow(metrics_df: pd.DataFrame, ratio_eval_sentences, column_name: str):
         mlflow.log_metric(f"ratio of evaluated sentences {column_name}", ratio_eval_sentences)
 
-        if subpillars_df.equals(pillars_df):
-            mlflow.log_metric(f"average macro f1 score {column_name}", pillars_df.loc["mean"]["F1 Score"])
-            mlflow.log_metric(f"average accuracy {column_name}", pillars_df.loc["mean"]["Accuracy"])
-            mlflow.log_metric(f"average precision {column_name}", pillars_df.loc["mean"]["Precision"])
-            mlflow.log_metric(f"average recall {column_name}", pillars_df.loc["mean"]["Recall"])
+        mlflow.log_metric(f"average macro f1 score {column_name}", metrics_df.loc["mean"]["F1 Score"])
+        mlflow.log_metric(f"average accuracy {column_name}", metrics_df.loc["mean"]["Accuracy"])
+        mlflow.log_metric(f"average precision {column_name}", metrics_df.loc["mean"]["Precision"])
+        mlflow.log_metric(f"average recall {column_name}", metrics_df.loc["mean"]["Recall"])
 
-            list_names = list(pillars_df["Sector"])
+        list_names = list(metrics_df["Sector"])
 
-            for i in range(len(list_names) - 1):
-                try:
-                    name = list_names[i]
-                    cleaned_name = new_string = re.sub("[^0-9a-zA-Z]+", "_", name)
-                    final_name = "f1_score_" + cleaned_name
-                    
-                    mlflow.log_metric(final_name, pillars_df.iloc[i]["F1 Score"])
-                except Exception:
-                    pass
+        for i in range(len(list_names) - 1):
+            try:
+                name = list_names[i]
+                cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+                final_name = "f1_score_" + cleaned_name
+                
+                mlflow.log_metric(final_name, metrics_df.iloc[i]["F1 Score"])
+            except Exception:
+                pass
 
-        else:
-            mlflow.log_metric(f"supillar f1 score {column_name}", subpillars_df.loc["mean"]["F1 Score"])
-            mlflow.log_metric(f"supillar accuracy {column_name}", subpillars_df.loc["mean"]["Accuracy"])
-            mlflow.log_metric(f"supillar precision {column_name}", subpillars_df.loc["mean"]["Precision"])
-            mlflow.log_metric(f"supillar recall {column_name}", subpillars_df.loc["mean"]["Recall"])
-
-            mlflow.log_metric(f"pillar f1 score {column_name}", pillars_df.loc["mean"]["F1 Score"])
-            mlflow.log_metric(f"pillar accuracy {column_name}", pillars_df.loc["mean"]["Accuracy"])
-            mlflow.log_metric(f"pillar precision {column_name}", pillars_df.loc["mean"]["Precision"])
-            mlflow.log_metric(f"pillar recall {column_name}", pillars_df.loc["mean"]["Recall"])
 
     # load datasets
     logging.info("reading, preprocessing data")
 
+    
     all_dataframe = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
     )
@@ -141,14 +132,15 @@ if __name__ == "__main__":
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
             "languages_trained": args.method_language,
-            "augmentation_performed": "no augmentation",
+            "augmentation_performed": "translation",
             "weighted_loss": "sqrt weights",
             "train with whole dataset":args.train_with_whole_dataset
         }
 
         mlflow.log_params(params)
 
-        models = []
+        models = {}
+        tot_time = 0
 
         for column_name in training_columns:
             train_df, val_df = preprocess_df(all_dataframe, column_name)
@@ -176,41 +168,48 @@ if __name__ == "__main__":
                 output_length=args.output_length,
                 multiclass_bool=args.multiclass_bool,
             )
-            models.append(model)
+            
 
-        # This class is logged as a pickle artifact and used at inference time
-        prediction_wrapper = TransformersPredictionsWrapper(models[0])
-        mlflow.pyfunc.log_model(
-            python_model=prediction_wrapper,
-            artifact_path="model",
-            conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[
-                __file__,
-                "data_and_model.py",
-                "utils.py",
-                "inference.py", 
-            ],  # file dependencies
-        )
+            # This class is logged as a pickle artifact and used at inference time
+            prediction_wrapper = TransformersPredictionsWrapper(model)
+            mlflow.pyfunc.log_model(
+                python_model=prediction_wrapper,
+                artifact_path=f"model_{model.column_name}",
+                conda_env=get_conda_env_specs(),  # python conda dependencies
+                code_path=[
+                    __file__,
+                    "data_and_model.py",
+                    "utils.py",
+                    "inference.py", 
+                ],  # file dependencies
+            )
 
-        start = timeit.default_timer()
+            start = timeit.default_timer()
 
-        pillars_tot = []
-        subpillars_tot = []
-        ratio_tot = []
+            subpillars_tot = []
+            ratio_tot = []
 
-        for one_model in models:
             (
-                metrics_pillars,
                 metrics_subpillars,
                 ratio_evaluated_sentences,
-            ) = one_model.custom_eval(val_df)
+            ) = model.custom_eval(val_df)
+
+            stop = timeit.default_timer()
 
             log_metrics_MLflow(metrics_subpillars, 
-                                metrics_pillars, 
                                 ratio_evaluated_sentences, 
-                                one_model.column_name)
+                                model.column_name)
 
-        stop = timeit.default_timer()
+            
+            tot_time = tot_time + stop - start
 
-        sentences_per_second = val_df.shape[0] / (stop - start)
+            metrics_subpillars.to_csv(f"{args.output_data_dir}/results_{model.column_name}.csv")
+
+            models[model.column_name] = model
+
+        sentences_per_second = val_df.shape[0] / (tot_time)
         mlflow.log_metric("nb sentences per second to predict all tags", sentences_per_second)
+
+        #output = open(f"{args.model_dir}/all_models.pkl", 'wb')
+        #pickle.dump(models, output)
+        #output.close()

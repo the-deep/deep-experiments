@@ -552,6 +552,6 @@ class Transformer(pl.LightningModule):
         preds_val_all, y_true = self.custom_predict(validation_dataset)
         ratio_evaluated_sentences = len(y_true) * 100 / validation_dataset.shape[0]
         metrics_subpillars = self.compute_metrics(preds_val_all, y_true, self.tagname_to_tagid)
-        metrics_pillars = self.get_results_pillar_from_subpillar(preds_val_all, y_true)
+        #metrics_pillars = self.get_results_pillar_from_subpillar(preds_val_all, y_true)
 
-        return metrics_pillars, metrics_subpillars, ratio_evaluated_sentences
+        return metrics_subpillars, ratio_evaluated_sentences

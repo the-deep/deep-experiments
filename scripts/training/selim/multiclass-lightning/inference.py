@@ -23,8 +23,6 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
         pass
 
     def predict(self, context, model_input):
-        final_predictions = {}
-
-        final_predictions[self.model_one.column_name] = self.model_one.custom_predict(model_input, testing=True)
+        final_predictions = self.model_one.custom_predict(model_input, testing=True)
         #final_predictions[self.model_two.column_name] = self.model_two.custom_predict(model_input, testing=True)
         return final_predictions

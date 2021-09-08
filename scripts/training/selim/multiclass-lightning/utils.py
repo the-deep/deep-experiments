@@ -4,13 +4,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
 
-import nlpaug.augmenter.word as naw
-
-import nltk
-
-nltk.download("averaged_perceptron_tagger")
-nltk.download("wordnet")
-nltk.download("omw")
+from skmultilearn.model_selection import iterative_train_test_split
 
 import warnings
 
@@ -36,17 +30,6 @@ def tagname_to_id(target):
     tagname_to_tagid = {tag: i for i, tag in enumerate(list(sorted(tag_set)))}
     return tagname_to_tagid
 
-def preprocess_df(df:pd.DataFrame, column_name:str):
-    all_dataset = df.copy()
-    # Keep only unique values in pillars
-    all_dataset[column_name] = all_dataset[column_name].apply(lambda x: clean_rows(x))
-
-    # Keep only rows with a not empty pillar
-    all_dataset = all_dataset[all_dataset[column_name].apply(lambda x: len(x) > 0)][
-        ["entry_id", "excerpt", column_name]
-    ].rename(columns={column_name: "target"}).dropna()
-
-    return train_test_split(all_dataset, test_size=0.2)
 
 def read_merge_data(
     TRAIN_PATH, VAL_PATH, data_format: str = "csv"
@@ -64,11 +47,49 @@ def read_merge_data(
 
     return all_dataset
 
+def preprocess_df(df:pd.DataFrame, column_name:str):
+    all_dataset = df.copy()
+    # Keep only unique values in pillars
+    all_dataset[column_name] = all_dataset[column_name].apply(lambda x: clean_rows(x))
+
+    # Keep only rows with a not empty pillar
+    all_dataset = all_dataset[all_dataset[column_name].apply(lambda x: len(x) > 0)][
+        ["entry_id", "excerpt", column_name]
+    ].rename(columns={column_name: "target"}).dropna()
+
+    return custom_train_test_df_split(all_dataset)
 
 # DATA PREPROCESSING AND AUGMENTATION
+def get_occurences (df, tag):
+    pills_occurances = list()
+    for pills in df[tag]:
+        pills_occurances.extend(pills)
+    return pills_occurances
+
+def custom_train_test_df_split(df:pd.DataFrame, tag:str='target'):
+    classes = list(np.unique(get_occurences (df, tag)))
+    class_to_id = {clss: i for i, clss in enumerate(classes)}
+    num_classes = len(classes)
+    labels = np.zeros([len(df), num_classes])
+    for i, sectors_i in enumerate (df[tag]):
+        for sec in sectors_i:
+            labels[i, class_to_id[sec]] = 1
+
+    ##splitting
+    X_train, y_train, X_test, y_test = iterative_train_test_split(
+        df["entry_id"].to_numpy().reshape(-1, 1), labels, test_size=0.3)
+
+    bool_isin_ids = df.entry_id.isin(X_train.flatten())
+    df_train = df[bool_isin_ids]
+    df_test = df[~bool_isin_ids]
+
+    return df_train, df_test
 
 
-def preprocess_data(
+
+
+
+"""def preprocess_data(
     dataset,
     n_synonym_augmenter=1,
     n_swap=1,
@@ -76,11 +97,11 @@ def preprocess_data(
     method="keep all",
     language_chosen: str = "en",
 ):
-    """
-    1) filter with respect to language
-    2) perform augmentation
-    3) split to training and test set
-    """
+    
+    #1) filter with respect to language
+    #2) perform augmentation
+    #3) split to training and test set
+    
 
     df = dataset.copy()
 
@@ -95,14 +116,12 @@ def preprocess_data(
         train_data, test_data = train_test_split(df, test_size=0.3)
         return augment_data(train_data, n_synonym_augmenter, n_swap), test_data
     else:
-        return train_test_split(df, test_size=0.2)
+        return train_test_split(df, test_size=0.2)"""
 
 
-def augment_data(df, n_synonym, n_swap):
-    """
-    1) Augment with synonym
-    2) Apply swap on new (augmented with synonym) dataframe
-    """
+"""def augment_data(df, n_synonym, n_swap):
+    # 1) Augment with synonym
+    # 2) Apply swap on new (augmented with synonym) dataframe
     if n_synonym:
         syn_aug_en = naw.SynonymAug(lang="eng", aug_min=3, aug_p=0.4)
         syn_aug_fr = naw.SynonymAug(lang="fra", aug_min=3, aug_p=0.4)
@@ -136,7 +155,7 @@ def augment_data(df, n_synonym, n_swap):
                 df = df.append(row)
 
     return df
-
+"""
 
 def compute_weights(number_data_classes, n_tot):
     """
