@@ -36,7 +36,10 @@ class MultiHeadTrainer(Trainer):
         model_init: Callable[[], PreTrainedModel] = None,
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
+            None,
+            None,
+        ),
         loss_fn: str = "ce",
         loss_weights: Optional[List[float]] = None,
         loss_pos_weights: Optional[List[float]] = None,
@@ -55,9 +58,9 @@ class MultiHeadTrainer(Trainer):
         )
         if loss_fn == "ce":
             if loss_weights:
-                loss_weights = torch.FloatTensor(loss_weights).to('cuda')
+                loss_weights = torch.FloatTensor(loss_weights).to("cuda")
             if loss_pos_weights:
-                loss_pos_weights = torch.FloatTensor(loss_pos_weights).to('cuda')
+                loss_pos_weights = torch.FloatTensor(loss_pos_weights).to("cuda")
 
             self.loss_fn = torch.nn.BCEWithLogitsLoss(
                 weight=loss_weights, pos_weight=loss_pos_weights

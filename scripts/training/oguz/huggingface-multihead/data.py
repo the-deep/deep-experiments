@@ -338,20 +338,20 @@ class MultiHeadDataFrame(Dataset):
 
         # prepare targets
         if isinstance(targets, str):
-            assert isinstance(groups, List[List[str]]), "Expecting `groups` to be a list of lists"
-            assert isinstance(group_names, List[str]), "Expecting `group_names` to be a list"
+            # assert isinstance(groups, List[List[str]]), "Expecting `groups` to be a list of lists"
+            # assert isinstance(group_names, List[str]), "Expecting `group_names` to be a list"
 
             targets = [targets]
             groups = [groups]
             group_names = [group_names]
             self.single = True
         else:
-            assert isinstance(
-                groups, List[List[List[str]]]
-            ), "Expecting `groups` to be a list of lists of lists"
-            assert isinstance(
-                group_names, List[List[str]]
-            ), "Expecting `group_names` to be a list of lists"
+            # assert isinstance(
+            #    groups, List[List[List[str]]]
+            # ), "Expecting `groups` to be a list of lists of lists"
+            # assert isinstance(
+            #    group_names, List[List[str]]
+            # ), "Expecting `group_names` to be a list of lists"
             self.single = False
 
         self.targets = []

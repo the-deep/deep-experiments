@@ -8,6 +8,7 @@ import mlflow
 import pandas as pd
 
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
 from transformers import AutoModel, AutoTokenizer, TrainingArguments
 
 from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
@@ -42,18 +43,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--target",
-        type=str,
+        type=str2list,
         default="subpillars_1d",
-        choices=[
-            "pillars",
-            "subpillars",
-            "pillars_1d",
-            "subpillars_1d",
-            "pillars_2d",
-            "subpillars_2d",
-            "sectors",
-        ],
-        help="Prediction target",
+        help="Prediction targets",
     )
     parser.add_argument("--split", type=str2list, default="subpillars_1d")
     parser.add_argument("--iterative", type=str2bool, default=False)
@@ -130,7 +122,7 @@ if __name__ == "__main__":
         train_df,
         tokenizer=tokenizer,
         source="excerpt",
-        target=args.target,
+        targets=args.target,
         groups=groups,
         group_names=group_names,
         filter=args.split,
@@ -140,7 +132,7 @@ if __name__ == "__main__":
         test_df,
         tokenizer=tokenizer,
         source="excerpt",
-        target=args.target,
+        targets=args.target,
         groups=groups,
         group_names=group_names,
         filter=args.split,

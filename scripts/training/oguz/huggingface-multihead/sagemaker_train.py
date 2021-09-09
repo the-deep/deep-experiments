@@ -66,6 +66,8 @@ hyperparameters = {
     "num_layers": 1,
     "split": target_field,
     "target": target_field,
+    "weighting": "inverse",
+    "learning_rate": 5e-5,
 }
 
 # create SageMaker estimator
