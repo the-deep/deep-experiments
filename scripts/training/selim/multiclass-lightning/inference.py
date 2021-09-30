@@ -4,6 +4,7 @@ sys.path.append(".")
 
 import mlflow
 import torch
+from model import Transformer
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):
@@ -13,7 +14,7 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
         pass
 
-    def add_model(self, model, model_name:str):
+    def add_model(self, model:Transformer, model_name:str):
         self.models[model_name] = model
 
     def predict(self, context, model_input):
@@ -25,4 +26,3 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
             final_predictions[tag_name] = predictions_one_model
 
         return final_predictions
-

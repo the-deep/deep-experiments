@@ -42,9 +42,9 @@ class CustomDataset(Dataset):
         token_type_ids = inputs["token_type_ids"]
 
         encoded = {
-            "ids": torch.tensor(ids, dtype=int),
-            "mask": torch.tensor(mask, dtype=int),
-            "token_type_ids": torch.tensor(token_type_ids, dtype=int),
+            "ids": torch.tensor(ids, dtype=torch.long),
+            "mask": torch.tensor(mask, dtype=torch.long),
+            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
         }
 
         targets = None

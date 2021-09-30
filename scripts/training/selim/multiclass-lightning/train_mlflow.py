@@ -3,7 +3,8 @@ import re
 import argparse
 import logging
 import pickle
-import timeit
+
+import dill
 
 import pandas as pd
 from pathlib import Path
@@ -20,7 +21,6 @@ from inference import TransformersPredictionsWrapper
 from generate_models import CustomTrainer
 
 ##
-
 
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
@@ -167,6 +167,7 @@ if __name__ == "__main__":
             )
             model = model_trainer.train_model()
             time_for_predictions, indexes, logit_predictions, y_true = model.hypertune_threshold()
+            prediction_wrapper.add_model(model=model, model_name=column)
             optimal_metrics = model.custom_eval(logit_predictions, y_true)
 
             tot_time += time_for_predictions
@@ -185,9 +186,6 @@ if __name__ == "__main__":
                 mlflow.log_metrics(optimal_metrics)
             except Exception:
                 pass
-        
-            prediction_wrapper.add_model(model=model, model_name=column)
-
 
             #logging metrcs to mlflow
             proportions = stats_train_test(train_df, val_df, column)
@@ -208,34 +206,11 @@ if __name__ == "__main__":
                 except Exception:
                     pass
 
-            try:
-                test_model = TransformersPredictionsWrapper()
-                test_model.add_model(model, column)
-                mlflow.pyfunc.log_model(
-                    python_model=test_model,
-                    artifact_path=f"pyfunc_model_{column}",
-                    conda_env=get_conda_env_specs(),  # python conda dependencies
-                    code_path=[
-                        __file__,
-                        "model.py",
-                        "utils.py",
-                        "inference.py", 
-                        "generate_models.py",
-                        "data.py",
-                    ]  # file dependencies
-                )
-            except Exception as e:
-                logging.info(e)
-            
-
-        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
-        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
-
-        try:
-
+            """test_model = TransformersPredictionsWrapper()
+            test_model.add_model(model, column)
             mlflow.pyfunc.log_model(
-                python_model=prediction_wrapper,
-                artifact_path="pyfunc_models_all",
+                python_model=test_model,
+                artifact_path=f"pyfunc_model_{column}",
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,
@@ -245,9 +220,26 @@ if __name__ == "__main__":
                     "generate_models.py",
                     "data.py",
                 ]  # file dependencies
-            )
-        except Exception:
-            pass
+            )"""
+            
+
+        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
+        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
+
+        mlflow.pyfunc.log_model(
+            python_model=prediction_wrapper,
+            artifact_path="pyfunc_models_all",
+            conda_env=get_conda_env_specs(),  # python conda dependencies
+            code_path=[
+                __file__,
+                "model.py",
+                "utils.py",
+                "inference.py", 
+                "generate_models.py",
+                "data.py",
+            ]  # file dependencies
+        )
+
 
 
     outputs = {
