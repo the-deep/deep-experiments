@@ -3,22 +3,34 @@ import re
 import argparse
 import logging
 import pickle
+import timeit
 
 import pandas as pd
-from pandas.core.frame import DataFrame
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 from pathlib import Path
-import timeit
 
 import mlflow
 
 from utils import (
     read_merge_data,
-    preprocess_df
+    preprocess_df,
+    stats_train_test
 )
 
 from inference import TransformersPredictionsWrapper
-from generate_models import train_on_specific_targets
+from generate_models import CustomTrainer
+
+##
+
+
+from pytorch_lightning.loggers import TensorBoardLogger
+import pytorch_lightning as pl
+from transformers import AutoTokenizer
+from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
+import os
+
+
+
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -41,6 +53,7 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_rate", type=float, default=0.3)
     parser.add_argument("--pred_threshold", type=float, default=0.4)
     parser.add_argument("--output_length", type=int, default=384)
+    parser.add_argument("--balance_trainig_data", type=bool, default=False)
 
     parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
     parser.add_argument(
@@ -51,8 +64,11 @@ if __name__ == "__main__":
     parser.add_argument("--method_language", type=str, default="keep all")
     parser.add_argument("--training_names", type=str, default="sectors,subpillars_2d,subpillars_1d")
 
-    parser.add_argument("--train_with_whole_dataset", type=bool, default=False)
+
+    parser.add_argument("--train_with_all_positive_examples", type=bool, default=False)
     parser.add_argument("--multiclass_bool", type=bool, default=True)
+    parser.add_argument("--proportion_negative_examples_train_df", type=float, default=0.01)
+    #parser.add_argument("--log_models_bool", type=bool, default=True)
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
@@ -73,27 +89,7 @@ if __name__ == "__main__":
         pip_dependencies.extend(requirements)
         return default_env
 
-    def log_metrics_MLflow(metrics_df: pd.DataFrame, ratio_eval_sentences, column_name: str):
-        mlflow.log_metric(f"ratio of evaluated sentences {column_name}", ratio_eval_sentences)
-
-        mlflow.log_metric(f"average macro f1 score {column_name}", metrics_df.loc["mean"]["F1 Score"])
-        mlflow.log_metric(f"average accuracy {column_name}", metrics_df.loc["mean"]["Accuracy"])
-        mlflow.log_metric(f"average precision {column_name}", metrics_df.loc["mean"]["Precision"])
-        mlflow.log_metric(f"average recall {column_name}", metrics_df.loc["mean"]["Recall"])
-
-        list_names = list(metrics_df["Sector"])
-
-        for i in range(len(list_names) - 1):
-            try:
-                name = list_names[i]
-                cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-                final_name = "f1_score_" + cleaned_name
-                
-                mlflow.log_metric(final_name, metrics_df.iloc[i]["F1 Score"])
-            except Exception:
-                pass
-
-
+    
     # load datasets
     logging.info("reading, preprocessing data")
 
@@ -103,10 +99,6 @@ if __name__ == "__main__":
     )
 
     training_columns = args.training_names.split(',')
-    #train_df, val_df = preprocess_data(
-    #    all_dataset, perform_augmentation=False, method=args.method_language
-    #)
-
     
 
     # Set remote mlflow server
@@ -134,27 +126,32 @@ if __name__ == "__main__":
             "languages_trained": args.method_language,
             "augmentation_performed": "translation",
             "weighted_loss": "sqrt weights",
-            "train with whole dataset":args.train_with_whole_dataset
+            "train with whole dataset":args.train_with_all_positive_examples,
+            "balance data":args.balance_trainig_data,
+            "proportion negative examples train df":args.proportion_negative_examples_train_df
         }
 
         mlflow.log_params(params)
 
-        models = {}
         tot_time = 0
+        tot_nb_rows_predicted = 0
+        all_results = {}
+        prediction_wrapper = TransformersPredictionsWrapper()
+        for column in training_columns:
 
-        for column_name in training_columns:
-            train_df, val_df = preprocess_df(all_dataframe, column_name)
+            train_df, val_df = preprocess_df(
+                all_dataframe, 
+                column, 
+                train_with_all_positive_examples=args.train_with_all_positive_examples, 
+                proportion_negative_examples_train_df=args.proportion_negative_examples_train_df)
 
-            if args.train_with_whole_dataset:
-                train_df = pd.concat([train_df, val_df])
-
-            model = train_on_specific_targets(
+            model_trainer = CustomTrainer(
                 train_dataset=train_df,
                 val_dataset=val_df,
                 MODEL_DIR=args.model_dir,
                 MODEL_NAME=args.model_name,
                 TOKENIZER_NAME=args.tokenizer_name,
-                training_column=column_name,
+                training_column=column,
                 gpu_nb=1,
                 train_params=train_params,
                 val_params=val_params,
@@ -168,48 +165,94 @@ if __name__ == "__main__":
                 output_length=args.output_length,
                 multiclass_bool=args.multiclass_bool,
             )
+            model = model_trainer.train_model()
+            time_for_predictions, indexes, logit_predictions, y_true = model.hypertune_threshold()
+            optimal_metrics = model.custom_eval(logit_predictions, y_true)
+
+            tot_time += time_for_predictions
+            tot_nb_rows_predicted += y_true.shape[0]
+
+            results_column = {
+                'indexes': indexes,
+                'logit_predictions': logit_predictions,
+                'groundtruth': y_true,
+                'thresholds': model.optimal_thresholds,
+                'optimal_metrics': optimal_metrics
+            }
+            all_results[column] = results_column
+
+            try:
+                mlflow.log_metrics(optimal_metrics)
+            except Exception:
+                pass
+        
+            prediction_wrapper.add_model(model=model, model_name=column)
+
+
+            #logging metrcs to mlflow
+            proportions = stats_train_test(train_df, val_df, column)
+            mlflow.log_params(proportions)
+            params.update(proportions)
+
+            model_threshold_names = list(model.optimal_thresholds.keys())
+            model_threshold_values = list(model.optimal_thresholds.values())
+
+            for i in range(len(model_threshold_names)):
+                try:
+                    name = model_threshold_names[i]
+                    cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+                    final_name = 'threshold_' + model.column_name + "_" + cleaned_name
+                    
+                    mlflow.log_metric(final_name, model_threshold_values[i])
+
+                except Exception:
+                    pass
+
+            try:
+                test_model = TransformersPredictionsWrapper()
+                test_model.add_model(model, column)
+                mlflow.pyfunc.log_model(
+                    python_model=test_model,
+                    artifact_path=f"pyfunc_model_{column}",
+                    conda_env=get_conda_env_specs(),  # python conda dependencies
+                    code_path=[
+                        __file__,
+                        "model.py",
+                        "utils.py",
+                        "inference.py", 
+                        "generate_models.py",
+                        "data.py",
+                    ]  # file dependencies
+                )
+            except Exception as e:
+                logging.info(e)
             
 
-            # This class is logged as a pickle artifact and used at inference time
-            prediction_wrapper = TransformersPredictionsWrapper(model)
+        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
+        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
+
+        try:
+
             mlflow.pyfunc.log_model(
                 python_model=prediction_wrapper,
-                artifact_path=f"model_{model.column_name}",
+                artifact_path="pyfunc_models_all",
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,
-                    "data_and_model.py",
+                    "model.py",
                     "utils.py",
                     "inference.py", 
-                ],  # file dependencies
+                    "generate_models.py",
+                    "data.py",
+                ]  # file dependencies
             )
+        except Exception:
+            pass
 
-            start = timeit.default_timer()
 
-            subpillars_tot = []
-            ratio_tot = []
-
-            (
-                metrics_subpillars,
-                ratio_evaluated_sentences,
-            ) = model.custom_eval(val_df)
-
-            stop = timeit.default_timer()
-
-            log_metrics_MLflow(metrics_subpillars, 
-                                ratio_evaluated_sentences, 
-                                model.column_name)
-
-            
-            tot_time = tot_time + stop - start
-
-            metrics_subpillars.to_csv(f"{args.output_data_dir}/results_{model.column_name}.csv")
-
-            models[model.column_name] = model
-
-        sentences_per_second = val_df.shape[0] / (tot_time)
-        mlflow.log_metric("nb sentences per second to predict all tags", sentences_per_second)
-
-        #output = open(f"{args.model_dir}/all_models.pkl", 'wb')
-        #pickle.dump(models, output)
-        #output.close()
+    outputs = {
+        'parameters':params,
+        'outputs':all_results 
+    }
+    with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
+        pickle.dump(outputs, f)

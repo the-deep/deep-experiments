@@ -3,26 +3,26 @@ import sys
 sys.path.append(".")
 
 import mlflow
-
-
-#class generated_models():
-#    def __init__(self, models_list):
-#        self.first_model = models_list[0]
-#        self.second_model = models_list[1]
-#        self.third_model = models_list[2]
-
-    
+import torch
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
-    def __init__(self, model_one):
+    def __init__(self):
         super().__init__()
-        self.model_one = model_one
-        #self.model_two = model_two
+        self.models = {}
 
     def load_context(self, context):
         pass
 
+    def add_model(self, model, model_name:str):
+        self.models[model_name] = model
+
     def predict(self, context, model_input):
-        final_predictions = self.model_one.custom_predict(model_input, testing=True)
-        #final_predictions[self.model_two.column_name] = self.model_two.custom_predict(model_input, testing=True)
+
+        final_predictions = {}
+        for tag_name, trained_model in self.models.items():
+
+            predictions_one_model = trained_model.custom_predict(model_input, testing=True)
+            final_predictions[tag_name] = predictions_one_model
+
         return final_predictions
+

@@ -11,3 +11,4 @@ sagemaker==2.49.1
 s3fs==2021.07.0
 smdebug==1.0.11
 scikit-multilearn==0.2.0
+
