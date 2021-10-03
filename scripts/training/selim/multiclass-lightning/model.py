@@ -3,6 +3,7 @@ import timeit
 from tqdm.auto import tqdm
 import re
 import timeit
+import dill
 
 import torchmetrics
 from torchmetrics.functional import auroc
@@ -164,7 +165,7 @@ class Transformer(pl.LightningModule):
 
         weights = compute_weights(number_data_classes, self.targets.shape[0])
 
-        weights = [weight if weight < 5 else weight ** 2 for weight in weights]
+        weights = [weight if weight < 1 else weight ** 2 for weight in weights]
         return weights
 
     @auto_move_data
@@ -174,13 +175,10 @@ class Transformer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        if self.use_weights:
-            loss = F.binary_cross_entropy_with_logits(
-                outputs, batch["targets"], weight=self.weight_classes
-            )
-        else:
-            loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
-
+        loss = F.binary_cross_entropy_with_logits(
+            outputs, batch["targets"], weight=self.weight_classes
+        )
+        
         if self.multiclass:
             self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
         else:
@@ -340,8 +338,6 @@ class Transformer(pl.LightningModule):
         if not testing:
             y_true = np.concatenate(y_true)
             indexes = np.concatenate(indexes)
-
-        if not testing:
             return indexes, logit_predictions, y_true
 
         else:
@@ -353,8 +349,6 @@ class Transformer(pl.LightningModule):
                 # Return predictions
                 # row_pred = np.array([0] * self.num_labels)
                 row_logits = logit_predictions[i, :]
-
-                # predictions.append(list(list_tags[row_logits > self.pred_threshold]))
 
                 # Return probabilities
                 probabilities_item_dict = {}
@@ -369,14 +363,14 @@ class Transformer(pl.LightningModule):
     def hypertune_threshold (
         self, 
         beta_f1:float=0.5):
-        self.beta_f1 = beta_f1
 
         thresholds_list = np.linspace(0.0, 1.0, 101)
 
         start = timeit.default_timer()
-        indexes, logit_predictions, y_true  = self.custom_predict(
-            validation_dataset=self.val_loader.dataset.data, 
-            )
+
+        data_for_threshold_tuning = self.val_loader.dataset.data
+
+        indexes, logit_predictions, y_true  = self.custom_predict(data_for_threshold_tuning)
         stop = timeit.default_timer()
         time_for_predictions = stop - start
 
@@ -404,10 +398,20 @@ class Transformer(pl.LightningModule):
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-        return time_for_predictions, indexes, logit_predictions, y_true
+        optimal_metrics = self.custom_eval(logit_predictions, y_true, beta_f1)
+
+        results = {
+            'indexes': indexes,
+            'logit_predictions': logit_predictions,
+            'groundtruth': y_true,
+            'thresholds': optimal_thresholds_dict,
+            'optimal_metrics': optimal_metrics
+        }
+
+        return time_for_predictions, results
 
 
-    def custom_eval(self, logit_predictions, y_true):
+    def custom_eval(self, logit_predictions, y_true, beta_f1):
 
         results_dict = {}
         overall_recall = []
@@ -431,7 +435,7 @@ class Transformer(pl.LightningModule):
                     ]
 
             precision = metrics.precision_score(true_preds_column, column_pred, average='macro')
-            custom_f1 = metrics.fbeta_score(true_preds_column, column_pred, self.beta_f1, average='macro')
+            custom_f1 = metrics.fbeta_score(true_preds_column, column_pred, beta_f1, average='macro')
             recall = metrics.recall_score(true_preds_column, column_pred, average='macro')
 
             overall_recall.append(recall)

@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
+import dill
 
 from model import Transformer
 

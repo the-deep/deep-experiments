@@ -22,22 +22,22 @@ def tagname_to_id(target):
     tagname_to_tagid = {tag: i for i, tag in enumerate(list(sorted(tag_set)))}
     return tagname_to_tagid
 
-def read_merge_data(TRAIN_PATH, VAL_PATH, data_format: str = "csv"):
+def read_merge_data(TRAIN_PATH, TEST_PATH, data_format: str = "csv"):
     """
     read data as csv or pickle, then merge it
     """
 
     if data_format == "pickle":
         train_df = pd.read_pickle(f"{TRAIN_PATH}/train.pickle")
-        val_df = pd.read_pickle(f"{VAL_PATH}/val.pickle")
+        test_df = pd.read_pickle(f"{TEST_PATH}/val.pickle")
 
     else:
         train_df = pd.read_csv(TRAIN_PATH)
-        val_df = pd.read_csv(VAL_PATH)
+        test_df = pd.read_csv(TEST_PATH)
 
-    all_dataset = pd.concat([train_df, val_df])
+    #all_dataset = pd.concat([train_df, val_df])
 
-    return all_dataset
+    return train_df, test_df
 
 def clean_rows(row):
     """
@@ -68,7 +68,7 @@ def get_negative_samples(df, column_name):
 def preprocess_df(
     df:pd.DataFrame, 
     column_name:str, 
-    train_with_all_positive_examples:bool=False, 
+    deployment_mode:bool=False, 
     proportion_negative_examples_train_df:float=0.1):
 
     ratio_negative_positive_examples_train =\
@@ -91,23 +91,37 @@ def preprocess_df(
         dataset['target'].apply(lambda x: len(x) > 0)
         ].entry_id.unique().tolist()
 
-    train_pos_entries = random.sample(
-        entries_pos_dataset, int(len(entries_pos_dataset) * 0.8)
-        )
-    test_pos_entries = list(
-        set(entries_pos_dataset) - set(train_pos_entries)
-    )
+    if deployment_mode:
+        train_pos_entries = entries_pos_dataset
+        test_pos_entries = random.sample(
+            entries_pos_dataset, int(len(entries_pos_dataset) * 0.2)
+            )
+        max_train_negative_ids = all_negative_ids
+        test_negative_ids = random.sample(
+            all_negative_ids, int(len(test_pos_entries) * 0.3)
+            )
 
-    ## NEGATIVE ENTRIES:
-    nb_pos_entries_test_set = len(test_pos_entries)
-    try:
-        test_negative_ids = random.sample(all_negative_ids, nb_pos_entries_test_set // 2)
-    except Exception:
-        test_negative_ids = []
-    max_train_negative_ids = list(
-        set(all_negative_ids) - set(test_negative_ids)
-    )
-    
+
+    else:
+        train_pos_entries = random.sample(
+            entries_pos_dataset, int(len(entries_pos_dataset) * 0.8)
+            )
+        test_pos_entries = list(
+            set(entries_pos_dataset) - set(train_pos_entries)
+        )
+
+        ## NEGATIVE ENTRIES:
+        nb_pos_entries_test_set = len(test_pos_entries)
+
+        if len(all_negative_ids) > nb_pos_entries_test_set // 2 :
+            test_negative_ids = random.sample(all_negative_ids, nb_pos_entries_test_set // 2)
+        else:
+            test_negative_ids = []
+
+        max_train_negative_ids = list(
+            set(all_negative_ids) - set(test_negative_ids)
+        )
+        
     if bool(ratio_negative_positive_examples_train):
 
         number_of_negative_entries_added = int(
@@ -121,9 +135,6 @@ def preprocess_df(
 
     else:
         train_negative_ids = []
-
-    """if train_with_all_positive_examples:
-        train_pos_entries = entries_pos_dataset """
 
     test_ids = list (set(test_negative_ids).union(set (test_pos_entries)))
     train_ids = list (set(train_negative_ids).union(set (train_pos_entries)))

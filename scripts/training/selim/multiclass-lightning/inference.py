@@ -3,8 +3,8 @@ import sys
 sys.path.append(".")
 
 import mlflow
-import torch
 from model import Transformer
+import dill
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):

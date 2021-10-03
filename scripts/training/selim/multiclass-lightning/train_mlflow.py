@@ -3,10 +3,14 @@ import re
 import argparse
 import logging
 import pickle
+import timeit
+from typing import Union
 
+#dill import  needs to be kept! importing dill changes how the pickling is done
 import dill
+#dill.detect.trace(True)
+#dill.extend(True)
 
-import pandas as pd
 from pathlib import Path
 
 import mlflow
@@ -27,9 +31,6 @@ import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
-
-
-
 
 
 logging.basicConfig(level=logging.INFO)
@@ -53,7 +54,6 @@ if __name__ == "__main__":
     parser.add_argument("--dropout_rate", type=float, default=0.3)
     parser.add_argument("--pred_threshold", type=float, default=0.4)
     parser.add_argument("--output_length", type=int, default=384)
-    parser.add_argument("--balance_trainig_data", type=bool, default=False)
 
     parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
     parser.add_argument(
@@ -61,14 +61,14 @@ if __name__ == "__main__":
     )
     # parser.add_argument("--log_every_n_steps", type=int, default=10)
     # parser.add_argument("--n_classes", type=int, default=6)
-    parser.add_argument("--method_language", type=str, default="keep all")
     parser.add_argument("--training_names", type=str, default="sectors,subpillars_2d,subpillars_1d")
 
+    parser.add_argument("--training_mode", type=str, default='multiclass')
+    parser.add_argument("--model_mode", type=str, default='train')
+    parser.add_argument("--beta_f1", type=float, default=0.5)
 
-    parser.add_argument("--train_with_all_positive_examples", type=bool, default=False)
-    parser.add_argument("--multiclass_bool", type=bool, default=True)
     parser.add_argument("--proportion_negative_examples_train_df", type=float, default=0.01)
-    #parser.add_argument("--log_models_bool", type=bool, default=True)
+
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
@@ -93,14 +93,14 @@ if __name__ == "__main__":
     # load datasets
     logging.info("reading, preprocessing data")
 
+    deployment_mode = args.model_mode=='deploy'
     
-    all_dataframe = read_merge_data(
+    whole_df, test_df = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
     )
 
     training_columns = args.training_names.split(',')
     
-
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     # Set experiment name
@@ -123,12 +123,9 @@ if __name__ == "__main__":
             "threshold": args.pred_threshold,
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
-            "languages_trained": args.method_language,
-            "augmentation_performed": "translation",
-            "weighted_loss": "sqrt weights",
-            "train with whole dataset":args.train_with_all_positive_examples,
-            "balance data":args.balance_trainig_data,
-            "proportion negative examples train df":args.proportion_negative_examples_train_df
+            "purpose of run":deployment_mode,
+            "proportion negative examples train df":args.proportion_negative_examples_train_df,
+            "beta f1":args.beta_f1
         }
 
         mlflow.log_params(params)
@@ -140,10 +137,17 @@ if __name__ == "__main__":
         for column in training_columns:
 
             train_df, val_df = preprocess_df(
-                all_dataframe, 
+                whole_df, 
                 column, 
-                train_with_all_positive_examples=args.train_with_all_positive_examples, 
+                deployment_mode=deployment_mode, 
                 proportion_negative_examples_train_df=args.proportion_negative_examples_train_df)
+
+            #logging metrcs to mlflow
+            proportions = stats_train_test(train_df, val_df, column)
+            mlflow.log_params(proportions)
+            params.update(proportions)
+
+            multiclass_bool = column != 'severity'
 
             model_trainer = CustomTrainer(
                 train_dataset=train_df,
@@ -163,54 +167,67 @@ if __name__ == "__main__":
                 warmup_steps=args.warmup_steps,
                 pred_threshold=float(args.pred_threshold),
                 output_length=args.output_length,
-                multiclass_bool=args.multiclass_bool,
+                multiclass_bool=multiclass_bool,
+
             )
             model = model_trainer.train_model()
-            time_for_predictions, indexes, logit_predictions, y_true = model.hypertune_threshold()
-            prediction_wrapper.add_model(model=model, model_name=column)
-            optimal_metrics = model.custom_eval(logit_predictions, y_true)
+            
+            if not deployment_mode:
+                time_for_predictions, results_column = model.hypertune_threshold(args.beta_f1)
 
-            tot_time += time_for_predictions
-            tot_nb_rows_predicted += y_true.shape[0]
+                tot_time += time_for_predictions
+                tot_nb_rows_predicted += results_column['groundtruth'].shape[0]
 
-            results_column = {
-                'indexes': indexes,
-                'logit_predictions': logit_predictions,
-                'groundtruth': y_true,
-                'thresholds': model.optimal_thresholds,
-                'optimal_metrics': optimal_metrics
-            }
-            all_results[column] = results_column
-
-            try:
-                mlflow.log_metrics(optimal_metrics)
-            except Exception:
-                pass
-
-            #logging metrcs to mlflow
-            proportions = stats_train_test(train_df, val_df, column)
-            mlflow.log_params(proportions)
-            params.update(proportions)
-
-            model_threshold_names = list(model.optimal_thresholds.keys())
-            model_threshold_values = list(model.optimal_thresholds.values())
-
-            for i in range(len(model_threshold_names)):
+                all_results[column] = results_column
                 try:
-                    name = model_threshold_names[i]
-                    cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-                    final_name = 'threshold_' + model.column_name + "_" + cleaned_name
-                    
-                    mlflow.log_metric(final_name, model_threshold_values[i])
-
+                    mlflow.log_metrics(results_column['optimal_metrics'])
                 except Exception:
                     pass
 
-            """test_model = TransformersPredictionsWrapper()
-            test_model.add_model(model, column)
+                model_threshold_names = list(results_column['thresholds'].keys())
+                model_threshold_values = list(results_column['thresholds'].values())
+
+                for i in range(len(model_threshold_names)):
+                    try:
+                        name = model_threshold_names[i]
+                        cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+                        final_name = f"threshold_{column}_{cleaned_name}"
+                        
+                        mlflow.log_metric(final_name, model_threshold_values[i])
+
+                    except Exception:
+                        pass
+
+            else:
+                start = timeit.default_timer()
+                predictions_dict = model.custom_predict(test_df, testing=True)
+                end = timeit.default_timer()
+                prediction_wrapper.add_model(model=model, model_name=column)
+
+                time_for_predictions = end - start
+                tot_time = time_for_predictions
+                tot_nb_rows_predicted += test_df.shape[0]
+
+                all_results[column] = predictions_dict
+                
+                """output_list = []
+                for i in range (len (predictions_dict)):
+                    outputs_row = []
+                    pred_row = predictions_dict[i]
+                    for name in model_threshold_names:
+                        if model.optimal_thresholds[name] <= outputs_row[name]:
+                            outputs_row.append(name)
+                    output_list.append(outputs_row)
+                preds_column_name = f"predictions_{column}"
+                test_df[preds_column_name] = output_list"""
+
+        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
+        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
+
+        if deployment_mode:
             mlflow.pyfunc.log_model(
-                python_model=test_model,
-                artifact_path=f"pyfunc_model_{column}",
+                python_model=prediction_wrapper,
+                artifact_path="pyfunc_models_all",
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,
@@ -220,27 +237,7 @@ if __name__ == "__main__":
                     "generate_models.py",
                     "data.py",
                 ]  # file dependencies
-            )"""
-            
-
-        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
-        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
-
-        mlflow.pyfunc.log_model(
-            python_model=prediction_wrapper,
-            artifact_path="pyfunc_models_all",
-            conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[
-                __file__,
-                "model.py",
-                "utils.py",
-                "inference.py", 
-                "generate_models.py",
-                "data.py",
-            ]  # file dependencies
-        )
-
-
+            )
 
     outputs = {
         'parameters':params,
