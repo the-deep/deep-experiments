@@ -35,8 +35,6 @@ def read_merge_data(TRAIN_PATH, TEST_PATH, data_format: str = "csv"):
         train_df = pd.read_csv(TRAIN_PATH)
         test_df = pd.read_csv(TEST_PATH)
 
-    #all_dataset = pd.concat([train_df, val_df])
-
     return train_df, test_df
 
 def clean_rows(row):
@@ -61,10 +59,10 @@ def custom_stratified_train_test_split(df, train_ratio:float = 0.8):
     """
     train_ids = []
     test_ids = []
-
+    
     unique_entries = list(np.unique(df['target'].apply(str)))
     for entry in unique_entries:
-        ids_entry = list(df[df.target.apply(str)==entry].entry_id)
+        ids_entry = list(df[df.target.apply(str)==entry].entry_id.unique())
 
         train_ids_entry = random.sample(
             ids_entry, int(len(ids_entry) * train_ratio)
@@ -97,14 +95,59 @@ def get_negative_samples(df, column_name):
 
     return negative_ids.tolist()
 
+def augment_numbers_sentences (df):
+    """
+    Generate new entries with changed numbers for tags containing numbers
+    """
+    def change_nb(word:str):
+        try:
+            word = int(word)
+            changed_word = min(abs(random.randint(word-3, word+3)), 9)
+            return changed_word
+        except Exception:
+            return word
+
+    def augment_sent (txt:str):
+        augmented_txt = ' '.join(
+            ["".join([
+                str(change_nb(c)) if c.isalnum() else c for c in word ]) for word in txt.split(' ')
+                ]
+        )
+        return augmented_txt
+        
+    list_entries = list(np.unique(flatten(list(df.target))))
+    entries_containing_numbers = [entry for entry in list_entries if 'Number' in entry]
+    augmented_nb_df = df[df.target.apply(
+            lambda x: np.any([tag in x for tag in entries_containing_numbers])
+        )]
+    augmented_nb_df['excerpt'] = augmented_nb_df.excerpt.apply(augment_sent)
+    
+    final_df = pd.concat([df, augmented_nb_df])
+    
+    return final_df
+
 def preprocess_df(
     df:pd.DataFrame, 
     column_name:str, 
     deployment_mode:bool=False, 
-    proportion_negative_examples_train_df:float=0.1):
+    proportion_negative_examples_train_df:float=0.1,
+    proportion_negative_examples_test_df:float=0.25,
+    augment_numbers:bool=True):
 
-    ratio_negative_positive_examples_train =\
-            proportion_negative_examples_train_df / ( 1 - proportion_negative_examples_train_df )
+    def get_ratio_neg_positive(ratio):
+        """
+        from total ratio of negative samples
+        get ratio of negative /positive
+        """
+        return ratio / (1 - ratio)
+
+    ratio_negative_positive_examples_train = get_ratio_neg_positive(
+        proportion_negative_examples_train_df
+    )
+
+    ratio_negative_positive_examples_test = get_ratio_neg_positive(
+        proportion_negative_examples_test_df
+    )
 
     all_dataset = df.copy()
 
@@ -119,35 +162,36 @@ def preprocess_df(
     
     ## POSITIVE ENTRIES:
     #list of positive entry_ids
-    entries_pos_dataset = dataset[
-        dataset['target'].apply(lambda x: len(x) > 0)
-        ].entry_id.unique().tolist()
+    pos_dataset = dataset[dataset['target'].apply(lambda x: len(x) > 0)]
+
+    entries_pos_dataset = pos_dataset.entry_id.unique().tolist()
 
     if deployment_mode:
         train_pos_entries = entries_pos_dataset
         test_pos_entries = random.sample(
             entries_pos_dataset, int(len(entries_pos_dataset) * 0.2)
             )
+        
         max_train_negative_ids = all_negative_ids
-        test_negative_ids = random.sample(
-            all_negative_ids, int(len(test_pos_entries) * 0.3)
-            )
-
+        test_negative_ids = []
 
     else:
-        train_pos_entries, test_pos_entries = custom_stratified_train_test_split(dataset)
+        train_pos_entries, test_pos_entries = custom_stratified_train_test_split(pos_dataset)
 
         ## NEGATIVE ENTRIES:
         nb_pos_entries_test_set = len(test_pos_entries)
 
-        if len(all_negative_ids) > nb_pos_entries_test_set // 2 :
-            test_negative_ids = random.sample(all_negative_ids, nb_pos_entries_test_set // 2)
+        if len(all_negative_ids) > (nb_pos_entries_test_set * ratio_negative_positive_examples_test):
+            test_negative_ids = random.sample(
+                all_negative_ids, int(nb_pos_entries_test_set * ratio_negative_positive_examples_test)
+                )
         else:
-            test_negative_ids = []
+            test_negative_ids = all_negative_ids
 
         max_train_negative_ids = list(
             set(all_negative_ids) - set(test_negative_ids)
         )
+
         
     if bool(ratio_negative_positive_examples_train):
 
@@ -168,10 +212,16 @@ def preprocess_df(
     
     df_train = dataset[dataset.entry_id.isin(train_ids)]
     df_test = dataset[dataset.entry_id.isin(test_ids)]
+
+    if 'subpillars_' in column_name and augment_numbers:
+        df_train = augment_numbers_sentences(df_train)
         
     return df_train, df_test
 
 def stats_train_test (df_train:pd.DataFrame, df_test:pd.DataFrame, column_name:str):
+    """
+    Sanity check of data (proportion negative examples)
+    """
     def compute_ratio_negative_positive (df):
         nb_rows_negative = df[df.target.apply(lambda x: len(x)==0)].shape[0]
         return  nb_rows_negative / df.shape[0]

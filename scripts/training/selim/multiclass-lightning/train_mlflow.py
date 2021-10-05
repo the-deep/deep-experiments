@@ -64,6 +64,7 @@ if __name__ == "__main__":
     parser.add_argument("--training_mode", type=str, default='multiclass')
     parser.add_argument("--model_mode", type=str, default='train')
     parser.add_argument("--beta_f1", type=float, default=0.5)
+    parser.add_argument("--numbers_augmentation", type=str, default="with")
 
     parser.add_argument("--proportion_negative_examples_train_df", type=float, default=0.01)
 
@@ -92,6 +93,7 @@ if __name__ == "__main__":
     logging.info("reading, preprocessing data")
 
     deployment_mode = args.model_mode=='deploy'
+    augment_numbers = args.numbers_augmentation=='with'
     
     whole_df, test_df = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
@@ -121,9 +123,10 @@ if __name__ == "__main__":
             "threshold": args.pred_threshold,
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
-            "purpose of run":deployment_mode,
+            "purpose of run":args.model_mode,
             "proportion negative examples train df":args.proportion_negative_examples_train_df,
-            "beta f1":args.beta_f1
+            "beta f1":args.beta_f1,
+            "numbers augmentation":args.numbers_augmentation
         }
 
         mlflow.log_params(params)
@@ -146,7 +149,8 @@ if __name__ == "__main__":
                 whole_df, 
                 column, 
                 deployment_mode=deployment_mode, 
-                proportion_negative_examples_train_df=prop_negative_examples_train)
+                proportion_negative_examples_train_df=prop_negative_examples_train,
+                augment_numbers=augment_numbers)
 
             #logging metrcs to mlflow
             proportions = stats_train_test(train_df, val_df, column)
