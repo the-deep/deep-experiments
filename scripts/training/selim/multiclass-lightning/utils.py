@@ -4,7 +4,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+#from sklearn.model_selection import train_test_split
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -45,6 +45,38 @@ def clean_rows(row):
     2) keep unique values
     """
     return list(set(literal_eval(row)))
+
+def flatten(t):
+    return [item for sublist in t for item in sublist]
+
+def custom_stratified_train_test_split(df, train_ratio:float = 0.8):
+    """
+    custom function for stratified train test splitting
+    1) take unique sub-tags (example: ['Health'])
+    2) For each unique subtag:
+        i) take all indexes that have that specific subtag
+        ii) split them ransomly to train and test sets
+
+    NB: a bit time consuming ~ 950 entries/second in average
+    """
+    train_ids = []
+    test_ids = []
+
+    unique_entries = list(np.unique(df['target'].apply(str)))
+    for entry in unique_entries:
+        ids_entry = list(df[df.target.apply(str)==entry].entry_id)
+
+        train_ids_entry = random.sample(
+            ids_entry, int(len(ids_entry) * train_ratio)
+            )
+        test_ids_entry = list(
+            set(ids_entry) - set(train_ids_entry)
+        )
+
+        train_ids.append(train_ids_entry)
+        test_ids.append(test_ids_entry)
+        
+    return flatten(train_ids), flatten(test_ids)
 
 def get_negative_samples(df, column_name):
     """
@@ -103,12 +135,7 @@ def preprocess_df(
 
 
     else:
-        train_pos_entries = random.sample(
-            entries_pos_dataset, int(len(entries_pos_dataset) * 0.8)
-            )
-        test_pos_entries = list(
-            set(entries_pos_dataset) - set(train_pos_entries)
-        )
+        train_pos_entries, test_pos_entries = custom_stratified_train_test_split(dataset)
 
         ## NEGATIVE ENTRIES:
         nb_pos_entries_test_set = len(test_pos_entries)

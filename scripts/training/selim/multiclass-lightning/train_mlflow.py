@@ -2,7 +2,8 @@ import os
 import re
 import argparse
 import logging
-import pickle
+#Importing pickle will cause an error in the model logging to mlflow
+#import pickle
 import timeit
 from typing import Union
 
@@ -21,17 +22,14 @@ from utils import (
     stats_train_test
 )
 
-from inference import TransformersPredictionsWrapper
+from inference import TransformersPredictionsWrapper, PythonPredictor
 from generate_models import CustomTrainer
 
 ##
 
-from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
-from transformers import AutoTokenizer
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
-
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -133,21 +131,27 @@ if __name__ == "__main__":
         tot_time = 0
         tot_nb_rows_predicted = 0
         all_results = {}
-        prediction_wrapper = TransformersPredictionsWrapper()
+        pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
+        pytorch_prediction_wrapper = PythonPredictor()
         for column in training_columns:
+
+            multiclass_bool = column != 'severity'
+
+            if multiclass_bool:
+                prop_negative_examples_train = args.proportion_negative_examples_train_df
+            else:
+                prop_negative_examples_train = 0
 
             train_df, val_df = preprocess_df(
                 whole_df, 
                 column, 
                 deployment_mode=deployment_mode, 
-                proportion_negative_examples_train_df=args.proportion_negative_examples_train_df)
+                proportion_negative_examples_train_df=prop_negative_examples_train)
 
             #logging metrcs to mlflow
             proportions = stats_train_test(train_df, val_df, column)
             mlflow.log_params(proportions)
             params.update(proportions)
-
-            multiclass_bool = column != 'severity'
 
             model_trainer = CustomTrainer(
                 train_dataset=train_df,
@@ -202,7 +206,8 @@ if __name__ == "__main__":
                 start = timeit.default_timer()
                 predictions_dict = model.custom_predict(test_df, testing=True)
                 end = timeit.default_timer()
-                prediction_wrapper.add_model(model=model, model_name=column)
+                pyfunc_prediction_wrapper.add_model(model=model, model_name=column)
+                pytorch_prediction_wrapper.add_model(model=model, model_name=column)
 
                 time_for_predictions = end - start
                 tot_time = time_for_predictions
@@ -225,23 +230,45 @@ if __name__ == "__main__":
         mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
 
         if deployment_mode:
-            mlflow.pyfunc.log_model(
-                python_model=prediction_wrapper,
-                artifact_path="pyfunc_models_all",
-                conda_env=get_conda_env_specs(),  # python conda dependencies
-                code_path=[
-                    __file__,
-                    "model.py",
-                    "utils.py",
-                    "inference.py", 
-                    "generate_models.py",
-                    "data.py",
-                ]  # file dependencies
+            try:
+                mlflow.pyfunc.log_model(
+                    python_model=pyfunc_prediction_wrapper,
+                    artifact_path="pyfunc_models_all",
+                    conda_env=get_conda_env_specs(),  # python conda dependencies
+                    code_path=[
+                        __file__,
+                        "model.py",
+                        "utils.py",
+                        "inference.py", 
+                        "generate_models.py",
+                        "data.py",
+                    ]
+                )
+            except Exception as e:
+                logging.info("PYFUNC", e)
+
+            try:
+                mlflow.pytorch.log_model(
+                    pytorch_model=pytorch_prediction_wrapper,
+                    artifact_path="pytorch_model_all",
+                    conda_env=get_conda_env_specs(),  # python conda dependencies
+                    code_paths=[
+                        __file__,
+                        "model.py",
+                        "utils.py",
+                        "inference.py", 
+                        "generate_models.py",
+                        "data.py",
+                        ],
+                    pickle_module=dill
             )
+            except Exception as e:
+                logging.info("PYTORCH", e)
+         
 
     outputs = {
         'parameters':params,
         'outputs':all_results 
     }
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
-        pickle.dump(outputs, f)
+        dill.dump(outputs, f)

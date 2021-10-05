@@ -106,8 +106,6 @@ class Transformer(pl.LightningModule):
         self.tokenizer = tokenizer
         self.val_params = val_params
 
-        # if any(weight_classes):
-        self.use_weights = True
         self.weight_classes = self.get_weights()
         self.weight_classes = torch.tensor(self.weight_classes).to("cuda")
 
@@ -179,12 +177,12 @@ class Transformer(pl.LightningModule):
             outputs, batch["targets"], weight=self.weight_classes
         )
         
-        if self.multiclass:
-            self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
-        else:
+        #if self.multiclass:
+        self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        """else:
             argmax = outputs.argmax(1)
             processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
-            self.f1_score_train(processed_output, batch["targets"].to(dtype=torch.long))
+            self.f1_score_train(processed_output, batch["targets"].to(dtype=torch.long))"""
 
         self.log("train_f1", self.f1_score_train, prog_bar=True)
         return loss
@@ -193,12 +191,12 @@ class Transformer(pl.LightningModule):
         outputs = self(batch)
         val_loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
 
-        if self.multiclass:
-            self.f1_score_val(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
-        else:
+        #if self.multiclass:
+        self.f1_score_val(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
+        """else:
             argmax = outputs.argmax(1)
             processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
-            self.f1_score_val(processed_output, batch["targets"].to(dtype=torch.long))
+            self.f1_score_val(processed_output, batch["targets"].to(dtype=torch.long))"""
 
         self.log(
             "val_f1", self.f1_score_val, on_step=True, on_epoch=True, prog_bar=True, logger=False
