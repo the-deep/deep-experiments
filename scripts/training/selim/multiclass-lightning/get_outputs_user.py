@@ -1,3 +1,10 @@
+multilabel_columns = ['sectors', 
+                    'subpillars_2d', 
+                    'subpillars_1d', 
+                    'demographic_groups', 
+                    'affected_groups', 
+                    'specific_needs_groups']
+all_columns = multilabel_columns + ['severity']
 def get_predictions(test_probas, thresholds_dict):  
     """
     test_probas structure example: {
@@ -13,7 +20,6 @@ def get_predictions(test_probas, thresholds_dict):
         .
         .
     }
-    
     
     thresholds_dict structure example: {
         'sectors':{
@@ -40,19 +46,13 @@ def get_predictions(test_probas, thresholds_dict):
         - for subpillars_2d: when no ratio is superior to 1 but there is at least one prediction for sectors
         - for severity (no threshold, just keep max if there is 'Humanitarian Conditions' in secondary tags outputs)
     """
-    columns = ['sectors', 
-               'subpillars_2d', 
-               'subpillars_1d', 
-               'demographic_groups', 
-               'affected_groups', 
-               'specific_needs_groups']
 
-    #cretae dict of ratio between probability of output and threshold
+    #create dict of ratio between probability of output and threshold
     ratio_proba_threshold = {}
-    for column in columns:
+    for column in multilabel_columns:
         preds_column = test_probas[column]
         dict_keys = list(thresholds_dict[column].keys())
-        nb_entries = len(dict_keys)
+        nb_entries = len(test_probas[column])
 
         returned_values_column = []
         for preds_sent in preds_column:
@@ -60,17 +60,23 @@ def get_predictions(test_probas, thresholds_dict):
             returned_values_column.append(dict_entry)
         ratio_proba_threshold[column] = returned_values_column
 
-    predictions = {column:[] for column in columns}
+    predictions = {column:[] for column in all_columns}
     for i in range (nb_entries):
 
         # get the entries where the ratio is superior to 1 and put them in a dict {prediction:probability}
-        for column in columns:
+        for column in multilabel_columns:
             preds_column = ratio_proba_threshold[column][i]
-            preds_entry = {
-                sub_tag:test_probas[column][i][sub_tag] for sub_tag in list(preds_column.keys()) if\
+            preds_entry = [
+                sub_tag for sub_tag in list(preds_column.keys()) if\
                         ratio_proba_threshold[column][i][sub_tag]>1
-            }
+            ]
+
+            #postprocessing to keep only cross if more than one prediction
+            if column=='sectors' and len(preds_entry)>1:
+                preds_entry = ['Cross']
+
             predictions[column].append(preds_entry)
+
 
         #postprocess 'subpillars_2d'
         if len(predictions['sectors'][i])>0 and len(predictions['subpillars_2d'][i])==0:
@@ -79,6 +85,7 @@ def get_predictions(test_probas, thresholds_dict):
                         test_probas[column][i][sub_tag] == max(list(test_probas[column][i].values()))
             }
 
+            
         #severity  predictions and output
         if 'Humanitarian Conditions' in predictions['subpillars_2d'][i]:
             pred_severity = {
@@ -86,8 +93,9 @@ def get_predictions(test_probas, thresholds_dict):
                         ratio_proba_threshold['severity'][i][sub_tag] == max(list(test_probas['severity'][i].values()))
             }
 
-            predictions['severity'].append(pred_severity)
+            predictions['severity'].append(preds_entry)
         else:
             predictions['severity'].append({})
             
     return predictions
+    

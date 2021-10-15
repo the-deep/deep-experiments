@@ -5,9 +5,9 @@ import logging
 #Importing pickle will cause an error in the model logging to mlflow
 #import pickle
 import timeit
-from typing import Union
+from ast import literal_eval
 
-#dill import  needs to be kept! importing dill changes how the pickling is done
+#dill import needs to be kept for more robustness in multimodel serialization
 import dill
 #dill.detect.trace(True)
 #dill.extend(True)
@@ -21,13 +21,13 @@ from utils import (
     preprocess_df,
     stats_train_test
 )
+import torch
 
 from inference import TransformersPredictionsWrapper, PythonPredictor
 from generate_models import CustomTrainer
 
 ##
 
-import pytorch_lightning as pl
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -46,7 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_batch_size", type=int, default=64)
 
     parser.add_argument("--max_len", type=int, default=256)
-    parser.add_argument("--warmup_steps", type=int, default=50)
+    parser.add_argument("--warmup_steps", type=int, default=10)
     parser.add_argument("--weight_decay", type=float, default=0.1)
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--dropout_rate", type=float, default=0.3)
@@ -64,9 +64,10 @@ if __name__ == "__main__":
     parser.add_argument("--training_mode", type=str, default='multiclass')
     parser.add_argument("--model_mode", type=str, default='train')
     parser.add_argument("--beta_f1", type=float, default=0.5)
-    parser.add_argument("--numbers_augmentation", type=str, default="with")
+    parser.add_argument("--numbers_augmentation", type=str, default="without")
 
-    parser.add_argument("--proportion_negative_examples_train_df", type=float, default=0.01)
+    parser.add_argument("--proportions_negative_examples_test", type=str)
+    parser.add_argument("--proportions_negative_examples_train", type=str)
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -95,6 +96,9 @@ if __name__ == "__main__":
     deployment_mode = args.model_mode=='deploy'
     augment_numbers = args.numbers_augmentation=='with'
     
+    proportions_negative_examples_test = literal_eval(args.proportions_negative_examples_test)
+    proportions_negative_examples_train = literal_eval(args.proportions_negative_examples_train)
+    
     whole_df, test_df = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
     )
@@ -114,6 +118,13 @@ if __name__ == "__main__":
 
         val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 4}
 
+        if torch.cuda.is_available():
+            gpu_nb=1
+            training_device='cuda'
+        else:
+            gpu_nb=0
+            training_device='cpu'
+
         params = {
             "epochs": args.epochs,
             "warmup_steps": args.warmup_steps,
@@ -124,7 +135,6 @@ if __name__ == "__main__":
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
             "purpose of run":args.model_mode,
-            "proportion negative examples train df":args.proportion_negative_examples_train_df,
             "beta f1":args.beta_f1,
             "numbers augmentation":args.numbers_augmentation
         }
@@ -141,15 +151,18 @@ if __name__ == "__main__":
             multiclass_bool = column != 'severity'
 
             if multiclass_bool:
-                prop_negative_examples_train = args.proportion_negative_examples_train_df
+                prop_negative_examples_train_column = proportions_negative_examples_train[column]
+                prop_negative_examples_test_column = proportions_negative_examples_test[column]
             else:
-                prop_negative_examples_train = 0
+                prop_negative_examples_train_column = 0
+                prop_negative_examples_test_column = 0
 
             train_df, val_df = preprocess_df(
                 whole_df, 
                 column, 
                 deployment_mode=deployment_mode, 
-                proportion_negative_examples_train_df=prop_negative_examples_train,
+                proportion_negative_examples_train_df=prop_negative_examples_train_column,
+                proportion_negative_examples_test_df=prop_negative_examples_test_column,
                 augment_numbers=augment_numbers)
 
             #logging metrcs to mlflow
@@ -164,7 +177,7 @@ if __name__ == "__main__":
                 MODEL_NAME=args.model_name,
                 TOKENIZER_NAME=args.tokenizer_name,
                 training_column=column,
-                gpu_nb=1,
+                gpu_nb=gpu_nb,
                 train_params=train_params,
                 val_params=val_params,
                 MAX_EPOCHS=args.epochs,
@@ -176,6 +189,7 @@ if __name__ == "__main__":
                 pred_threshold=float(args.pred_threshold),
                 output_length=args.output_length,
                 multiclass_bool=multiclass_bool,
+                training_device=training_device
 
             )
             model = model_trainer.train_model()
@@ -219,17 +233,7 @@ if __name__ == "__main__":
 
                 all_results[column] = predictions_dict
                 
-                """output_list = []
-                for i in range (len (predictions_dict)):
-                    outputs_row = []
-                    pred_row = predictions_dict[i]
-                    for name in model_threshold_names:
-                        if model.optimal_thresholds[name] <= outputs_row[name]:
-                            outputs_row.append(name)
-                    output_list.append(outputs_row)
-                preds_column_name = f"predictions_{column}"
-                test_df[preds_column_name] = output_list"""
-
+            
         nb_sentences_per_second = tot_nb_rows_predicted / tot_time
         mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
 

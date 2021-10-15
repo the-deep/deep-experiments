@@ -5,6 +5,8 @@ sys.path.append(".")
 import mlflow
 from model import Transformer
 import torch
+
+#dill import needs to be kept for more robustness in multimodel serialization
 import dill
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
@@ -40,12 +42,10 @@ class PythonPredictor(torch.nn.Module):
 
     def predict(self, context, model_input):
 
-        models_list = list(self.models.keys())
-
         final_predictions = {}
-        for i in range (len (models_list)):
+        for tag_name, trained_model in self.models.items():
 
-            predictions_one_model = models_list[i].custom_predict(model_input, testing=True)
-            final_predictions.update(predictions_one_model)  
+            predictions_one_model = trained_model.custom_predict(model_input, testing=True)
+            final_predictions[tag_name] = predictions_one_model
 
         return final_predictions

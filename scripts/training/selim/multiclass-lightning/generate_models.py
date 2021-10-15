@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
+#dill import needs to be kept for more robustness in multimodel serialization
 import dill
 
 from model import Transformer
@@ -32,7 +33,8 @@ class CustomTrainer():
         multiclass_bool=True,
         learning_rate=3e-5,
         pred_threshold: float = 0.5,
-        weighted_loss:str='sqrt'
+        weighted_loss:str='sqrt',
+        training_device:str = "cuda"
         ) -> None:
             self.train_dataset = train_dataset
             self.val_dataset = val_dataset
@@ -53,6 +55,7 @@ class CustomTrainer():
             self.learning_rate = learning_rate
             self.pred_threshold = pred_threshold
             self.weighted_loss = weighted_loss
+            self.training_device = training_device
         
     def train_model(self):
         PATH_NAME = self.MODEL_DIR
@@ -117,7 +120,8 @@ class CustomTrainer():
             learning_rate=self.learning_rate,
             pred_threshold=self.pred_threshold,
             multiclass=self.multiclass_bool,
-            weighted_loss=self.weighted_loss
+            weighted_loss=self.weighted_loss,
+            training_device=self.training_device
         )
 
         trainer.fit(model)

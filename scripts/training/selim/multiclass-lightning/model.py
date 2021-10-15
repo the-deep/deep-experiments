@@ -3,6 +3,7 @@ import timeit
 from tqdm.auto import tqdm
 import re
 import timeit
+#dill import needs to be kept for more robustness in multimodel serialization
 import dill
 
 import torchmetrics
@@ -48,22 +49,24 @@ class Model(nn.Module):
     ):
         super().__init__()
         self.l0 = AutoModel.from_pretrained(model_name_or_path)
+        self.l1 = torch.nn.Dropout(dropout_rate)
         # batch normlisation to be integrated
-        self.l1 = torch.nn.Linear(output_length, token_len)
-        self.l2 = torch.nn.BatchNorm1d(token_len)
-        self.l3 = torch.nn.Dropout(dropout_rate)
-        self.l4 = torch.nn.Linear(token_len, num_labels)
+        self.l2 = torch.nn.Linear(output_length, token_len)
+        self.l3 = torch.nn.BatchNorm1d(token_len)
+        self.l4 = torch.nn.Dropout(dropout_rate)
+        self.l5 = torch.nn.Linear(token_len, num_labels)
 
     def forward(self, inputs):
         output = self.l0(
             inputs["ids"],
             attention_mask=inputs["mask"],
         )
-        output = output.last_hidden_state
-        output = F.selu(self.l1(output))
-        output = self.l2(output)
+        output = F.selu(output.last_hidden_state)
+        output = self.l1(output)
+        output = F.selu(self.l2(output))
         output = self.l3(output)
         output = self.l4(output)
+        output = self.l5(output)
         return output[:, 0, :]
 
 
@@ -88,7 +91,8 @@ class Transformer(pl.LightningModule):
         eval_splits: Optional[list] = None,
         dropout_rate: float = 0.3,
         max_len: int = 150,
-        output_length=384,
+        output_length:int = 384,
+        training_device:str = 'cuda',
         **kwargs,
     ):
 
@@ -106,8 +110,10 @@ class Transformer(pl.LightningModule):
         self.tokenizer = tokenizer
         self.val_params = val_params
 
+        self.training_device = training_device
+
         self.weight_classes = self.get_weights()
-        self.weight_classes = torch.tensor(self.weight_classes).to("cuda")
+        self.weight_classes = torch.tensor(self.weight_classes).to(self.training_device)
 
         self.multiclass = multiclass
         self.empty_dataset = CustomDataset(None, self.tagname_to_tagid, tokenizer, max_len)
@@ -302,7 +308,12 @@ class Transformer(pl.LightningModule):
             validation_dataset, self.val_params, self.tagname_to_tagid, self.tokenizer, self.max_len
         )
 
-        self.to("cuda")
+        if torch.cuda.is_available():
+            testing_device = "cuda"
+        else:
+            testing_device = "cpu"
+
+        self.to(testing_device)
         self.eval()
         self.freeze()
         y_true = []
@@ -321,9 +332,9 @@ class Transformer(pl.LightningModule):
 
                 logits = self(
                     {
-                        "ids": batch["ids"].to("cuda"),
-                        "mask": batch["mask"].to("cuda"),
-                        "token_type_ids": batch["token_type_ids"].to("cuda"),
+                        "ids": batch["ids"].to(testing_device),
+                        "mask": batch["mask"].to(testing_device),
+                        "token_type_ids": batch["token_type_ids"].to(testing_device),
                     }
                 )
 
@@ -362,7 +373,7 @@ class Transformer(pl.LightningModule):
         self, 
         beta_f1:float=0.5):
 
-        thresholds_list = np.linspace(0.0, 1.0, 101)
+        thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
 
         start = timeit.default_timer()
 
@@ -375,8 +386,8 @@ class Transformer(pl.LightningModule):
         optimal_thresholds_dict = {}
 
         for j in range (logit_predictions.shape[1]):
-            max_threshold = 0
-            max_f1 = 0
+    
+            f1_scores = []
 
             for thresh_tmp in thresholds_list:
                 
@@ -388,10 +399,17 @@ class Transformer(pl.LightningModule):
 
                 custom_f1 = metrics.fbeta_score(y_true[:,j], column_pred, beta_f1, average='macro')
 
-                if custom_f1>max_f1:
-                    max_f1 = custom_f1
-                    max_threshold = thresh_tmp
-                    
+                f1_scores.append(custom_f1)
+
+            max_threshold = 0
+            max_f1 = 0
+            for i in range (1, len(f1_scores) - 1):
+                score = sum(f1_scores[i-1:i+2])
+                if score >= max_f1:
+                    max_f1 = score
+                    max_threshold = thresholds_list[i]
+
+
             optimal_thresholds_dict[list(self.tagname_to_tagid.keys())[j]] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
