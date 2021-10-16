@@ -3,6 +3,7 @@ import random
 from collections import Counter
 import numpy as np
 import pandas as pd
+import dill
 
 #from sklearn.model_selection import train_test_split
 import warnings
@@ -116,8 +117,6 @@ def get_negative_positive_examples (df: pd.DataFrame):
     2) keep sentences with no tags
     """
 
-    df_bis = df.copy()
-
     # Keep only unique values in pillars
     df_bis = df[['entry_id', 'target', 'lead_id']].copy()
 
@@ -185,12 +184,16 @@ def preprocess_df(
         test_pos_entries = random.sample(
             entries_pos_dataset, int(tot_len_pos_entries * 0.05)
             )
+    
         
     else:
-        nb_train_pos_entries = int (train_ratio * tot_len_pos_entries)
-        nb_test_pos_entries = tot_len_pos_entries - nb_train_pos_entries
+        #nb_train_pos_entries = int (train_ratio * tot_len_pos_entries)
+        #nb_test_pos_entries = tot_len_pos_entries - nb_train_pos_entries
         
         train_pos_entries, test_pos_entries = custom_stratified_train_test_split(dataset, entries_pos_dataset, train_ratio)
+
+    nb_train_pos_entries = len(train_pos_entries)
+    nb_test_pos_entries = len(test_pos_entries)
 
     nb_test_neg_entries = int(ratio_negative_positive_examples_test * nb_test_pos_entries)
     nb_train_neg_entries = int(ratio_negative_positive_examples_train * nb_train_pos_entries)
@@ -200,35 +203,6 @@ def preprocess_df(
         set(all_negative_ids) - set(test_negative_ids)
     )
     train_negative_ids = random.sample(remaining_negative_ids, nb_train_neg_entries)
-
-    """## NEGATIVE ENTRIES:
-        nb_pos_entries_test_set = len(test_pos_entries)
-
-        if len(all_negative_ids) > (nb_pos_entries_test_set * ratio_negative_positive_examples_test):
-            test_negative_ids = random.sample(
-                all_negative_ids, int(nb_pos_entries_test_set * ratio_negative_positive_examples_test)
-                )
-        else:
-            test_negative_ids = all_negative_ids
-
-        max_train_negative_ids = list(
-            set(all_negative_ids) - set(test_negative_ids)
-        )
-    
-    #If we want to include negative examples in the train set
-    if bool(ratio_negative_positive_examples_train):
-
-        number_of_negative_entries_added = int(
-            len(train_pos_entries) * ratio_negative_positive_examples_train
-            )
-
-        if number_of_negative_entries_added >= len(max_train_negative_ids):
-            train_negative_ids = max_train_negative_ids
-        else:
-            train_negative_ids = random.sample(max_train_negative_ids, number_of_negative_entries_added)
-
-    else:
-        train_negative_ids = []"""
 
     test_ids = list (set(test_negative_ids).union(set (test_pos_entries)))
     train_ids = list (set(train_negative_ids).union(set (train_pos_entries)))

@@ -224,6 +224,7 @@ if __name__ == "__main__":
                 start = timeit.default_timer()
                 predictions_dict = model.custom_predict(test_df, testing=True)
                 end = timeit.default_timer()
+                model.to('cpu')
                 pyfunc_prediction_wrapper.add_model(model=model, model_name=column)
                 pytorch_prediction_wrapper.add_model(model=model, model_name=column)
 
