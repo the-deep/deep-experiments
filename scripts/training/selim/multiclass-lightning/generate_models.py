@@ -129,5 +129,6 @@ class CustomTrainer():
 
         trainer.fit(model)
         model.hypertune_threshold(self.beta_f1)
+        model.to('cpu')
 
         return model

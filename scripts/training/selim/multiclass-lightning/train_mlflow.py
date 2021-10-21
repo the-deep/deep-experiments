@@ -15,8 +15,7 @@ import dill
 dill.extend(True)
 
 from pathlib import Path
-
-#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
+os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import mlflow
 
@@ -68,6 +67,8 @@ if __name__ == "__main__":
 
     parser.add_argument("--proportions_negative_examples_test", type=str)
     parser.add_argument("--proportions_negative_examples_train", type=str)
+    
+    parser.add_argument("--instance_type", type=str, default="-")
 
     # Data, model, and output directories
     parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
@@ -136,7 +137,8 @@ if __name__ == "__main__":
             "tokenizer_name": args.tokenizer_name,
             "purpose of run":args.model_mode,
             "beta f1":args.beta_f1,
-            "numbers augmentation":args.numbers_augmentation
+            "numbers augmentation":args.numbers_augmentation,
+            "instance_type":args.instance_type
         }
 
         mlflow.log_params(params)
