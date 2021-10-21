@@ -5,6 +5,7 @@ import re
 import timeit
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
+dill.extend(True)
 
 import torchmetrics
 from torchmetrics.functional import auroc
@@ -118,6 +119,8 @@ class Transformer(pl.LightningModule):
         self.multiclass = multiclass
         self.empty_dataset = CustomDataset(None, self.tagname_to_tagid, tokenizer, max_len)
         self.threshold = pred_threshold
+        self.optimal_thresholds = {column:0.4 for column in list(self.tagname_to_tagid.keys())}
+
         self.training_loader = self.get_loaders(
             train_dataset, train_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
@@ -371,17 +374,13 @@ class Transformer(pl.LightningModule):
 
     def hypertune_threshold (
         self, 
-        beta_f1:float=0.5):
+        beta_f1:float=0.8):
 
         thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
-
-        start = timeit.default_timer()
 
         data_for_threshold_tuning = self.val_loader.dataset.data
 
         indexes, logit_predictions, y_true  = self.custom_predict(data_for_threshold_tuning)
-        stop = timeit.default_timer()
-        time_for_predictions = stop - start
 
         optimal_thresholds_dict = {}
 
@@ -414,21 +413,11 @@ class Transformer(pl.LightningModule):
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-        optimal_metrics = self.custom_eval(logit_predictions, y_true, beta_f1)
 
-        results = {
-            'indexes': indexes,
-            'logit_predictions': logit_predictions,
-            'groundtruth': y_true,
-            'thresholds': optimal_thresholds_dict,
-            'optimal_metrics': optimal_metrics
-        }
+    def custom_eval(self, test_df, beta_f1):
 
-        return time_for_predictions, results
-
-
-    def custom_eval(self, logit_predictions, y_true, beta_f1):
-
+        indexes, logit_predictions, y_true  = self.custom_predict(test_df)
+        
         results_dict = {}
         overall_recall = []
         overall_precision = []

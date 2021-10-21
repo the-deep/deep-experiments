@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
+dill.extend(True)
 
 class CustomDataset(Dataset):
     def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 150):

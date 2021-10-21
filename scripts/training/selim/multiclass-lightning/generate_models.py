@@ -3,8 +3,9 @@ import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 import os
-#dill import needs to be kept for more robustness in multimodel serialization
+
 import dill
+dill.extend(True)
 
 from model import Transformer
 
@@ -34,7 +35,8 @@ class CustomTrainer():
         learning_rate=3e-5,
         pred_threshold: float = 0.5,
         weighted_loss:str='sqrt',
-        training_device:str = "cuda"
+        training_device:str = "cuda",
+        beta_f1: float  = 0.8
         ) -> None:
             self.train_dataset = train_dataset
             self.val_dataset = val_dataset
@@ -56,19 +58,20 @@ class CustomTrainer():
             self.pred_threshold = pred_threshold
             self.weighted_loss = weighted_loss
             self.training_device = training_device
+            self.beta_f1 = beta_f1
         
     def train_model(self):
         PATH_NAME = self.MODEL_DIR
         if not os.path.exists(PATH_NAME):
             os.makedirs(PATH_NAME)
 
-        early_stopping_callback = EarlyStopping(monitor="val_f1", patience=2, mode="max")
+        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=2, mode="max")
 
         checkpoint_callback_params = {
             "save_top_k": 1,
             "verbose": True,
-            "monitor": "val_f1",
-            "mode": "max",
+            "monitor": "val_loss",
+            "mode": "min",
         }
 
         FILENAME = "model_" + self.training_column
@@ -125,5 +128,6 @@ class CustomTrainer():
         )
 
         trainer.fit(model)
+        model.hypertune_threshold(self.beta_f1)
 
         return model

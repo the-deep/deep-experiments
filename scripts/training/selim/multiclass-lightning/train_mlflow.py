@@ -2,17 +2,21 @@ import os
 import re
 import argparse
 import logging
+import timeit
 #Importing pickle will cause an error in the model logging to mlflow
 #import pickle
-import timeit
 from ast import literal_eval
+import multiprocessing
+import copy
 
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
 #dill.detect.trace(True)
-#dill.extend(True)
+dill.extend(True)
 
 from pathlib import Path
+
+#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import mlflow
 
@@ -26,10 +30,6 @@ import torch
 from inference import TransformersPredictionsWrapper, PythonPredictor
 from generate_models import CustomTrainer
 
-##
-
-import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     proportions_negative_examples_test = literal_eval(args.proportions_negative_examples_test)
     proportions_negative_examples_train = literal_eval(args.proportions_negative_examples_train)
     
-    whole_df, test_df = read_merge_data(
+    whole_df, second_round_test = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
     )
 
@@ -141,9 +141,9 @@ if __name__ == "__main__":
 
         mlflow.log_params(params)
 
-        tot_time = 0
         tot_nb_rows_predicted = 0
         all_results = {}
+        all_thresholds = {}
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
         pytorch_prediction_wrapper = PythonPredictor()
         for column in training_columns:
@@ -157,7 +157,7 @@ if __name__ == "__main__":
                 prop_negative_examples_train_column = 0
                 prop_negative_examples_test_column = 0
 
-            train_df, val_df = preprocess_df(
+            train_df, val_df, test_df = preprocess_df(
                 whole_df, 
                 column, 
                 deployment_mode=deployment_mode, 
@@ -166,7 +166,7 @@ if __name__ == "__main__":
                 augment_numbers=augment_numbers)
 
             #logging metrcs to mlflow
-            proportions = stats_train_test(train_df, val_df, column)
+            proportions = stats_train_test(train_df, val_df, test_df, column)
             mlflow.log_params(proportions)
             params.update(proportions)
 
@@ -189,95 +189,83 @@ if __name__ == "__main__":
                 pred_threshold=float(args.pred_threshold),
                 output_length=args.output_length,
                 multiclass_bool=multiclass_bool,
-                training_device=training_device
-
+                training_device=training_device,
+                beta_f1 = args.beta_f1
             )
+            
             model = model_trainer.train_model()
             
-            if not deployment_mode:
-                time_for_predictions, results_column = model.hypertune_threshold(args.beta_f1)
+            pytorch_prediction_wrapper.add_model(model, column)
+            pyfunc_prediction_wrapper.add_model(model, column)
+            
+            model_threshold_names = list(model.optimal_thresholds.keys())
+            model_threshold_values = list(model.optimal_thresholds.values())
+            all_thresholds[column] = model.optimal_thresholds
 
-                tot_time += time_for_predictions
-                tot_nb_rows_predicted += results_column['groundtruth'].shape[0]
-
-                all_results[column] = results_column
+            for i in range(len(model_threshold_names)):
                 try:
-                    mlflow.log_metrics(results_column['optimal_metrics'])
+                    name = model_threshold_names[i]
+                    cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+                    final_name = f"threshold_{column}_{cleaned_name}"
+                    
+                    mlflow.log_metric(final_name, model_threshold_values[i])
+
                 except Exception:
                     pass
 
-                model_threshold_names = list(results_column['thresholds'].keys())
-                model_threshold_values = list(results_column['thresholds'].values())
+            if len(test_df)>0:
+                results_test_set = model.custom_eval(test_df, args.beta_f1)
+            else: 
+                results_test_set = {}
 
-                for i in range(len(model_threshold_names)):
-                    try:
-                        name = model_threshold_names[i]
-                        cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-                        final_name = f"threshold_{column}_{cleaned_name}"
-                        
-                        mlflow.log_metric(final_name, model_threshold_values[i])
-
-                    except Exception:
-                        pass
-
-            else:
-                start = timeit.default_timer()
-                predictions_dict = model.custom_predict(test_df, testing=True)
-                end = timeit.default_timer()
-                model.to('cpu')
-                pyfunc_prediction_wrapper.add_model(model=model, model_name=column)
-                pytorch_prediction_wrapper.add_model(model=model, model_name=column)
-
-                time_for_predictions = end - start
-                tot_time = time_for_predictions
-                tot_nb_rows_predicted += test_df.shape[0]
-
-                all_results[column] = predictions_dict
-                
-            
-        nb_sentences_per_second = tot_nb_rows_predicted / tot_time
-        mlflow.log_metric("nb sentences per second to predict all tags", nb_sentences_per_second)
-
-        if deployment_mode:
+            all_results[column] = results_test_set
             try:
-                mlflow.pyfunc.log_model(
-                    python_model=pyfunc_prediction_wrapper,
-                    artifact_path="pyfunc_models_all",
-                    conda_env=get_conda_env_specs(),  # python conda dependencies
-                    code_path=[
-                        __file__,
-                        "model.py",
-                        "utils.py",
-                        "inference.py", 
-                        "generate_models.py",
-                        "data.py",
-                    ]
-                )
-            except Exception as e:
-                logging.info("PYFUNC", e)
+                mlflow.log_metrics(results_test_set)
+            except Exception:
+                pass
 
-            try:
-                mlflow.pytorch.log_model(
-                    pytorch_model=pytorch_prediction_wrapper,
-                    artifact_path="pytorch_model_all",
-                    conda_env=get_conda_env_specs(),  # python conda dependencies
-                    code_paths=[
-                        __file__,
-                        "model.py",
-                        "utils.py",
-                        "inference.py", 
-                        "generate_models.py",
-                        "data.py",
-                        ],
-                    pickle_module=dill
+        try:
+            mlflow.pyfunc.log_model(
+                python_model=pyfunc_prediction_wrapper,
+                artifact_path="pyfunc_models_all",
+                conda_env=get_conda_env_specs(),  # python conda dependencies
+                code_path=[
+                    __file__,
+                    "model.py",
+                    "utils.py",
+                    "inference.py", 
+                    "generate_models.py",
+                    "data.py",
+                ]
             )
-            except Exception as e:
-                logging.info("PYTORCH", e)
-         
+        except Exception as e:
+            logging.info("PYFUNC", e)
+
+        try:
+            mlflow.pytorch.log_model(
+                pytorch_model=pytorch_prediction_wrapper,
+                artifact_path="pytorch_model_all",
+                conda_env=get_conda_env_specs(),  # python conda dependencies
+                code_paths=[
+                    __file__,
+                    "model.py",
+                    "utils.py",
+                    "inference.py", 
+                    "generate_models.py",
+                    "data.py",
+                    ],
+                pickle_module=dill
+        )
+        except Exception as e:
+            logging.info("PYTORCH", e)
+        
 
     outputs = {
         'parameters':params,
-        'outputs':all_results 
+        'results':all_results,
+        'thresholds':all_thresholds,
+        'val_set_ids':val_df.entry_id.unique().tolist(),
+        'test_set_ids':test_df.entry_id.unique().tolist()
     }
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
         dill.dump(outputs, f)

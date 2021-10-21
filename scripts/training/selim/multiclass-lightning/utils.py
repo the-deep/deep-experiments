@@ -1,6 +1,5 @@
 from ast import literal_eval
 import random
-from collections import Counter
 import numpy as np
 import pandas as pd
 import dill
@@ -48,7 +47,7 @@ def clean_rows(row):
 def flatten(t):
     return [item for sublist in t for item in sublist]
 
-def custom_stratified_train_test_split(df, positive_ids, train_ratio:float = 0.8):
+def custom_stratified_train_test_split(df, positive_ids, ratios):
     """
     custom function for stratified train test splitting
     1) take unique sub-tags (example: ['Health'])
@@ -59,6 +58,7 @@ def custom_stratified_train_test_split(df, positive_ids, train_ratio:float = 0.8
     NB: a bit time consuming ~ 950 entries/second in average
     """
     train_ids = []
+    val_ids = []
     test_ids = []
     positive_df = df[df.entry_id.isin(positive_ids)]
     
@@ -67,16 +67,24 @@ def custom_stratified_train_test_split(df, positive_ids, train_ratio:float = 0.8
         ids_entry = list(positive_df[positive_df.target.apply(str)==entry].entry_id.unique())
 
         train_ids_entry = random.sample(
-            ids_entry, int(len(ids_entry) * train_ratio)
+            ids_entry, int(len(ids_entry) * ratios['train'])
+            )
+        val_remanaining_ratio = ratios['val'] / (1 - ratios['train'])
+        val_test_ids_entry = list(
+            set(ids_entry) - set(train_ids_entry)
+        )
+        val_ids_entry = random.sample(
+            val_test_ids_entry, int(len(val_test_ids_entry) * val_remanaining_ratio)
             )
         test_ids_entry = list(
-            set(ids_entry) - set(train_ids_entry)
+            set(val_test_ids_entry) - set(val_ids_entry)
         )
 
         train_ids.append(train_ids_entry)
+        val_ids.append(val_ids_entry)
         test_ids.append(test_ids_entry)
         
-    return flatten(train_ids), flatten(test_ids)
+    return flatten(train_ids), flatten(val_ids), flatten(test_ids)
 
 def augment_numbers_sentences (df):
     """
@@ -169,7 +177,8 @@ def preprocess_df(
     #rename column to 'target' to be able to work on it generically
     dataset = df[
         ["entry_id", "excerpt", column_name, 'lead_id']
-        ].rename(columns={column_name: "target"}).dropna()
+        ].rename(columns={column_name: "target"}).dropna().copy()
+        
     dataset['target'] = dataset.target.apply(lambda x: clean_rows(x))
 
     if column_name=='sectors':
@@ -180,34 +189,48 @@ def preprocess_df(
 
     # If we want to deploy the model, we use all the positive data we have for training
     if deployment_mode:
-        train_pos_entries = entries_pos_dataset
-        test_pos_entries = random.sample(
-            entries_pos_dataset, int(tot_len_pos_entries * 0.05)
-            )
+        ratios = {
+            'train':0.85,
+            'val':0.15,
+            'test':0.0
+        }
     
-        
     else:
+        ratios = {
+            'train':0.8,
+            'val':0.1,
+            'test':0.1
+        }
         #nb_train_pos_entries = int (train_ratio * tot_len_pos_entries)
         #nb_test_pos_entries = tot_len_pos_entries - nb_train_pos_entries
         
-        train_pos_entries, test_pos_entries = custom_stratified_train_test_split(dataset, entries_pos_dataset, train_ratio)
+    train_pos_entries, val_pos_entries, test_pos_entries =\
+        custom_stratified_train_test_split(dataset, entries_pos_dataset, ratios)
 
     nb_train_pos_entries = len(train_pos_entries)
+    nb_val_pos_entries = len(val_pos_entries)
     nb_test_pos_entries = len(test_pos_entries)
 
     nb_test_neg_entries = int(ratio_negative_positive_examples_test * nb_test_pos_entries)
+    nb_val_neg_entries = int(ratio_negative_positive_examples_test * nb_val_pos_entries)
     nb_train_neg_entries = int(ratio_negative_positive_examples_train * nb_train_pos_entries)
 
     test_negative_ids = random.sample(all_negative_ids, nb_test_neg_entries)
-    remaining_negative_ids = list(
+    train_val_negative_ids = list(
         set(all_negative_ids) - set(test_negative_ids)
+    )
+    val_negative_ids = random.sample(train_val_negative_ids, nb_val_neg_entries)
+    remaining_negative_ids = list(
+        set(train_val_negative_ids) - set(val_negative_ids)
     )
     train_negative_ids = random.sample(remaining_negative_ids, nb_train_neg_entries)
 
     test_ids = list (set(test_negative_ids).union(set (test_pos_entries)))
+    val_ids = list (set(val_negative_ids).union(set (val_pos_entries)))
     train_ids = list (set(train_negative_ids).union(set (train_pos_entries)))
     
     df_train = dataset[dataset.entry_id.isin(train_ids)].drop(columns=['lead_id'])
+    df_val = dataset[dataset.entry_id.isin(val_ids)].drop(columns=['lead_id'])
     df_test = dataset[dataset.entry_id.isin(test_ids)].drop(columns=['lead_id'])
 
     #perform numbers augmentation:
@@ -216,18 +239,26 @@ def preprocess_df(
     if 'subpillars_' in column_name and augment_numbers:
         df_train = augment_numbers_sentences(df_train)
         
-    return df_train, df_test
+    return df_train, df_val, df_test
 
-def stats_train_test (df_train:pd.DataFrame, df_test:pd.DataFrame, column_name:str):
+def stats_train_test (
+    df_train:pd.DataFrame,
+    df_val: pd.DataFrame,
+    df_test:pd.DataFrame, 
+    column_name:str):
     """
     Sanity check of data (proportion negative examples)
     """
     def compute_ratio_negative_positive (df):
         nb_rows_negative = df[df.target.apply(lambda x: len(x)==0)].shape[0]
-        return  np.round(nb_rows_negative / df.shape[0], 3)
+        if len(df)>0:
+            return  np.round(nb_rows_negative / df.shape[0], 3)
+        else:
+            return 0 
 
     ratio_negative_positive = {
         f"ratio_negative_examples_train_{column_name}": compute_ratio_negative_positive (df_train),
+        f"ratio_negative_examples_val_{column_name}": compute_ratio_negative_positive (df_val),
         f"ratio_negative_examples_test_{column_name}": compute_ratio_negative_positive (df_test),
     }
 
@@ -262,4 +293,3 @@ def compute_weights(number_data_classes, n_tot):
             for number_data_class in number_data_classes
         ]
     )
-

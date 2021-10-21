@@ -8,6 +8,7 @@ import torch
 
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
+dill.extend(True)
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):
@@ -17,7 +18,7 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
         pass
 
-    def add_model(self, model:Transformer, model_name:str):
+    def add_model(self, model, model_name:str):
         self.models[model_name] = model
 
     def predict(self, context, model_input):
@@ -30,14 +31,15 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
 
         return final_predictions
 
-
-
 class PythonPredictor(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.models = {}
 
-    def add_model(self, model:Transformer, model_name:str):
+    def load_context(self, context):
+        pass
+
+    def add_model(self, model, model_name:str):
         self.models[model_name] = model
 
     def predict(self, context, model_input):
