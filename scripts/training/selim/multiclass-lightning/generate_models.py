@@ -65,7 +65,7 @@ class CustomTrainer():
         if not os.path.exists(PATH_NAME):
             os.makedirs(PATH_NAME)
 
-        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=2, mode="max")
+        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
 
         checkpoint_callback_params = {
             "save_top_k": 1,
