@@ -115,9 +115,9 @@ if __name__ == "__main__":
     mlflow.pytorch.autolog(log_models=False)
 
     with mlflow.start_run():
-        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 4}
+        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 5}
 
-        val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 4}
+        val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 5}
 
         if torch.cuda.is_available():
             gpu_nb=1

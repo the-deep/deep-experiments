@@ -127,8 +127,11 @@ class CustomTrainer():
             training_device=self.training_device
         )
 
+        lr_finder = trainer.tuner.lr_find(model)      
+        new_lr = lr_finder.suggestion()
+        model.hparams.learning_rate = new_lr
+
         trainer.fit(model)
         model.hypertune_threshold(self.beta_f1)
-        model.to('cpu')
 
         return model
