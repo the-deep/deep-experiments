@@ -5,6 +5,8 @@ import pandas as pd
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
 dill.extend(True)
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 class CustomDataset(Dataset):
     def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 150):

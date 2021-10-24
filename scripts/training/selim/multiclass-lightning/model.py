@@ -6,6 +6,8 @@ import timeit
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
 dill.extend(True)
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import torchmetrics
 from torchmetrics.functional import auroc
@@ -330,8 +332,8 @@ class Transformer(pl.LightningModule):
             ):
 
                 if not testing:
-                    y_true.append(batch["targets"].numpy().astype(np.int))
-                    indexes.append(batch["entry_id"].numpy().astype(np.int))
+                    y_true.append(batch["targets"].detach())
+                    indexes.append(batch["entry_id"].detach())
 
                 logits = self(
                     {

@@ -1,13 +1,14 @@
 import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false" 
+
 import re
 import argparse
 import logging
-import timeit
+
 #Importing pickle will cause an error in the model logging to mlflow
 #import pickle
 from ast import literal_eval
 import multiprocessing
-import copy
 
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
@@ -15,7 +16,6 @@ import dill
 dill.extend(True)
 
 from pathlib import Path
-os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import mlflow
 
@@ -26,7 +26,7 @@ from utils import (
 )
 import torch
 
-from inference import TransformersPredictionsWrapper, PythonPredictor
+from inference import TransformersPredictionsWrapper
 from generate_models import CustomTrainer
 
 
@@ -115,9 +115,9 @@ if __name__ == "__main__":
     mlflow.pytorch.autolog(log_models=False)
 
     with mlflow.start_run():
-        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 5}
+        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 1}
 
-        val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 5}
+        val_params = {"batch_size": args.val_batch_size, "shuffle": False, "num_workers": 1}
 
         if torch.cuda.is_available():
             gpu_nb=1
@@ -147,7 +147,7 @@ if __name__ == "__main__":
         all_results = {}
         all_thresholds = {}
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
-        pytorch_prediction_wrapper = PythonPredictor()
+        #pytorch_prediction_wrapper = PythonPredictor()
         for column in training_columns:
 
             multiclass_bool = column != 'severity'
@@ -197,7 +197,7 @@ if __name__ == "__main__":
             
             model = model_trainer.train_model()
             
-            pytorch_prediction_wrapper.add_model(model, column)
+            #pytorch_prediction_wrapper.add_model(model, column)
             pyfunc_prediction_wrapper.add_model(model, column)
             
             model_threshold_names = list(model.optimal_thresholds.keys())
@@ -243,7 +243,7 @@ if __name__ == "__main__":
         except Exception as e:
             logging.info("PYFUNC", e)
 
-        try:
+        """try:
             mlflow.pytorch.log_model(
                 pytorch_model=pytorch_prediction_wrapper,
                 artifact_path="pytorch_model_all",
@@ -259,7 +259,7 @@ if __name__ == "__main__":
                 pickle_module=dill
         )
         except Exception as e:
-            logging.info("PYTORCH", e)
+            logging.info("PYTORCH", e)"""
         
 
     outputs = {
