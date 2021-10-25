@@ -243,6 +243,7 @@ if __name__ == "__main__":
                     "inference.py", 
                     "generate_models.py",
                     "data.py",
+                    "get_outputs_user.py"
                 ]
             )
         except Exception as e:
