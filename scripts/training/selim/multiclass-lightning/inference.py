@@ -11,6 +11,8 @@ dill.extend(True)
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
+from get_outputs_user import get_predictions
+
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):
         super().__init__()
@@ -28,13 +30,15 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
 
     def predict(self, context, model_input):
 
-        final_predictions = {}
+        raw_predictions = {}
         for tag_name, trained_model in self.models.items():
 
             predictions_one_model = trained_model.custom_predict(model_input, testing=True)
-            final_predictions[tag_name] = predictions_one_model
+            raw_predictions[tag_name] = predictions_one_model
 
-        return final_predictions
+        post_processed_results = get_predictions(raw_predictions, self.thresholds)
+
+        return raw_predictions, post_processed_results
 
 """class PythonPredictor(torch.nn.Module):
     def __init__(self):
