@@ -146,6 +146,7 @@ if __name__ == "__main__":
         tot_nb_rows_predicted = 0
         all_results = {}
         all_thresholds = {}
+        all_results_raw = {}
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
         #pytorch_prediction_wrapper = PythonPredictor()
         for column in training_columns:
@@ -204,6 +205,8 @@ if __name__ == "__main__":
             model_threshold_values = list(model.optimal_thresholds.values())
             all_thresholds[column] = model.optimal_thresholds
 
+            pyfunc_prediction_wrapper.add_threshold(model.optimal_thresholds, column)
+
             for i in range(len(model_threshold_names)):
                 try:
                     name = model_threshold_names[i]
@@ -216,11 +219,13 @@ if __name__ == "__main__":
                     pass
 
             if len(test_df)>0:
-                results_test_set = model.custom_eval(test_df, args.beta_f1)
+                results_test_set, results_raw = model.custom_eval(test_df, args.beta_f1)
             else: 
                 results_test_set = {}
+                results_raw = {}
 
             all_results[column] = results_test_set
+            all_results_raw[column] = results_raw
             try:
                 mlflow.log_metrics(results_test_set)
             except Exception:
@@ -264,7 +269,8 @@ if __name__ == "__main__":
 
     outputs = {
         'parameters':params,
-        'results':all_results,
+        'results_processed':all_results,
+        'results_raw':all_results_raw,
         'thresholds':all_thresholds,
         'val_set_ids':val_df.entry_id.unique().tolist(),
         'test_set_ids':test_df.entry_id.unique().tolist()

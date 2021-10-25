@@ -349,28 +349,29 @@ class Transformer(pl.LightningModule):
         logit_predictions = np.concatenate(logit_predictions)
         logit_predictions = sigmoid(logit_predictions)
 
+        
+        target_list = list(self.tagname_to_tagid.keys())
+        probabilities_dict = []
+        # postprocess predictions
+        for i in range(logit_predictions.shape[0]):
+
+            # Return predictions
+            # row_pred = np.array([0] * self.num_labels)
+            row_logits = logit_predictions[i, :]
+
+            # Return probabilities
+            probabilities_item_dict = {}
+            for j in range(logit_predictions.shape[1]):
+                probabilities_item_dict[target_list[j]] = row_logits[j]
+
+            probabilities_dict.append(probabilities_item_dict)
+
         if not testing:
             y_true = np.concatenate(y_true)
             indexes = np.concatenate(indexes)
-            return indexes, logit_predictions, y_true
+            return indexes, logit_predictions, y_true, probabilities_dict
 
-        else:
-            target_list = list(self.tagname_to_tagid.keys())
-            probabilities_dict = []
-            # postprocess predictions
-            for i in range(logit_predictions.shape[0]):
-
-                # Return predictions
-                # row_pred = np.array([0] * self.num_labels)
-                row_logits = logit_predictions[i, :]
-
-                # Return probabilities
-                probabilities_item_dict = {}
-                for j in range(logit_predictions.shape[1]):
-                    probabilities_item_dict[target_list[j]] = row_logits[j]
-
-                probabilities_dict.append(probabilities_item_dict)
-
+        else :
             return probabilities_dict
             
 
@@ -382,7 +383,7 @@ class Transformer(pl.LightningModule):
 
         data_for_threshold_tuning = self.val_loader.dataset.data
 
-        indexes, logit_predictions, y_true  = self.custom_predict(data_for_threshold_tuning)
+        indexes, logit_predictions, y_true, _  = self.custom_predict(data_for_threshold_tuning)
 
         optimal_thresholds_dict = {}
 
@@ -418,7 +419,7 @@ class Transformer(pl.LightningModule):
 
     def custom_eval(self, test_df, beta_f1):
 
-        indexes, logit_predictions, y_true  = self.custom_predict(test_df)
+        indexes, logit_predictions, y_true, probabilities_dict  = self.custom_predict(test_df)
         
         results_dict = {}
         overall_recall = []
@@ -459,4 +460,4 @@ class Transformer(pl.LightningModule):
         results_dict['overall_precision_'+self.column_name] = np.mean(overall_precision)
         results_dict['overall_recall_'+self.column_name] = np.mean(overall_recall)
 
-        return results_dict
+        return results_dict, probabilities_dict

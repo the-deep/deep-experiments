@@ -15,12 +15,16 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):
         super().__init__()
         self.models = {}
+        self.thresholds = {}
 
     def load_context(self, context):
         pass
 
     def add_model(self, model, model_name:str):
         self.models[model_name] = model
+
+    def add_threshold(self, threshold, model_name:str):
+        self.thresholds[model_name] = threshold
 
     def predict(self, context, model_input):
 
