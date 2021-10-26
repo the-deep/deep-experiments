@@ -36,9 +36,12 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
             predictions_one_model = trained_model.custom_predict(model_input, testing=True)
             raw_predictions[tag_name] = predictions_one_model
 
-        post_processed_results = get_predictions(raw_predictions, self.thresholds)
-
-        return raw_predictions, post_processed_results
+        #post_processed_results = get_predictions(raw_predictions, self.thresholds)
+        try:
+            post_processed_results = get_predictions(raw_predictions, self.thresholds)
+            return raw_predictions, self.thresholds, post_processed_results
+        except Exception:
+            return raw_predictions, self.thresholds
 
 """class PythonPredictor(torch.nn.Module):
     def __init__(self):

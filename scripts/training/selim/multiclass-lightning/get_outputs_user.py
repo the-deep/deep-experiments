@@ -4,29 +4,31 @@ import numpy as np
 multilabel_columns = [
     'sectors', 
     'pillars_2d',
-    #'pillars_1d',
+    'pillars_1d',
     'subpillars_2d', 
-    #'subpillars_1d', 
-    #'demographic_groups', 
-    #'affected_groups', 
-    #'specific_needs_groups'
+    'subpillars_1d', 
+    'demographic_groups', 
+    'affected_groups', 
+    'specific_needs_groups'
     ]
 
 no_subpillar_columns = [
     'sectors',
-    #'demographic_groups', 
-    #'affected_groups', 
-    #'specific_needs_groups'
+    'demographic_groups', 
+    'affected_groups', 
+    'specific_needs_groups'
     ]
 
 all_columns = [
     'sectors', 
     'subpillars_2d', 
-    #'subpillars_1d', 
-    #'demographic_groups', 
-    #'affected_groups', 
-    #'specific_needs_groups',
-    #'severity'
+    'subpillars_2d_postprocessed',
+    'subpillars_1d', 
+    'subpillars_1d_postprocessed',
+    'demographic_groups', 
+    'affected_groups', 
+    'specific_needs_groups',
+    'severity'
     ]
 
 def postprocess_subpillars (ratios_pillars, ratios_subpillars, return_at_least_one=True):
@@ -153,9 +155,8 @@ def get_predictions(test_probas, thresholds_dict):
             False
             )
 
-        predictions['subpillars_2d'].append(preds_2d)
-        predictions['subpillars_1d'].append(preds_1d)
-
+        predictions['subpillars_2d_postprocessed'].append(preds_2d)
+        predictions['subpillars_1d_postprocessed'].append(preds_1d)
 
         #postprocess 'subpillars_2d'
         if len(predictions['sectors'][i])>0 and len(predictions['subpillars_2d'][i])==0:

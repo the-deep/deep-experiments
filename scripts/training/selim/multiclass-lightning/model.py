@@ -460,4 +460,11 @@ class Transformer(pl.LightningModule):
         results_dict['overall_precision_'+self.column_name] = np.mean(overall_precision)
         results_dict['overall_recall_'+self.column_name] = np.mean(overall_recall)
 
-        return results_dict, probabilities_dict
+        raw_results = {
+            'ids': indexes,
+            'probas': logit_predictions,
+            'groundtruth': y_true,
+            'probas_dict': probabilities_dict
+        }
+
+        return results_dict, raw_results
