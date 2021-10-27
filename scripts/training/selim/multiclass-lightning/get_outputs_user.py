@@ -33,8 +33,10 @@ all_columns = [
 
 def postprocess_subpillars (ratios_pillars, ratios_subpillars, return_at_least_one=True):
     """
-    
-
+    postprocess subpillars using the pillars:
+    1) keep only subpillars where the pillar was already predicted
+    2)  if one pillar was predicted but no subpillar, we take the max ratio of the subbpillars
+    for that pillar
     """
     
     results_subpillars = []

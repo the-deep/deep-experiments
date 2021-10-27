@@ -59,7 +59,6 @@ def custom_stratified_train_test_split(df, positive_ids, ratios):
     """
     train_ids = []
     val_ids = []
-    test_ids = []
     positive_df = df[df.entry_id.isin(positive_ids)]
     
     unique_entries = list(np.unique(positive_df['target'].apply(str)))
@@ -69,22 +68,14 @@ def custom_stratified_train_test_split(df, positive_ids, ratios):
         train_ids_entry = random.sample(
             ids_entry, int(len(ids_entry) * ratios['train'])
             )
-        val_remanaining_ratio = ratios['val'] / (1 - ratios['train'])
-        val_test_ids_entry = list(
+        val_ids_entry = list(
             set(ids_entry) - set(train_ids_entry)
-        )
-        val_ids_entry = random.sample(
-            val_test_ids_entry, int(len(val_test_ids_entry) * val_remanaining_ratio)
-            )
-        test_ids_entry = list(
-            set(val_test_ids_entry) - set(val_ids_entry)
         )
 
         train_ids.append(train_ids_entry)
         val_ids.append(val_ids_entry)
-        test_ids.append(test_ids_entry)
         
-    return flatten(train_ids), flatten(val_ids), flatten(test_ids)
+    return flatten(train_ids), flatten(val_ids)
 
 def augment_numbers_sentences (df):
     """
@@ -148,15 +139,16 @@ def get_negative_positive_examples (df: pd.DataFrame):
 def preprocess_df(
     df: pd.DataFrame, 
     column_name: str, 
-    deployment_mode: bool = False, 
     proportion_negative_examples_train_df: float = 0.1,
-    proportion_negative_examples_test_df: float = 0.25,
-    augment_numbers: bool = True,
-    train_ratio: float = 0.8):
+    proportion_negative_examples_val_df: float = 0.25,
+    augment_numbers: bool = True):
 
     """
     main preprocessing function:
-    1) 
+    1) get positive entries using the porportions of train test split
+    2) add negative exapmles using the ratios defined in the training notebook
+
+    NB: work with ids because the augmented sentences have the same entry_id as the original ones
     """
 
     def get_ratio_neg_positive(ratio):
@@ -170,8 +162,8 @@ def preprocess_df(
         proportion_negative_examples_train_df
     )
 
-    ratio_negative_positive_examples_test = get_ratio_neg_positive(
-        proportion_negative_examples_test_df
+    ratio_negative_positive_examples_val = get_ratio_neg_positive(
+        proportion_negative_examples_val_df
     )
 
     #rename column to 'target' to be able to work on it generically
@@ -185,53 +177,36 @@ def preprocess_df(
         dataset = dataset[dataset.target.apply(lambda x: len(x)<2)]
 
     entries_pos_dataset, all_negative_ids = get_negative_positive_examples (dataset)
-    tot_len_pos_entries = len(entries_pos_dataset)
 
     # If we want to deploy the model, we use all the positive data we have for training
-    if deployment_mode:
-        ratios = {
-            'train':0.85,
-            'val':0.15,
-            'test':0.0
-        }
+
+    ratios = {
+        'train':0.9,
+        'val':0.1,
+    }
     
-    else:
-        ratios = {
-            'train':0.8,
-            'val':0.1,
-            'test':0.1
-        }
-        #nb_train_pos_entries = int (train_ratio * tot_len_pos_entries)
-        #nb_test_pos_entries = tot_len_pos_entries - nb_train_pos_entries
         
-    train_pos_entries, val_pos_entries, test_pos_entries =\
+    train_pos_entries, val_pos_entries =\
         custom_stratified_train_test_split(dataset, entries_pos_dataset, ratios)
 
     nb_train_pos_entries = len(train_pos_entries)
     nb_val_pos_entries = len(val_pos_entries)
-    nb_test_pos_entries = len(test_pos_entries)
 
-    nb_test_neg_entries = int(ratio_negative_positive_examples_test * nb_test_pos_entries)
-    nb_val_neg_entries = int(ratio_negative_positive_examples_test * nb_val_pos_entries)
+    nb_val_neg_entries = int(ratio_negative_positive_examples_val * nb_val_pos_entries)
     nb_train_neg_entries = int(ratio_negative_positive_examples_train * nb_train_pos_entries)
 
-    test_negative_ids = random.sample(all_negative_ids, nb_test_neg_entries)
-    train_val_negative_ids = list(
-        set(all_negative_ids) - set(test_negative_ids)
-    )
-    val_negative_ids = random.sample(train_val_negative_ids, nb_val_neg_entries)
+
+    val_negative_ids = random.sample(all_negative_ids, nb_val_neg_entries)
     remaining_negative_ids = list(
-        set(train_val_negative_ids) - set(val_negative_ids)
+        set(all_negative_ids) - set(val_negative_ids)
     )
     train_negative_ids = random.sample(remaining_negative_ids, nb_train_neg_entries)
 
-    test_ids = list (set(test_negative_ids).union(set (test_pos_entries)))
     val_ids = list (set(val_negative_ids).union(set (val_pos_entries)))
     train_ids = list (set(train_negative_ids).union(set (train_pos_entries)))
     
     df_train = dataset[dataset.entry_id.isin(train_ids)].drop(columns=['lead_id'])
     df_val = dataset[dataset.entry_id.isin(val_ids)].drop(columns=['lead_id'])
-    df_test = dataset[dataset.entry_id.isin(test_ids)].drop(columns=['lead_id'])
 
     #perform numbers augmentation:
     #   - if we want to  
@@ -239,12 +214,11 @@ def preprocess_df(
     if 'subpillars_' in column_name and augment_numbers:
         df_train = augment_numbers_sentences(df_train)
         
-    return df_train, df_val, df_test
+    return df_train, df_val
 
 def stats_train_test (
     df_train:pd.DataFrame,
     df_val: pd.DataFrame,
-    df_test:pd.DataFrame, 
     column_name:str):
     """
     Sanity check of data (proportion negative examples)
@@ -259,7 +233,6 @@ def stats_train_test (
     ratio_negative_positive = {
         f"ratio_negative_examples_train_{column_name}": compute_ratio_negative_positive (df_train),
         f"ratio_negative_examples_val_{column_name}": compute_ratio_negative_positive (df_val),
-        f"ratio_negative_examples_test_{column_name}": compute_ratio_negative_positive (df_test),
     }
 
     return ratio_negative_positive

@@ -7,6 +7,7 @@ import timeit
 import dill
 dill.extend(True)
 import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import torchmetrics
@@ -303,6 +304,11 @@ class Transformer(pl.LightningModule):
 
     def custom_predict(self, validation_dataset, testing=False):
 
+        """
+        1) get raw predictions
+        2) postprocess them to output an output compatible with what we want in the inference
+        """
+
         def sigmoid(x):
             return 1 / (1 + np.exp(-x))  
 
@@ -349,7 +355,6 @@ class Transformer(pl.LightningModule):
         logit_predictions = np.concatenate(logit_predictions)
         logit_predictions = sigmoid(logit_predictions)
 
-        
         target_list = list(self.tagname_to_tagid.keys())
         probabilities_dict = []
         # postprocess predictions
@@ -378,6 +383,11 @@ class Transformer(pl.LightningModule):
     def hypertune_threshold (
         self, 
         beta_f1:float=0.8):
+        """
+        having the probabilities, loop over a list of thresholds to see which one:
+        1) yields the best results
+        2) without being an aberrant value
+        """
 
         thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
 
@@ -419,7 +429,7 @@ class Transformer(pl.LightningModule):
 
     def custom_eval(self, test_df, beta_f1):
 
-        indexes, logit_predictions, y_true, probabilities_dict  = self.custom_predict(test_df)
+        _, logit_predictions, y_true, probabilities_dict  = self.custom_predict(test_df)
         
         results_dict = {}
         overall_recall = []
@@ -428,12 +438,14 @@ class Transformer(pl.LightningModule):
 
         # postprocess predictions
         for j in range(logit_predictions.shape[1]):
-            thresh_value_tmp = list(self.optimal_thresholds.values())[j]
-            sub_tag_name = list(self.optimal_thresholds.keys())[j]
+            
             probas_column = logit_predictions[:, j]
             true_preds_column = y_true[:, j]
+            sub_tag_name = list(self.tagname_to_tagid.keys())[j]
             
             if self.multiclass:
+                thresh_value_tmp = list(self.optimal_thresholds.values())[j]
+                
                 column_pred = [
                     1 if pred>thresh_value_tmp else 0 for pred in probas_column
                     ]
@@ -460,11 +472,4 @@ class Transformer(pl.LightningModule):
         results_dict['overall_precision_'+self.column_name] = np.mean(overall_precision)
         results_dict['overall_recall_'+self.column_name] = np.mean(overall_recall)
 
-        raw_results = {
-            'ids': indexes,
-            'probas': logit_predictions,
-            'groundtruth': y_true,
-            'probas_dict': probabilities_dict
-        }
-
-        return results_dict, raw_results
+        return results_dict, probabilities_dict

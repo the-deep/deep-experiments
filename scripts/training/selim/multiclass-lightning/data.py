@@ -6,6 +6,7 @@ import pandas as pd
 import dill
 dill.extend(True)
 import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 class CustomDataset(Dataset):

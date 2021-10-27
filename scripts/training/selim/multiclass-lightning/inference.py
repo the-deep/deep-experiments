@@ -9,9 +9,10 @@ import torch
 import dill
 dill.extend(True)
 import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
-from get_outputs_user import get_predictions
+#from get_outputs_user import get_predictions
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self):
@@ -37,11 +38,7 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
             raw_predictions[tag_name] = predictions_one_model
 
         #post_processed_results = get_predictions(raw_predictions, self.thresholds)
-        try:
-            post_processed_results = get_predictions(raw_predictions, self.thresholds)
-            return raw_predictions, self.thresholds, post_processed_results
-        except Exception:
-            return raw_predictions, self.thresholds
+        return raw_predictions, self.thresholds
 
 """class PythonPredictor(torch.nn.Module):
     def __init__(self):

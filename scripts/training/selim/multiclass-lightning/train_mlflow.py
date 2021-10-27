@@ -1,9 +1,11 @@
 import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
 import re
 import argparse
 import logging
+import timeit
 
 #Importing pickle will cause an error in the model logging to mlflow
 #import pickle
@@ -12,7 +14,6 @@ import multiprocessing
 
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
-#dill.detect.trace(True)
 dill.extend(True)
 
 from pathlib import Path
@@ -100,7 +101,7 @@ if __name__ == "__main__":
     proportions_negative_examples_test = literal_eval(args.proportions_negative_examples_test)
     proportions_negative_examples_train = literal_eval(args.proportions_negative_examples_train)
     
-    whole_df, second_round_test = read_merge_data(
+    whole_df, test_df = read_merge_data(
         args.training_dir, args.val_dir, data_format="pickle"
     )
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
     mlflow.set_experiment(args.experiment_name)
     # pytorch autolog automatically logs relevant data. DO NOT log the model, since
     # for NLP tasks we need a custom inference logic
-    mlflow.pytorch.autolog(log_models=False)
+    mlflow.pytorch.autolog(log_models=True)
 
     with mlflow.start_run():
         train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 1}
@@ -143,10 +144,11 @@ if __name__ == "__main__":
 
         mlflow.log_params(params)
 
+        tot_time = 0
+
         tot_nb_rows_predicted = 0
         all_results = {}
         all_thresholds = {}
-        all_results_raw = {}
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
         #pytorch_prediction_wrapper = PythonPredictor()
         for column in training_columns:
@@ -160,16 +162,15 @@ if __name__ == "__main__":
                 prop_negative_examples_train_column = 0
                 prop_negative_examples_test_column = 0
 
-            train_df, val_df, test_df = preprocess_df(
+            train_df, val_df = preprocess_df(
                 whole_df, 
                 column, 
-                deployment_mode=deployment_mode, 
                 proportion_negative_examples_train_df=prop_negative_examples_train_column,
-                proportion_negative_examples_test_df=prop_negative_examples_test_column,
+                proportion_negative_examples_val_df=prop_negative_examples_test_column,
                 augment_numbers=augment_numbers)
 
             #logging metrcs to mlflow
-            proportions = stats_train_test(train_df, val_df, test_df, column)
+            proportions = stats_train_test(train_df, val_df, column)
             mlflow.log_params(proportions)
             params.update(proportions)
 
@@ -200,36 +201,44 @@ if __name__ == "__main__":
             
             #pytorch_prediction_wrapper.add_model(model, column)
             pyfunc_prediction_wrapper.add_model(model, column)
-            
-            model_threshold_names = list(model.optimal_thresholds.keys())
-            model_threshold_values = list(model.optimal_thresholds.values())
-            all_thresholds[column] = model.optimal_thresholds
 
-            pyfunc_prediction_wrapper.add_threshold(model.optimal_thresholds, column)
+            #there are thresholds only when we are working with multilabels
+            #In single labels, we just take the max probability
+            if multiclass_bool:
+                model_threshold_names = list(model.optimal_thresholds.keys())
+                model_threshold_values = list(model.optimal_thresholds.values())
+                all_thresholds[column] = model.optimal_thresholds
 
-            for i in range(len(model_threshold_names)):
-                try:
-                    name = model_threshold_names[i]
-                    cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-                    final_name = f"threshold_{column}_{cleaned_name}"
-                    
-                    mlflow.log_metric(final_name, model_threshold_values[i])
+                pyfunc_prediction_wrapper.add_threshold(model.optimal_thresholds, column)
 
-                except Exception:
-                    pass
+                for i in range(len(model_threshold_names)):
+                    try:
+                        name = model_threshold_names[i]
+                        cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+                        final_name = f"threshold_{column}_{cleaned_name}"
+                        
+                        mlflow.log_metric(final_name, model_threshold_values[i])
 
-            if len(test_df)>0:
-                results_test_set, results_raw = model.custom_eval(test_df, args.beta_f1)
-            else: 
-                results_test_set = {}
-                results_raw = {}
+                    except Exception:
+                        pass
 
-            all_results[column] = results_test_set
+            start = timeit.default_timer()
+            results_one_col = model.custom_predict(
+                test_df['excerpt'], testing=True
+                )
+            end = timeit.default_timer()
+            all_results[column] = results_one_col
+
+            tot_time += (end - start)
+
+            """all_results[column] = results_test_set
             all_results_raw[column] = results_raw
             try:
                 mlflow.log_metrics(results_test_set)
             except Exception:
-                pass
+                pass"""
+
+        mlflow.log_metric('nb row per second', len(test_df) / tot_time)
 
         try:
             mlflow.pyfunc.log_model(
@@ -243,7 +252,7 @@ if __name__ == "__main__":
                     "inference.py", 
                     "generate_models.py",
                     "data.py",
-                    "get_outputs_user.py"
+                    #"get_outputs_user.py"
                 ]
             )
         except Exception as e:
@@ -270,11 +279,10 @@ if __name__ == "__main__":
 
     outputs = {
         'parameters':params,
-        'results_processed':all_results,
-        'results_raw':all_results_raw,
+        'results':all_results,
         'thresholds':all_thresholds,
         'val_set_ids':val_df.entry_id.unique().tolist(),
-        'test_set_ids':test_df.entry_id.unique().tolist()
+        'test_set_ids':test_df.entry_id.tolist()
     }
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
         dill.dump(outputs, f)

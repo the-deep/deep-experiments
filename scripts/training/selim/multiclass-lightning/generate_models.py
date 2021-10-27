@@ -132,6 +132,7 @@ class CustomTrainer():
         model.hparams.learning_rate = new_lr
 
         trainer.fit(model)
-        model.hypertune_threshold(self.beta_f1)
+        if self.multiclass_bool:
+            model.hypertune_threshold(self.beta_f1)
 
         return model
