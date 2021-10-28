@@ -173,8 +173,9 @@ def preprocess_df(
         
     dataset['target'] = dataset.target.apply(lambda x: clean_rows(x))
 
+    #omit 'Cross' in sectors
     if column_name=='sectors':
-        dataset = dataset[dataset.target.apply(lambda x: len(x)<2)]
+        dataset = dataset[dataset.target.apply(lambda x: 'Cross' not in x)]
 
     entries_pos_dataset, all_negative_ids = get_negative_positive_examples (dataset)
 
