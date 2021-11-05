@@ -1,11 +1,16 @@
+import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
+#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
+
+#dill import needs to be kept for more robustness in multimodel serialization
+import dill
+dill.extend(True)
+
+
 from pytorch_lightning.loggers import TensorBoardLogger
 import pytorch_lightning as pl
 from transformers import AutoTokenizer
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-import os
-os.environ["TOKENIZERS_PARALLELISM"] = "false" 
-import dill
-dill.extend(True)
 
 from model import Transformer
 
@@ -33,7 +38,6 @@ class CustomTrainer():
         max_len=150,
         multiclass_bool=True,
         learning_rate=3e-5,
-        pred_threshold: float = 0.5,
         weighted_loss:str='sqrt',
         training_device:str = "cuda",
         beta_f1: float  = 0.8
@@ -55,7 +59,6 @@ class CustomTrainer():
             self.max_len = max_len
             self.multiclass_bool = multiclass_bool
             self.learning_rate = learning_rate
-            self.pred_threshold = pred_threshold
             self.weighted_loss = weighted_loss
             self.training_device = training_device
             self.beta_f1 = beta_f1
@@ -90,6 +93,7 @@ class CustomTrainer():
             log_gpu_memory=True,
             weights_summary=None,
             gpus=self.gpu_nb,
+            precision=16,
             accumulate_grad_batches=1,
             max_epochs=self.MAX_EPOCHS,
             gradient_clip_val=1,
@@ -112,7 +116,6 @@ class CustomTrainer():
             tokenizer=tokenizer,
             column_name=self.training_column,
             gpus=self.gpu_nb,
-            precision=16,
             plugin="deepspeed_stage_3_offload",
             accumulate_grad_batches=1,
             max_epochs=self.MAX_EPOCHS,
@@ -121,7 +124,6 @@ class CustomTrainer():
             warmup_steps=self.warmup_steps,
             output_length=self.output_length,
             learning_rate=self.learning_rate,
-            pred_threshold=self.pred_threshold,
             multiclass=self.multiclass_bool,
             weighted_loss=self.weighted_loss,
             training_device=self.training_device
@@ -130,9 +132,10 @@ class CustomTrainer():
         lr_finder = trainer.tuner.lr_find(model)      
         new_lr = lr_finder.suggestion()
         model.hparams.learning_rate = new_lr
-
         trainer.fit(model)
-        if self.multiclass_bool:
-            model.hypertune_threshold(self.beta_f1)
-
+        
+        model.hypertune_threshold(self.beta_f1)
+        del(model.training_loader)
+        del(model.val_loader)
+        
         return model

@@ -1,20 +1,18 @@
-from typing import Optional
-import timeit
-from tqdm.auto import tqdm
-import re
-import timeit
+import os
+#setting tokenizers parallelism to false adds robustness when dploying the model
+#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 #dill import needs to be kept for more robustness in multimodel serialization
 import dill
 dill.extend(True)
-import os
-#setting tokenizers parallelism to false adds robustness when dploying the model
-os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
-import torchmetrics
+
+from typing import Optional
+from tqdm.auto import tqdm
+
+
 from torchmetrics.functional import auroc
 
 import pytorch_lightning as pl
-from pytorch_lightning.core.decorators import auto_move_data
 
 import torch
 from torch import nn
@@ -54,7 +52,6 @@ class Model(nn.Module):
         super().__init__()
         self.l0 = AutoModel.from_pretrained(model_name_or_path)
         self.l1 = torch.nn.Dropout(dropout_rate)
-        # batch normlisation to be integrated
         self.l2 = torch.nn.Linear(output_length, token_len)
         self.l3 = torch.nn.BatchNorm1d(token_len)
         self.l4 = torch.nn.Dropout(dropout_rate)
@@ -84,17 +81,15 @@ class Transformer(pl.LightningModule):
         val_params,
         tokenizer,
         column_name,
-        multiclass=True,
-        pred_threshold: float = 0.5,
+        multiclass,
         learning_rate: float = 1e-5,
         adam_epsilon: float = 1e-8,
         warmup_steps: int = 500,
         weight_decay: float = 0.1,
         train_batch_size: int = 32,
         eval_batch_size: int = 32,
-        eval_splits: Optional[list] = None,
         dropout_rate: float = 0.3,
-        max_len: int = 150,
+        max_len: int = 512,
         output_length:int = 384,
         training_device:str = 'cuda',
         **kwargs,
@@ -120,9 +115,6 @@ class Transformer(pl.LightningModule):
         self.weight_classes = torch.tensor(self.weight_classes).to(self.training_device)
 
         self.multiclass = multiclass
-        self.empty_dataset = CustomDataset(None, self.tagname_to_tagid, tokenizer, max_len)
-        self.threshold = pred_threshold
-        self.optimal_thresholds = {column:0.4 for column in list(self.tagname_to_tagid.keys())}
 
         self.training_loader = self.get_loaders(
             train_dataset, train_params, self.tagname_to_tagid, self.tokenizer, max_len
@@ -131,38 +123,6 @@ class Transformer(pl.LightningModule):
             val_dataset, val_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
 
-        #if multiclass:
-        self.f1_score_train = torchmetrics.F1(
-            num_classes=2,
-            threshold=self.threshold,
-            average="macro",
-            mdmc_average="samplewise",
-            ignore_index=None,
-            top_k=None,
-            multiclass=True,
-            compute_on_step=True,
-            dist_sync_on_step=False,
-            process_group=None,
-            dist_sync_fn=None,
-        )
-
-        self.f1_score_val = torchmetrics.F1(
-            num_classes=2,
-            threshold=self.threshold,
-            average="macro",
-            mdmc_average="samplewise",
-            ignore_index=None,
-            top_k=None,
-            multiclass=True,
-            compute_on_step=True,
-            dist_sync_on_step=False,
-            process_group=None,
-            dist_sync_fn=None,
-        )
-
-        """else:
-            self.f1_score_train = torchmetrics.F1()
-            self.f1_score_val = torchmetrics.F1()"""
 
     def get_weights(self)->list:
 
@@ -178,86 +138,41 @@ class Transformer(pl.LightningModule):
         weights = [weight if weight < 1 else weight ** 2 for weight in weights]
         return weights
 
-    @auto_move_data
+
     def forward(self, inputs):
         output = self.model(inputs)
         return output
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        loss = F.binary_cross_entropy_with_logits(
+        train_loss = F.binary_cross_entropy_with_logits(
             outputs, batch["targets"], weight=self.weight_classes
         )
         
-        #if self.multiclass:
-        self.f1_score_train(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
-        """else:
-            argmax = outputs.argmax(1)
-            processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
-            self.f1_score_train(processed_output, batch["targets"].to(dtype=torch.long))"""
+        self.log("train_loss", train_loss, prog_bar=True)
+        return train_loss
 
-        self.log("train_f1", self.f1_score_train, prog_bar=True)
-        return loss
-
-    def validation_step(self, batch, batch_idx, dataloader_idx=0):
+    def validation_step(self, batch, batch_idx):
         outputs = self(batch)
         val_loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
 
-        #if self.multiclass:
-        self.f1_score_val(torch.sigmoid(outputs), batch["targets"].to(dtype=torch.long))
-        """else:
-            argmax = outputs.argmax(1)
-            processed_output = torch.zeros(outputs.shape).scatter(1, argmax.unsqueeze(1), 1.0)
-            self.f1_score_val(processed_output, batch["targets"].to(dtype=torch.long))"""
-
-        self.log(
-            "val_f1", self.f1_score_val, on_step=True, on_epoch=True, prog_bar=True, logger=False
-        )
-
         self.log("val_loss", val_loss, on_step=True, on_epoch=True, prog_bar=True, logger=False)
-        return {"val_loss": val_loss, "val_f1": self.f1_score_val}
-
-    def test_step(self, batch, batch_nb):
-        logits = self(batch)
-        preds = torch.sigmoid(logits) > 0.5
-        return {"preds": preds, "targets_i": batch["targets"]}
-
-    def on_test_epoch_end(self, outputs):
-        preds = torch.cat([output["preds"] for output in outputs]).cpu()
-        targets = torch.cat([output["targets_i"] for output in outputs]).cpu()
-
-        for i in range(targets.shape[1]):
-            class_roc_auc = auroc(preds[:, i], targets[:, i])
-            self.log(f"{self.empty_dataset.sectorid_to_sectorname[i]}_roc_auc/Train", class_roc_auc)
-            class_f1 = metrics.f1_score(targets[:, i], preds[:, i])
-            self.log(f"{self.empty_dataset.sectorid_to_sectorname[i]}_f1/Train", class_f1)
+        return {"val_loss": val_loss}
 
     def get_loaders(self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 128):
 
         set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
-
         loader = DataLoader(set, **params)
         return loader
 
-    def predict_step(self, batch, batch_idx, dataloader_idx=None):
+    def predict_step(self, batch, batch_idx):
         output = self(batch)
         return {"logits": output}
-
-    def on_predict_epoch_end(self, outputs):
-        logits = torch.cat([output["logits"] for output in outputs[0]])
-        preds = torch.sigmoid(logits) >= self.threshold
-        pred_classes = []
-        for pred in preds:
-            pred_classes_i = [
-                self.empty_dataset.sectorid_to_sectorname[i] for i, p in enumerate(pred) if p
-            ]
-            pred_classes.append(pred_classes_i)
-        self.log({"pred_classes": pred_classes})
     
     def total_steps(self) -> int:
         """The number of total training steps that will be run. Used for lr scheduler purposes."""
         self.dataset_size = len(self.train_dataloader().dataset)
-        num_devices = max(1, self.hparams.gpus)  # TODO: consider num_tpu_cores
+        num_devices = max(1, self.hparams.gpus)  
         effective_batch_size = (
             self.hparams.train_batch_size * self.hparams.accumulate_grad_batches * num_devices
         )
@@ -303,14 +218,13 @@ class Transformer(pl.LightningModule):
         return self.val_loader
 
     def custom_predict(self, validation_dataset, testing=False):
-
         """
         1) get raw predictions
         2) postprocess them to output an output compatible with what we want in the inference
         """
 
         def sigmoid(x):
-            return 1 / (1 + np.exp(-x))  
+            return 1 / (1 + np.exp(-x))       
 
         if testing:
             self.val_params["num_workers"] = 0
@@ -388,19 +302,14 @@ class Transformer(pl.LightningModule):
         1) yields the best results
         2) without being an aberrant value
         """
-
+        
         thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
-
         data_for_threshold_tuning = self.val_loader.dataset.data
-
         indexes, logit_predictions, y_true, _  = self.custom_predict(data_for_threshold_tuning)
-
         optimal_thresholds_dict = {}
 
         for j in range (logit_predictions.shape[1]):
-    
-            f1_scores = []
-
+            scores = []
             for thresh_tmp in thresholds_list:
                 
                 columns_logits = np.array(logit_predictions[:,j])
@@ -409,67 +318,21 @@ class Transformer(pl.LightningModule):
                     1 if columns_logits[i]> thresh_tmp else 0 for i in range (logit_predictions.shape[0])
                     ]
 
-                custom_f1 = metrics.fbeta_score(y_true[:,j], column_pred, beta_f1, average='macro')
+                if self.multiclass:
+                    metric = metrics.fbeta_score(y_true[:,j], column_pred, beta_f1, average='macro')
+                else:
+                    metric = metrics.precision_score(y_true[:,j], column_pred, average='macro')
 
-                f1_scores.append(custom_f1)
+                scores.append(metric)
 
             max_threshold = 0
-            max_f1 = 0
-            for i in range (1, len(f1_scores) - 1):
-                score = sum(f1_scores[i-1:i+2])
-                if score >= max_f1:
-                    max_f1 = score
+            max_score = 0
+            for i in range (1, len(scores) - 1):
+                score = sum(scores[i-1:i+2])
+                if score >= max_score:
+                    max_score = score
                     max_threshold = thresholds_list[i]
-
 
             optimal_thresholds_dict[list(self.tagname_to_tagid.keys())[j]] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
-
-
-    def custom_eval(self, test_df, beta_f1):
-
-        _, logit_predictions, y_true, probabilities_dict  = self.custom_predict(test_df)
-        
-        results_dict = {}
-        overall_recall = []
-        overall_precision = []
-        overall_custom_f1 = []
-
-        # postprocess predictions
-        for j in range(logit_predictions.shape[1]):
-            
-            probas_column = logit_predictions[:, j]
-            true_preds_column = y_true[:, j]
-            sub_tag_name = list(self.tagname_to_tagid.keys())[j]
-            
-            if self.multiclass:
-                thresh_value_tmp = list(self.optimal_thresholds.values())[j]
-                
-                column_pred = [
-                    1 if pred>thresh_value_tmp else 0 for pred in probas_column
-                    ]
-            else:
-                column_pred = [
-                    1 if i==np.argmax(probas_column) else 0 for i in range (len(probas_column))
-                    ]
-
-            precision = metrics.precision_score(true_preds_column, column_pred, average='macro')
-            custom_f1 = metrics.fbeta_score(true_preds_column, column_pred, beta_f1, average='macro')
-            recall = metrics.recall_score(true_preds_column, column_pred, average='macro')
-
-            overall_recall.append(recall)
-            overall_precision.append(precision)
-            overall_custom_f1.append(custom_f1)
-
-            cleaned_name = re.sub("[^0-9a-zA-Z]+", "_", sub_tag_name)
-
-            results_dict['precision_'+cleaned_name] = precision
-            results_dict['recall_'+cleaned_name] = recall
-            results_dict['beta_f1_'+cleaned_name] = custom_f1
-
-        results_dict['overall_custom_f1_'+self.column_name] = np.mean(overall_custom_f1)
-        results_dict['overall_precision_'+self.column_name] = np.mean(overall_precision)
-        results_dict['overall_recall_'+self.column_name] = np.mean(overall_recall)
-
-        return results_dict, probabilities_dict

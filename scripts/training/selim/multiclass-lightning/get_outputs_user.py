@@ -1,80 +1,15 @@
-from utils import flatten
-import numpy as np
-
 multilabel_columns = [
     'sectors', 
-    'pillars_2d',
-    'pillars_1d',
     'subpillars_2d', 
     'subpillars_1d', 
-    'demographic_groups', 
-    'affected_groups', 
-    'specific_needs_groups'
-    ]
-
-no_subpillar_columns = [
-    'sectors',
-    'demographic_groups', 
-    'affected_groups', 
-    'specific_needs_groups'
-    ]
-
-all_columns = [
-    'sectors', 
-    'subpillars_2d', 
-    'subpillars_2d_postprocessed',
-    'subpillars_1d', 
-    'subpillars_1d_postprocessed',
-    'demographic_groups', 
-    'affected_groups', 
+    'age', 
+    'gender', 
     'specific_needs_groups',
-    'severity'
     ]
 
-def postprocess_subpillars (ratios_pillars, ratios_subpillars, return_at_least_one=True):
-    """
-    postprocess subpillars using the pillars:
-    1) keep only subpillars where the pillar was already predicted
-    2)  if one pillar was predicted but no subpillar, we take the max ratio of the subbpillars
-    for that pillar
-    """
-    
-    results_subpillars = []
+all_columns = multilabel_columns + ['severity']
 
-    ratios_subpillars_changed = {name: {} for name, _ in ratios_pillars.items()}
-    for column_name, ratio in ratios_subpillars.items():
-        split_column = column_name.split('->')
-        ratios_subpillars_changed[split_column[0]].update({
-            split_column[1]: ratio
-        })
-
-    positive_pillars = [
-        column_name for column_name, ratio in ratios_pillars.items() if ratio >= 1
-        ]
-    if len (positive_pillars) == 0 and return_at_least_one:
-        positive_pillars = [
-        column_name for column_name, ratio in ratios_pillars.items() \
-            if ratio == max(list(ratios_pillars.values()))
-        ]
-
-    if len (positive_pillars) == 0:
-        return []
-    
-    for column_tmp in positive_pillars:
-        dict_results_column = ratios_subpillars_changed[column_tmp]
-        preds_column_tmp = [
-            subtag for subtag, value in dict_results_column.items() if value >=1
-        ]
-        if len(preds_column_tmp)==0:
-            preds_column_tmp = [
-            subtag for subtag, value in dict_results_column.items() \
-                if value == max(list(dict_results_column.values()))
-        ]
-        results_subpillars.append(preds_column_tmp)
-        
-    return flatten(results_subpillars)
-
-def get_predictions(test_probas, thresholds_dict):  
+def get_predictions(test_probas, thresholds_dict, nb_entries=100):  
     """
     test_probas structure example: {
         'sectors':[
@@ -118,10 +53,9 @@ def get_predictions(test_probas, thresholds_dict):
 
     #create dict of ratio between probability of output and threshold
     ratio_proba_threshold = {}
-    for column in multilabel_columns:
+    for column in all_columns + ['column_present']:
         preds_column = test_probas[column]
         dict_keys = list(thresholds_dict[column].keys())
-        nb_entries = len([i for i in test_probas['sectors'] if i])
 
         returned_values_column = []
         for preds_sent in preds_column:
@@ -130,55 +64,55 @@ def get_predictions(test_probas, thresholds_dict):
         ratio_proba_threshold[column] = returned_values_column
 
     predictions = {column:[] for column in all_columns}
-    for i in range (nb_entries):
-
+    for entry_nb in range (nb_entries):
+        ratios_pos_neg_examples = ratio_proba_threshold['column_present'][entry_nb]
+        preds_pos_neg_examples = [
+            sub_tag for sub_tag in list(ratios_pos_neg_examples.keys()) if ratios_pos_neg_examples[sub_tag]>1
+        ]
         # get the entries where the ratio is superior to 1 and put them in a dict {prediction:probability}
-        for column in no_subpillar_columns:
-            preds_column = ratio_proba_threshold[column][i]
-            preds_entry = [
-                sub_tag for sub_tag in list(preds_column.keys()) if ratio_proba_threshold[column][i][sub_tag]>1
-            ]
+        for column in multilabel_columns:
+            if column not in preds_pos_neg_examples:
+                predictions[column].append([])
+            else:
+                preds_column = ratio_proba_threshold[column][entry_nb]
+                preds_entry = [
+                    sub_tag for sub_tag in list(preds_column.keys()) if preds_column[sub_tag]>1
+                ]
 
-            #postprocessing to keep only cross if more than one prediction
-            if column=='sectors' and len(preds_entry)>1:
-                preds_entry.append(['Cross'])
+                #postprocessing to keep only cross if more than one prediction
+                """if column=='sectors' and len(preds_entry)>1:
+                    preds_entry.append('Cross')"""
 
-            predictions[column].append(list(np.unique(preds_entry)))
+                if len(preds_entry)>1:
+                    preds_entry = [
+                        sub_tag for sub_tag in list(preds_column.keys())\
+                            if preds_column[sub_tag]==max(list(preds_column.values()))
+                    ]
 
-        preds_2d = postprocess_subpillars(
-            ratio_proba_threshold['pillars_2d'][i],
-            ratio_proba_threshold['subpillars_2d'][i],
-            True
-            )
+                predictions[column].append(preds_entry)
+                
 
-        preds_1d = postprocess_subpillars(
-            ratio_proba_threshold['pillars_1d'][i],
-            ratio_proba_threshold['subpillars_1d'][i],
-            False
-            )
-
-        predictions['subpillars_2d_postprocessed'].append(preds_2d)
-        predictions['subpillars_1d_postprocessed'].append(preds_1d)
 
         #postprocess 'subpillars_2d'
-        if len(predictions['sectors'][i])>0 and len(predictions['subpillars_2d'][i])==0:
-            predictions['subpillars_2d'][i] = [
+        """if len(predictions['sectors'][entry_nb])>0 and len(predictions['subpillars_2d'][entry_nb])==0:
+            predictions['subpillars_2d'][entry_nb] = [
                 sub_tag for sub_tag in list(preds_column.keys()) if\
-                        test_probas[column][i][sub_tag] == max(list(test_probas[column][i].values()))
+                        test_probas[column][entry_nb][sub_tag] == max(list(test_probas[column][entry_nb].values()))
             ]
 
-        if len(predictions['sectors'][i])==0 and len(predictions['subpillars_2d'][i])>0:
-            predictions['subpillars_2d'][i] = []
+        if len(predictions['sectors'][entry_nb])==0 and len(predictions['subpillars_2d'][entry_nb])>0:
+            predictions['subpillars_2d'][entry_nb] = []"""
             
         #severity  predictions and output
-        if 'Humanitarian Conditions' in predictions['subpillars_2d'][i]:
+        if 'Humanitarian Conditions' in str(predictions['subpillars_2d'][entry_nb]):
+            preds_column = ratio_proba_threshold['severity'][entry_nb]
             pred_severity = [
-                sub_tag for sub_tag in list(preds_column.keys()) if\
-                ratio_proba_threshold['severity'][i][sub_tag] == max(list(test_probas['severity'][i].values()))
+                sub_tag for sub_tag in list(preds_column.keys())\
+                    if preds_column[sub_tag]==max(list(preds_column.values()))
             ]
 
             predictions['severity'].append(pred_severity)
         else:
-            predictions['severity'].append({})
+            predictions['severity'].append([])
             
     return predictions

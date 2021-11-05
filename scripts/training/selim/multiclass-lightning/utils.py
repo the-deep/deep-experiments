@@ -2,15 +2,11 @@ from ast import literal_eval
 import random
 import numpy as np
 import pandas as pd
-import dill
 
-#from sklearn.model_selection import train_test_split
 import warnings
-
 warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
-
 
 def tagname_to_id(target):
     """
@@ -47,7 +43,7 @@ def clean_rows(row):
 def flatten(t):
     return [item for sublist in t for item in sublist]
 
-def custom_stratified_train_test_split(df, positive_ids, ratios):
+def custom_stratified_train_test_split(df, ratios):
     """
     custom function for stratified train test splitting
     1) take unique sub-tags (example: ['Health'])
@@ -59,7 +55,7 @@ def custom_stratified_train_test_split(df, positive_ids, ratios):
     """
     train_ids = []
     val_ids = []
-    positive_df = df[df.entry_id.isin(positive_ids)]
+    positive_df = df.copy()
     
     unique_entries = list(np.unique(positive_df['target'].apply(str)))
     for entry in unique_entries:
@@ -139,9 +135,7 @@ def get_negative_positive_examples (df: pd.DataFrame):
 def preprocess_df(
     df: pd.DataFrame, 
     column_name: str, 
-    proportion_negative_examples_train_df: float = 0.1,
-    proportion_negative_examples_val_df: float = 0.25,
-    augment_numbers: bool = True):
+    multiclass_bool: bool = True):
 
     """
     main preprocessing function:
@@ -151,69 +145,32 @@ def preprocess_df(
     NB: work with ids because the augmented sentences have the same entry_id as the original ones
     """
 
-    def get_ratio_neg_positive(ratio):
-        """
-        from total ratio of negative samples
-        get ratio of negative /positive
-        """
-        return ratio / (1 - ratio)
-
-    ratio_negative_positive_examples_train = get_ratio_neg_positive(
-        proportion_negative_examples_train_df
-    )
-
-    ratio_negative_positive_examples_val = get_ratio_neg_positive(
-        proportion_negative_examples_val_df
-    )
-
     #rename column to 'target' to be able to work on it generically
     dataset = df[
-        ["entry_id", "excerpt", column_name, 'lead_id']
+        ["entry_id", "excerpt", column_name]
         ].rename(columns={column_name: "target"}).dropna().copy()
         
     dataset['target'] = dataset.target.apply(lambda x: clean_rows(x))
 
-    #omit 'Cross' in sectors
     if column_name=='sectors':
-        dataset = dataset[dataset.target.apply(lambda x: 'Cross' not in x)]
-
-    entries_pos_dataset, all_negative_ids = get_negative_positive_examples (dataset)
-
-    # If we want to deploy the model, we use all the positive data we have for training
+        dataset['target'] = dataset.target.apply(
+            lambda x: [item for item in x if item!='Cross']
+        )
+    if not multiclass_bool:
+        dataset = dataset[dataset.target.apply(lambda x: len(x)==1)]
+    else:
+        dataset = dataset[dataset.target.apply(lambda x: len(x)>0)]
 
     ratios = {
         'train':0.9,
         'val':0.1,
     }
-    
-        
+       
     train_pos_entries, val_pos_entries =\
-        custom_stratified_train_test_split(dataset, entries_pos_dataset, ratios)
+        custom_stratified_train_test_split(dataset, ratios)
 
-    nb_train_pos_entries = len(train_pos_entries)
-    nb_val_pos_entries = len(val_pos_entries)
-
-    nb_val_neg_entries = int(ratio_negative_positive_examples_val * nb_val_pos_entries)
-    nb_train_neg_entries = int(ratio_negative_positive_examples_train * nb_train_pos_entries)
-
-
-    val_negative_ids = random.sample(all_negative_ids, nb_val_neg_entries)
-    remaining_negative_ids = list(
-        set(all_negative_ids) - set(val_negative_ids)
-    )
-    train_negative_ids = random.sample(remaining_negative_ids, nb_train_neg_entries)
-
-    val_ids = list (set(val_negative_ids).union(set (val_pos_entries)))
-    train_ids = list (set(train_negative_ids).union(set (train_pos_entries)))
-    
-    df_train = dataset[dataset.entry_id.isin(train_ids)].drop(columns=['lead_id'])
-    df_val = dataset[dataset.entry_id.isin(val_ids)].drop(columns=['lead_id'])
-
-    #perform numbers augmentation:
-    #   - if we want to  
-    #   - only for tags containing numbers (subpillars_1d and subpillars_2d)
-    if 'subpillars_' in column_name and augment_numbers:
-        df_train = augment_numbers_sentences(df_train)
+    df_train = dataset[dataset.entry_id.isin(train_pos_entries)]
+    df_val = dataset[dataset.entry_id.isin(val_pos_entries)]
         
     return df_train, df_val
 
