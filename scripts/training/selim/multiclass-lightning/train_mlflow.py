@@ -114,7 +114,8 @@ if __name__ == "__main__":
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
             "beta f1":args.beta_f1,
-            "instance_type":args.instance_type
+            "instance_type":args.instance_type,
+            "n_gpu": gpu_nb
         }
 
         mlflow.log_params(params)
@@ -168,7 +169,7 @@ if __name__ == "__main__":
                     "inference.py", 
                     "generate_models.py",
                     "data.py",
-                    #"get_outputs_user.py"
+                    "get_outputs_user.py"
                 ],
                 await_registration_for=600
             )

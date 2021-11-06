@@ -123,22 +123,6 @@ class Transformer(pl.LightningModule):
             val_dataset, val_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
 
-
-    def get_weights(self)->list:
-
-        list_tags = list(self.tagname_to_tagid.keys())
-
-        number_data_classes = []
-        for tag in list_tags:
-            nb_data_in_class = self.targets.apply(lambda x: tag in (x)).sum()
-            number_data_classes.append(nb_data_in_class)
-
-        weights = compute_weights(number_data_classes, self.targets.shape[0])
-
-        weights = [weight if weight < 1 else weight ** 2 for weight in weights]
-        return weights
-
-
     def forward(self, inputs):
         output = self.model(inputs)
         return output
@@ -158,12 +142,6 @@ class Transformer(pl.LightningModule):
 
         self.log("val_loss", val_loss, on_step=True, on_epoch=True, prog_bar=True, logger=False)
         return {"val_loss": val_loss}
-
-    def get_loaders(self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 128):
-
-        set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
-        loader = DataLoader(set, **params)
-        return loader
 
     def predict_step(self, batch, batch_idx):
         output = self(batch)
@@ -216,6 +194,23 @@ class Transformer(pl.LightningModule):
 
     def val_dataloader(self):
         return self.val_loader
+
+    def get_weights(self)->list:
+
+        list_tags = list(self.tagname_to_tagid.keys())
+        number_data_classes = []
+        for tag in list_tags:
+            nb_data_in_class = self.targets.apply(lambda x: tag in (x)).sum()
+            number_data_classes.append(nb_data_in_class)
+        weights = compute_weights(number_data_classes, self.targets.shape[0])
+        weights = [weight if weight < 1 else weight ** 2 for weight in weights]
+        return weights
+
+    def get_loaders(self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 128):
+
+        set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
+        loader = DataLoader(set, **params, pin_memory=True)
+        return loader
 
     def custom_predict(self, validation_dataset, testing=False):
         """
