@@ -316,7 +316,7 @@ class Transformer(pl.LightningModule):
                 if self.multiclass:
                     metric = metrics.fbeta_score(y_true[:,j], column_pred, beta_f1, average='macro')
                 else:
-                    metric = metrics.precision_score(y_true[:,j], column_pred, average='macro')
+                    metric = metrics.recall_score(y_true[:,j], column_pred, average='macro')
 
                 scores.append(metric)
 
