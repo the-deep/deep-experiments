@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from sklearn import metrics
 
 def get_matrix (column_of_columns, tag_to_id, nb_subtags):
@@ -14,7 +15,7 @@ def assess_performance (preds, groundtruth, subtags):
         groundtruth: List[List[str]]: list containing list of true tags for each entry
         subtags: subtags list, sorted by alphabetical order 
     OUTPUTS:
-        dict: keys: subtags, values: dict containing precision, recall, f1score
+        pd.DataFrame: rows: subtags, column: precision, recall, f1_score
     """
     results_dict = {}
     nb_subtags = len(subtags)
@@ -31,4 +32,7 @@ def assess_performance (preds, groundtruth, subtags):
         }
         results_dict[subtags[j]] = results_subtag
         
-    return results_dict
+    df_results = pd.DataFrame.from_dict(results_dict, orient='index')
+    df_results.loc['mean'] = df_results.mean()
+        
+    return df_results
