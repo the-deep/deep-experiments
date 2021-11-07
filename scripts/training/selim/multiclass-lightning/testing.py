@@ -11,7 +11,7 @@ def assess_performance (preds, groundtruth, subtags):
     """
     INPUTS:
         preds: List[List[str]]: list containing list of predicted tags for each entry
-        groundtruth: List[List[str]]: list containing list of predicted tags for each entry
+        groundtruth: List[List[str]]: list containing list of true tags for each entry
         subtags: subtags list, sorted by alphabetical order 
     OUTPUTS:
         dict: keys: subtags, values: dict containing precision, recall, f1score
