@@ -124,11 +124,19 @@ if __name__ == "__main__":
 
         for column in training_columns:
             multiclass_bool = column != 'severity'
+            keep_neg_examples = 'present' in column
+
+            #sanity check on params
+            mlflow.log_params({
+                f'multiclass_bool_{column}': multiclass_bool,
+                f'keep_neg_examples_bool_{column}': keep_neg_examples
+            })
 
             train_df, val_df = preprocess_df(
                 whole_df, 
                 column, 
-                multiclass_bool=multiclass_bool)
+                multiclass_bool,
+                keep_neg_examples)
 
             model_trainer = CustomTrainer(
                 train_dataset=train_df,
@@ -160,7 +168,7 @@ if __name__ == "__main__":
         try:
             mlflow.pyfunc.log_model(
                 python_model=pyfunc_prediction_wrapper,
-                artifact_path="pyfunc_models_all",
+                artifact_path="primary_tags_v1",
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,

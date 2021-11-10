@@ -135,7 +135,8 @@ def get_negative_positive_examples (df: pd.DataFrame):
 def preprocess_df(
     df: pd.DataFrame, 
     column_name: str, 
-    multiclass_bool: bool = True):
+    multiclass_bool: bool,
+    keep_neg_labels: bool = False):
 
     """
     main preprocessing function:
@@ -158,7 +159,7 @@ def preprocess_df(
         )
     if not multiclass_bool:
         dataset = dataset[dataset.target.apply(lambda x: len(x)==1)]
-    else:
+    if not keep_neg_labels:
         dataset = dataset[dataset.target.apply(lambda x: len(x)>0)]
 
     ratios = {
