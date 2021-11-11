@@ -1,8 +1,10 @@
 import os
-#setting tokenizers parallelism to false adds robustness when dploying the model
-#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
-#dill import needs to be kept for more robustness in multimodel serialization
+
+# setting tokenizers parallelism to false adds robustness when dploying the model
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# dill import needs to be kept for more robustness in multimodel serialization
 import dill
+
 dill.extend(True)
 
 from torch.utils.data import Dataset
@@ -10,12 +12,16 @@ import torch
 import numpy as np
 import pandas as pd
 
+from transformers import AutoModel
+
 
 class CustomDataset(Dataset):
-    def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 150):
+    def __init__(
+        self, dataframe, tagname_to_tagid, tokenizer, model_name_or_path=None, max_len: int = 150
+    ):
         self.tokenizer = tokenizer
         self.data = dataframe
-
+        self.automodel = AutoModel.from_pretrained(model_name_or_path)
         if dataframe is None:
             self.excerpt_text = None
         elif type(dataframe) is pd.Series:
@@ -65,9 +71,7 @@ class CustomDataset(Dataset):
             targets = np.zeros(len(self.tagname_to_tagid), dtype=int)
             targets[target_indices] = 1
 
-            encoded["targets"] = (
-                torch.tensor(targets, dtype=float) if targets is not None else None
-            )
+            encoded["targets"] = torch.tensor(targets, dtype=float) if targets is not None else None
             encoded["entry_id"] = self.entry_ids[index]
 
         if as_batch:

@@ -1,8 +1,10 @@
 import os
-#setting tokenizers parallelism to false adds robustness when dploying the model
-#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
-#dill import needs to be kept for more robustness in multimodel serialization
+
+# setting tokenizers parallelism to false adds robustness when dploying the model
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+# dill import needs to be kept for more robustness in multimodel serialization
 import dill
+
 dill.extend(True)
 
 
@@ -35,10 +37,8 @@ from transformers.optimization import (
 
 from data import CustomDataset
 
-from utils import (
-    compute_weights,
-    tagname_to_id
-)
+from utils import compute_weights, tagname_to_id
+
 
 class Model(nn.Module):
     def __init__(
@@ -50,7 +50,7 @@ class Model(nn.Module):
         output_length=384,
     ):
         super().__init__()
-        self.l0 = AutoModel.from_pretrained(model_name_or_path)
+        # self.l0 = AutoModel.from_pretrained(model_name_or_path)
         self.l1 = torch.nn.Dropout(dropout_rate)
         self.l2 = torch.nn.Linear(output_length, token_len)
         self.l3 = torch.nn.BatchNorm1d(token_len)
@@ -58,11 +58,12 @@ class Model(nn.Module):
         self.l5 = torch.nn.Linear(token_len, num_labels)
 
     def forward(self, inputs):
-        output = self.l0(
-            inputs["ids"],
-            attention_mask=inputs["mask"],
-        )
-        output = F.selu(output.last_hidden_state)
+        # output = self.l0(
+        #    inputs["ids"],
+        #    attention_mask=inputs["mask"],
+        # )
+
+        output = F.selu(inputs)  # output.last_hidden_state)
         output = self.l1(output)
         output = F.selu(self.l2(output))
         output = self.l3(output)
@@ -90,12 +91,13 @@ class Transformer(pl.LightningModule):
         eval_batch_size: int = 32,
         dropout_rate: float = 0.3,
         max_len: int = 512,
-        output_length:int = 384,
-        training_device:str = 'cuda',
+        output_length: int = 384,
+        training_device: str = "cuda",
         **kwargs,
     ):
 
         super().__init__()
+        self.model_name = model_name_or_path
         self.output_length = output_length
         self.column_name = column_name
         self.save_hyperparameters()
@@ -132,7 +134,7 @@ class Transformer(pl.LightningModule):
         train_loss = F.binary_cross_entropy_with_logits(
             outputs, batch["targets"], weight=self.weight_classes
         )
-        
+
         self.log("train_loss", train_loss, prog_bar=True)
         return train_loss
 
@@ -146,11 +148,11 @@ class Transformer(pl.LightningModule):
     def predict_step(self, batch, batch_idx):
         output = self(batch)
         return {"logits": output}
-    
+
     def total_steps(self) -> int:
         """The number of total training steps that will be run. Used for lr scheduler purposes."""
         self.dataset_size = len(self.train_dataloader().dataset)
-        num_devices = max(1, self.hparams.gpus)  
+        num_devices = max(1, self.hparams.gpus)
         effective_batch_size = (
             self.hparams.train_batch_size * self.hparams.accumulate_grad_batches * num_devices
         )
@@ -158,12 +160,14 @@ class Transformer(pl.LightningModule):
 
     def configure_optimizers(self):
         "Prepare optimizer and schedule (linear warmup and decay)"
-        #model = self.model
+        # model = self.model
         no_decay = ["bias", "LayerNorm.weight"]
         optimizer_grouped_parameters = [
             {
                 "params": [
-                    p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)
+                    p
+                    for n, p in self.model.named_parameters()
+                    if not any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": self.hparams.weight_decay,
             },
@@ -188,14 +192,13 @@ class Transformer(pl.LightningModule):
         scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
         return [optimizer], [scheduler]
 
-
     def train_dataloader(self):
         return self.training_loader
 
     def val_dataloader(self):
         return self.val_loader
 
-    def get_weights(self)->list:
+    def get_weights(self) -> list:
 
         list_tags = list(self.tagname_to_tagid.keys())
         number_data_classes = []
@@ -219,7 +222,7 @@ class Transformer(pl.LightningModule):
         """
 
         def sigmoid(x):
-            return 1 / (1 + np.exp(-x))       
+            return 1 / (1 + np.exp(-x))
 
         if testing:
             self.val_params["num_workers"] = 0
@@ -285,45 +288,45 @@ class Transformer(pl.LightningModule):
             indexes = np.concatenate(indexes)
             return indexes, logit_predictions, y_true, probabilities_dict
 
-        else :
+        else:
             return probabilities_dict
-            
 
-    def hypertune_threshold (
-        self, 
-        beta_f1:float=0.8):
+    def hypertune_threshold(self, beta_f1: float = 0.8):
         """
         having the probabilities, loop over a list of thresholds to see which one:
         1) yields the best results
         2) without being an aberrant value
         """
-        
+
         thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
         data_for_threshold_tuning = self.val_loader.dataset.data
-        indexes, logit_predictions, y_true, _  = self.custom_predict(data_for_threshold_tuning)
+        indexes, logit_predictions, y_true, _ = self.custom_predict(data_for_threshold_tuning)
         optimal_thresholds_dict = {}
 
-        for j in range (logit_predictions.shape[1]):
+        for j in range(logit_predictions.shape[1]):
             scores = []
             for thresh_tmp in thresholds_list:
-                
-                columns_logits = np.array(logit_predictions[:,j])
+
+                columns_logits = np.array(logit_predictions[:, j])
 
                 column_pred = [
-                    1 if columns_logits[i]> thresh_tmp else 0 for i in range (logit_predictions.shape[0])
-                    ]
+                    1 if columns_logits[i] > thresh_tmp else 0
+                    for i in range(logit_predictions.shape[0])
+                ]
 
                 if self.multiclass:
-                    metric = metrics.fbeta_score(y_true[:,j], column_pred, beta_f1, average='macro')
+                    metric = metrics.fbeta_score(
+                        y_true[:, j], column_pred, beta_f1, average="macro"
+                    )
                 else:
-                    metric = metrics.f1_score(y_true[:,j], column_pred, average='macro')
+                    metric = metrics.f1_score(y_true[:, j], column_pred, average="macro")
 
                 scores.append(metric)
 
             max_threshold = 0
             max_score = 0
-            for i in range (1, len(scores) - 1):
-                score = sum(scores[i-1:i+2])
+            for i in range(1, len(scores) - 1):
+                score = sum(scores[i - 1 : i + 2])
                 if score >= max_score:
                     max_score = score
                     max_threshold = thresholds_list[i]
