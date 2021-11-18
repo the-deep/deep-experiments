@@ -2,6 +2,8 @@ from sklearn.neighbors import NearestNeighbors
 import random
 import numpy as np
 
+from sentence_transformers.models import Pooling
+
 
 class MLSOL:
     def __init__(self, perc_gen_instances=0.3, k=5, random_seed: int = 0):
