@@ -1,3 +1,6 @@
+def clean_col(preds):
+    return [item for item in preds if item!='NOT_MAPPED']
+
 def compare_preds(groundtruth_col, preds_col):
     perfect_matches = 0
     one_missing = 0
@@ -6,8 +9,8 @@ def compare_preds(groundtruth_col, preds_col):
     more_than_one_false = 0
     len_col = len(groundtruth_col)
     for i in range (len_col):
-        gt_sentence = set(groundtruth_col[i])
-        pred_sentence = set(preds_col[i])
+        gt_sentence = set(clean_col(groundtruth_col[i]))
+        pred_sentence = set(clean_col(preds_col[i]))
         union_tags = gt_sentence.union(pred_sentence)
         intersection_tags = gt_sentence.intersection(pred_sentence)
         if union_tags == intersection_tags:
@@ -26,9 +29,9 @@ def compare_preds(groundtruth_col, preds_col):
             else:
                 more_than_one_false += 1
     return {
-        'perfect_matches': np.round(perfect_matches / len_col, 3),
-        'one_missing': np.round(one_missing / len_col, 3),
-        'more_than_one_missing': np.round(more_than_one_missing / len_col, 3),
-        'one_false': np.round(one_false / len_col, 3),
-        'more_than_one_false': np.round(more_than_one_false / len_col, 3)
+        'proportion_perfect_matches': np.round(perfect_matches / len_col, 3),
+        'proportion_one_missing': np.round(one_missing / len_col, 3),
+        'proportion_more_than_one_missing': np.round(more_than_one_missing / len_col, 3),
+        'proportion_one_false': np.round(one_false / len_col, 3),
+        'proportion_more_than_one_false': np.round(more_than_one_false / len_col, 3)
     }
