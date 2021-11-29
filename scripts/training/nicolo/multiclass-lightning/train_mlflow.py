@@ -43,7 +43,9 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--output_length", type=int, default=384)
     parser.add_argument("--nb_repetitions", type=int, default=1)
-    parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
+    parser.add_argument(
+        "--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased"
+    )
     parser.add_argument(
         "--tokenizer_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased"
     )
@@ -51,15 +53,20 @@ if __name__ == "__main__":
     # parser.add_argument("--n_classes", type=int, default=6)
     parser.add_argument("--training_names", type=str)
     parser.add_argument("--beta_f1", type=float, default=0.5)
-
+    parser.add_argument("--min_results", type=str)
+    parser.add_argument("--run_name", type=str, default="models")
     parser.add_argument("--instance_type", type=str, default="-")
 
     # Data, model, and output directories
-    parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
+    parser.add_argument(
+        "--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"]
+    )
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
     parser.add_argument("--n_gpus", type=str, default=os.environ["SM_NUM_GPUS"])
 
-    parser.add_argument("--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"])
+    parser.add_argument(
+        "--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"]
+    )
     parser.add_argument("--val_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
     args, _ = parser.parse_known_args()
 
@@ -77,9 +84,12 @@ if __name__ == "__main__":
     # load datasets
     logging.info("reading, preprocessing data")
 
-    whole_df, test_df = read_merge_data(args.training_dir, args.val_dir, data_format="pickle")
+    whole_df, test_df = read_merge_data(
+        args.training_dir, args.val_dir, data_format="pickle"
+    )
 
     training_columns = args.training_names.split(",")
+    min_results = literal_eval(args.min_results)
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -135,22 +145,29 @@ if __name__ == "__main__":
                     f"bool_keep_neg_examples_{column}": keep_neg_examples,
                 }
             )
-            best_f1_score = 0
+            best_score = 0
 
             test_df_col = test_df.copy()
             test_df_col[column] = test_df_col[column].apply(literal_eval)
 
             if column == "sectors":
-                test_df_col = test_df_col[test_df_col[column].apply(lambda x: "Cross" not in x)]
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: "Cross" not in x)
+                ]
             if not multiclass_bool:
-                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x) == 1)]
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: len(x) == 1)
+                ]
             if not keep_neg_examples:
-                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x) > 0)]
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: len(x) > 0)
+                ]
 
             testing_excerpt = test_df_col["excerpt"]
             groundtruth_column = test_df_col[column]
 
-            for iter_nb in range(args.nb_repetitions):
+            iter_nb = 0
+            while best_score < min_results[column] and iter_nb < args.nb_repetitions:
 
                 train_df, val_df = preprocess_df(
                     whole_df, column, multiclass_bool, keep_neg_examples
@@ -189,21 +206,22 @@ if __name__ == "__main__":
                 )
 
                 model = model_trainer.train_model()
+                model_score = model.val_f1_score
 
-                macro_f1_score_iter = model.get_tot_f1_score(
-                    testing_excerpt, groundtruth_column, multiclass_bool, keep_neg_examples
+                mlflow.log_metric(
+                    f"{args.beta_f1}_f1_score_{column}_iter{iter_nb + 1}", model_score
                 )
 
-                mlflow.log_metric(f"f1_score_{column}_iter{iter_nb + 1}", macro_f1_score_iter)
-
-                if macro_f1_score_iter > best_f1_score:
-                    best_f1_score = macro_f1_score_iter
+                if model_score > best_score:
+                    best_score = model_score
                     pyfunc_prediction_wrapper.add_model(model, column)
+
+                iter_nb += 1
 
         try:
             mlflow.pyfunc.log_model(
                 python_model=pyfunc_prediction_wrapper,
-                artifact_path="primary_tags_v1",
+                artifact_path=args.run_name,
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,
@@ -222,7 +240,9 @@ if __name__ == "__main__":
     raw_predictions = {}
     for tag_name, trained_model in pyfunc_prediction_wrapper.models.items():
 
-        predictions_one_model = trained_model.custom_predict(test_df["excerpt"], testing=True)
+        predictions_one_model = trained_model.custom_predict(
+            test_df["excerpt"], testing=True
+        )
         raw_predictions[tag_name] = predictions_one_model
 
     outputs = {

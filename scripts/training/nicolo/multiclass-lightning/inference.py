@@ -34,7 +34,9 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
         raw_predictions = {}
         for tag_name, trained_model in self.models.items():
 
-            predictions_one_model = trained_model.custom_predict(model_input, testing=True)
+            predictions_one_model = trained_model.custom_predict(
+                model_input, testing=True
+            )
             raw_predictions[tag_name] = predictions_one_model
 
         return raw_predictions, self.thresholds

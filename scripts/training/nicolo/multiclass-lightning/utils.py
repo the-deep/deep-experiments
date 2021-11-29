@@ -66,9 +66,13 @@ def custom_stratified_train_test_split(df, ratios):
 
     unique_entries = list(np.unique(positive_df["target"].apply(str)))
     for entry in unique_entries:
-        ids_entry = list(positive_df[positive_df.target.apply(str) == entry].entry_id.unique())
+        ids_entry = list(
+            positive_df[positive_df.target.apply(str) == entry].entry_id.unique()
+        )
 
-        train_ids_entry = random.sample(ids_entry, int(len(ids_entry) * ratios["train"]))
+        train_ids_entry = random.sample(
+            ids_entry, int(len(ids_entry) * ratios["train"])
+        )
         val_ids_entry = list(set(ids_entry) - set(train_ids_entry))
 
         train_ids.append(train_ids_entry)
@@ -102,8 +106,13 @@ def preprocess_df(
 
     dataset["target"] = dataset.target.apply(lambda x: clean_rows(x))
 
+    dataset['target'] = dataset.target.apply(
+        lambda x: [item for item in x if item!='NOT_MAPPED']
+    )
     if column_name == "sectors":
-        dataset = dataset[dataset.target.apply(lambda x: "Cross" not in x)]
+        dataset = dataset[dataset.target.apply(
+            lambda x: "Cross" not in x
+        )]
     if not multiclass_bool:
         dataset = dataset[dataset.target.apply(lambda x: len(x) == 1)]
     if not keep_neg_labels:
@@ -114,7 +123,9 @@ def preprocess_df(
         "val": 0.1,
     }
 
-    train_pos_entries, val_pos_entries = custom_stratified_train_test_split(dataset, ratios)
+    train_pos_entries, val_pos_entries = custom_stratified_train_test_split(
+        dataset, ratios
+    )
 
     df_train = dataset[dataset.entry_id.isin(train_pos_entries)]
     df_val = dataset[dataset.entry_id.isin(val_pos_entries)]
@@ -135,8 +146,12 @@ def stats_train_test(df_train: pd.DataFrame, df_val: pd.DataFrame, column_name: 
             return 0
 
     ratio_negative_positive = {
-        f"ratio_negative_examples_train_{column_name}": compute_ratio_negative_positive(df_train),
-        f"ratio_negative_examples_val_{column_name}": compute_ratio_negative_positive(df_val),
+        f"ratio_negative_examples_train_{column_name}": compute_ratio_negative_positive(
+            df_train
+        ),
+        f"ratio_negative_examples_val_{column_name}": compute_ratio_negative_positive(
+            df_val
+        ),
     }
 
     return ratio_negative_positive
@@ -164,17 +179,13 @@ def compute_weights(number_data_classes, n_tot):
     list of weights used for training
     """
     number_classes = 2
-    return list(
-        [
-            np.sqrt(n_tot / (number_classes * number_data_class))
-            for number_data_class in number_data_classes
-        ]
-    )
+    return [n_tot / (number_classes * number_data_class) for number_data_class in number_data_classes]
 
-
-def get_flat_labels(column_of_columns, tag_to_id, nb_subtags):
-    matrix = [
-        [1 if tag_to_id[i] in column else 0 for i in range(nb_subtags)]
-        for column in column_of_columns
-    ]
+def get_flat_labels (column_of_columns, tag_to_id, nb_subtags):
+    matrix = [[
+        1 if tag_to_id[i] in column else 0 for i in range (nb_subtags)
+    ] for column in column_of_columns]
     return np.array(flatten(matrix))
+
+
+    

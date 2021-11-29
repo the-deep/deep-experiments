@@ -105,6 +105,7 @@ class Transformer(pl.LightningModule):
         max_len: int = 512,
         output_length: int = 384,
         training_device: str = "cuda",
+        keep_neg_examples: bool = False,
         **kwargs,
     ):
 
@@ -132,6 +133,7 @@ class Transformer(pl.LightningModule):
         self.weight_classes = torch.tensor(self.weight_classes).to(self.training_device)
 
         self.multiclass = multiclass
+        self.keep_neg_examples = keep_neg_examples
 
         self.training_loader = self.get_loaders(
             train_dataset, train_params, self.tagname_to_tagid, self.tokenizer, max_len, train=True
@@ -139,7 +141,6 @@ class Transformer(pl.LightningModule):
         self.val_loader = self.get_loaders(
             val_dataset, val_params, self.tagname_to_tagid, self.tokenizer, max_len
         )
-
         self.loss_func = ResampleLoss(
             reweight_func="rebalance",
             loss_weight=1.0,
@@ -157,10 +158,7 @@ class Transformer(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
         train_loss = self.loss_func(outputs, batch["targets"].type_as(outputs))
-
-        # train_loss = F.binary_cross_entropy_with_logits(
-        #    outputs, batch["targets"], weight=self.weight_classes
-        # )
+        #train_loss = self.Focal_loss(outputs, batch["targets"], class_weights=self.weight_classes)
 
         self.log("train_loss", train_loss.item(), prog_bar=True)
         return train_loss
@@ -168,7 +166,7 @@ class Transformer(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         outputs = self(batch)
         val_loss = self.loss_func(outputs, batch["targets"].type_as(outputs))
-        # val_loss = F.binary_cross_entropy_with_logits(outputs, batch["targets"])
+        # val_loss = self.Focal_loss(outputs, batch["targets"])
 
         self.log(
             "val_loss",
@@ -226,7 +224,7 @@ class Transformer(pl.LightningModule):
             nb_data_in_class = self.targets.apply(lambda x: tag in (x)).sum()
             number_data_classes.append(nb_data_in_class)
         weights = compute_weights(number_data_classes, self.targets.shape[0])
-        weights = [weight if weight < 1 else weight ** 2 for weight in weights]
+        # weights = [weight if weight < 1 else weight ** 2 for weight in weights]
         return weights
 
     def get_loaders(
@@ -347,6 +345,7 @@ class Transformer(pl.LightningModule):
             data_for_threshold_tuning, hypertuning_threshold=True
         )
         optimal_thresholds_dict = {}
+        optimal_scores = []
 
         for j in range(logit_predictions.shape[1]):
             scores = []
@@ -371,54 +370,15 @@ class Transformer(pl.LightningModule):
             max_threshold = 0
             max_score = 0
             for i in range(1, len(scores) - 1):
-                score = sum(scores[i - 1 : i + 2])
+                score = np.mean(scores[i - 1 : i + 2])
                 if score >= max_score:
                     max_score = score
                     max_threshold = thresholds_list[i]
+
+            optimal_scores.append(max_score)
 
             optimal_thresholds_dict[list(self.tagname_to_tagid.keys())[j]] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-    def get_tot_f1_score(
-        self, testing_excerpt, groundtruth, multiclass_bool, keep_neg_examples_bool
-    ):
-        """
-        INPUTS:
-            preds: List[List[str]]: list containing list of predicted tags for each entry
-            groundtruth: List[List[str]]: list containing list of true tags for each entry
-            subtags: subtags list, sorted by alphabetical order
-        OUTPUTS:
-            pd.DataFrame: rows: subtags, column: precision, recall, f1_score
-        """
-        preds_ratios = self.custom_predict(testing_excerpt, testing=True)
-        output_col = []
-        for one_sent in preds_ratios:
-
-            if not multiclass_bool:
-                preds_one_sent = [
-                    item
-                    for item, ratio in one_sent.items()
-                    if ratio == max(list(one_sent.values()))
-                ]
-            else:
-                preds_one_sent = [item for item, ratio in one_sent.items() if ratio >= 1]
-                if not keep_neg_examples_bool and len(preds_one_sent) == 0:
-                    preds_one_sent = [
-                        item
-                        for item, ratio in one_sent.items()
-                        if ratio == max(list(one_sent.values()))
-                    ]
-
-            output_col.append(preds_one_sent)
-
-        subtags = list(self.tagname_to_tagid.keys())
-        nb_subtags = len(subtags)
-        id_to_tag = {i: subtags[i] for i in range(nb_subtags)}
-
-        groundtruth = get_flat_labels(groundtruth, id_to_tag, nb_subtags)
-        preds = get_flat_labels(output_col, id_to_tag, nb_subtags)
-
-        f1_score_tot = np.round(metrics.f1_score(groundtruth, preds, average="macro"), 3)
-
-        return f1_score_tot
+        return np.mean(optimal_scores)
