@@ -17,10 +17,7 @@ from pathlib import Path
 
 import mlflow
 
-from utils import (
-    read_merge_data,
-    preprocess_df
-)
+from utils import read_merge_data, preprocess_df
 import torch
 
 from inference import TransformersPredictionsWrapper
@@ -56,7 +53,8 @@ if __name__ == "__main__":
     # parser.add_argument("--n_classes", type=int, default=6)
     parser.add_argument("--training_names", type=str)
     parser.add_argument("--beta_f1", type=float, default=0.5)
-
+    parser.add_argument("--min_results", type=str)
+    parser.add_argument("--run_name", type=str, default="models")
     parser.add_argument("--instance_type", type=str, default="-")
 
     # Data, model, and output directories
@@ -91,6 +89,7 @@ if __name__ == "__main__":
     )
 
     training_columns = args.training_names.split(",")
+    min_results = literal_eval(args.min_results)
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -135,7 +134,7 @@ if __name__ == "__main__":
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
 
         for column in training_columns:
-        
+
             multiclass_bool = column != "severity"
             keep_neg_examples = "present" in column
 
@@ -146,39 +145,43 @@ if __name__ == "__main__":
                     f"bool_keep_neg_examples_{column}": keep_neg_examples,
                 }
             )
-            best_f1_score = 0
+            best_score = 0
 
             test_df_col = test_df.copy()
             test_df_col[column] = test_df_col[column].apply(literal_eval)
 
-            if column == 'sectors':
-                test_df_col = test_df_col[test_df_col[column].apply(
-                    lambda x: 'Cross' not in x
-                    )]
+            if column == "sectors":
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: "Cross" not in x)
+                ]
             if not multiclass_bool:
-                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x)==1)]
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: len(x) == 1)
+                ]
             if not keep_neg_examples:
-                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x)>0)]
+                test_df_col = test_df_col[
+                    test_df_col[column].apply(lambda x: len(x) > 0)
+                ]
 
-            testing_excerpt = test_df_col['excerpt']
+            testing_excerpt = test_df_col["excerpt"]
             groundtruth_column = test_df_col[column]
 
-            for iter_nb in range(args.nb_repetitions):
+            iter_nb = 0
+            while best_score < min_results[column] and iter_nb < args.nb_repetitions:
 
                 train_df, val_df = preprocess_df(
                     whole_df, column, multiclass_bool, keep_neg_examples
                 )
 
-                if len(train_df)>200_000:
+                if len(train_df) > 200_000:
                     dropout_column = 0.3
                     weight_decay_col = 0.02
-                elif len(train_df)>100_000:
+                elif len(train_df) > 100_000:
                     dropout_column = 0.4
                     weight_decay_col = 0.05
                 else:
                     dropout_column = 0.5
                     weight_decay_col = 0.1
-
 
                 model_trainer = CustomTrainer(
                     train_dataset=train_df,
@@ -203,22 +206,22 @@ if __name__ == "__main__":
                 )
 
                 model = model_trainer.train_model()
+                model_score = model.val_f1_score
 
-                macro_f1_score_iter = model.get_tot_f1_score(
-                    testing_excerpt, groundtruth_column, multiclass_bool, keep_neg_examples
-                    )
+                mlflow.log_metric(
+                    f"{args.beta_f1}_f1_score_{column}_iter{iter_nb + 1}", model_score
+                )
 
-                mlflow.log_metric(f'f1_score_{column}_iter{iter_nb + 1}', macro_f1_score_iter)
-
-                if macro_f1_score_iter > best_f1_score:
-                    best_f1_score = macro_f1_score_iter
+                if model_score > best_score:
+                    best_score = model_score
                     pyfunc_prediction_wrapper.add_model(model, column)
 
+                iter_nb += 1
 
         try:
             mlflow.pyfunc.log_model(
                 python_model=pyfunc_prediction_wrapper,
-                artifact_path="primary_tags_v1",
+                artifact_path=args.run_name,
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,

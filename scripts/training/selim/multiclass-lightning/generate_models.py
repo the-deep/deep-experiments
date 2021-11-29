@@ -40,6 +40,7 @@ class CustomTrainer:
         output_length=384,
         max_len=150,
         multiclass_bool=True,
+        keep_neg_examples_bool=False,
         learning_rate=3e-5,
         weighted_loss: str = "sqrt",
         training_device: str = "cuda",
@@ -61,6 +62,7 @@ class CustomTrainer:
         self.output_length = output_length
         self.max_len = max_len
         self.multiclass_bool = multiclass_bool
+        self.keep_neg_examples_bool = keep_neg_examples_bool
         self.learning_rate = learning_rate
         self.weighted_loss = weighted_loss
         self.training_device = training_device
@@ -132,6 +134,7 @@ class CustomTrainer:
             multiclass=self.multiclass_bool,
             weighted_loss=self.weighted_loss,
             training_device=self.training_device,
+            keep_neg_examples=self.keep_neg_examples_bool
         )
 
         lr_finder = trainer.tuner.lr_find(model)
@@ -139,7 +142,8 @@ class CustomTrainer:
         model.hparams.learning_rate = new_lr
         trainer.fit(model)
 
-        model.hypertune_threshold(self.beta_f1)
+        model.val_f1_score = model.hypertune_threshold(self.beta_f1)
+
         del model.training_loader
         del model.val_loader
 

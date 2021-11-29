@@ -106,6 +106,9 @@ def preprocess_df(
 
     dataset["target"] = dataset.target.apply(lambda x: clean_rows(x))
 
+    dataset['target'] = dataset.target.apply(
+        lambda x: [item for item in x if item!='NOT_MAPPED']
+    )
     if column_name == "sectors":
         dataset = dataset[dataset.target.apply(
             lambda x: "Cross" not in x
@@ -176,12 +179,7 @@ def compute_weights(number_data_classes, n_tot):
     list of weights used for training
     """
     number_classes = 2
-    return list(
-        [
-            np.sqrt(n_tot / (number_classes * number_data_class))
-            for number_data_class in number_data_classes
-        ]
-    )
+    return [n_tot / (number_classes * number_data_class) for number_data_class in number_data_classes]
 
 def get_flat_labels (column_of_columns, tag_to_id, nb_subtags):
     matrix = [[
