@@ -1,9 +1,11 @@
 import os
-#setting tokenizers parallelism to false adds robustness when dploying the model
-#os.environ["TOKENIZERS_PARALLELISM"] = "false" 
 
-#dill import needs to be kept for more robustness in multimodel serialization
+# setting tokenizers parallelism to false adds robustness when dploying the model
+# os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# dill import needs to be kept for more robustness in multimodel serialization
 import dill
+
 dill.extend(True)
 
 
@@ -14,13 +16,14 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from model import Transformer
 
-class CustomTrainer():
+
+class CustomTrainer:
     """
     main class used to train model
     """
 
     def __init__(
-        self, 
+        self,
         train_dataset,
         val_dataset,
         training_column,
@@ -38,37 +41,39 @@ class CustomTrainer():
         max_len=150,
         multiclass_bool=True,
         learning_rate=3e-5,
-        weighted_loss:str='sqrt',
-        training_device:str = "cuda",
-        beta_f1: float  = 0.8
-        ) -> None:
-            self.train_dataset = train_dataset
-            self.val_dataset = val_dataset
-            self.training_column = training_column
-            self.MODEL_DIR = MODEL_DIR
-            self.MODEL_NAME = MODEL_NAME
-            self.TOKENIZER_NAME = TOKENIZER_NAME
-            self.dropout_rate = dropout_rate
-            self.train_params = train_params
-            self.val_params = val_params
-            self.gpu_nb = gpu_nb
-            self.MAX_EPOCHS = MAX_EPOCHS
-            self.weight_decay = weight_decay
-            self.warmup_steps = warmup_steps
-            self.output_length = output_length
-            self.max_len = max_len
-            self.multiclass_bool = multiclass_bool
-            self.learning_rate = learning_rate
-            self.weighted_loss = weighted_loss
-            self.training_device = training_device
-            self.beta_f1 = beta_f1
-        
+        weighted_loss: str = "sqrt",
+        training_device: str = "cuda",
+        beta_f1: float = 0.8,
+    ) -> None:
+        self.train_dataset = train_dataset
+        self.val_dataset = val_dataset
+        self.training_column = training_column
+        self.MODEL_DIR = MODEL_DIR
+        self.MODEL_NAME = MODEL_NAME
+        self.TOKENIZER_NAME = TOKENIZER_NAME
+        self.dropout_rate = dropout_rate
+        self.train_params = train_params
+        self.val_params = val_params
+        self.gpu_nb = gpu_nb
+        self.MAX_EPOCHS = MAX_EPOCHS
+        self.weight_decay = weight_decay
+        self.warmup_steps = warmup_steps
+        self.output_length = output_length
+        self.max_len = max_len
+        self.multiclass_bool = multiclass_bool
+        self.learning_rate = learning_rate
+        self.weighted_loss = weighted_loss
+        self.training_device = training_device
+        self.beta_f1 = beta_f1
+
     def train_model(self):
         PATH_NAME = self.MODEL_DIR
         if not os.path.exists(PATH_NAME):
             os.makedirs(PATH_NAME)
 
-        early_stopping_callback = EarlyStopping(monitor="val_loss", patience=2, mode="min")
+        early_stopping_callback = EarlyStopping(
+            monitor="val_loss", patience=3, mode="min"
+        )
 
         checkpoint_callback_params = {
             "save_top_k": 1,
@@ -126,16 +131,16 @@ class CustomTrainer():
             learning_rate=self.learning_rate,
             multiclass=self.multiclass_bool,
             weighted_loss=self.weighted_loss,
-            training_device=self.training_device
+            training_device=self.training_device,
         )
 
-        lr_finder = trainer.tuner.lr_find(model)      
+        lr_finder = trainer.tuner.lr_find(model)
         new_lr = lr_finder.suggestion()
         model.hparams.learning_rate = new_lr
         trainer.fit(model)
-        
+
         model.hypertune_threshold(self.beta_f1)
-        del(model.training_loader)
-        del(model.val_loader)
-        
+        del model.training_loader
+        del model.val_loader
+
         return model
