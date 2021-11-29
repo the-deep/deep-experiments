@@ -43,9 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--output_length", type=int, default=384)
     parser.add_argument("--nb_repetitions", type=int, default=1)
-    parser.add_argument(
-        "--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased"
-    )
+    parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
     parser.add_argument(
         "--tokenizer_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased"
     )
@@ -58,15 +56,11 @@ if __name__ == "__main__":
     parser.add_argument("--instance_type", type=str, default="-")
 
     # Data, model, and output directories
-    parser.add_argument(
-        "--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"]
-    )
+    parser.add_argument("--output-data-dir", type=str, default=os.environ["SM_OUTPUT_DATA_DIR"])
     parser.add_argument("--model_dir", type=str, default=os.environ["SM_MODEL_DIR"])
     parser.add_argument("--n_gpus", type=str, default=os.environ["SM_NUM_GPUS"])
 
-    parser.add_argument(
-        "--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"]
-    )
+    parser.add_argument("--training_dir", type=str, default=os.environ["SM_CHANNEL_TRAIN"])
     parser.add_argument("--val_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
     args, _ = parser.parse_known_args()
 
@@ -84,9 +78,7 @@ if __name__ == "__main__":
     # load datasets
     logging.info("reading, preprocessing data")
 
-    whole_df, test_df = read_merge_data(
-        args.training_dir, args.val_dir, data_format="pickle"
-    )
+    whole_df, test_df = read_merge_data(args.training_dir, args.val_dir, data_format="pickle")
 
     training_columns = args.training_names.split(",")
     min_results = literal_eval(args.min_results)
@@ -102,7 +94,6 @@ if __name__ == "__main__":
     with mlflow.start_run():
         train_params = {
             "batch_size": args.train_batch_size,
-            "shuffle": True,
             "num_workers": 4,
         }
         val_params = {
@@ -151,17 +142,11 @@ if __name__ == "__main__":
             test_df_col[column] = test_df_col[column].apply(literal_eval)
 
             if column == "sectors":
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: "Cross" not in x)
-                ]
+                test_df_col = test_df_col[test_df_col[column].apply(lambda x: "Cross" not in x)]
             if not multiclass_bool:
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: len(x) == 1)
-                ]
+                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x) == 1)]
             if not keep_neg_examples:
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: len(x) > 0)
-                ]
+                test_df_col = test_df_col[test_df_col[column].apply(lambda x: len(x) > 0)]
 
             testing_excerpt = test_df_col["excerpt"]
             groundtruth_column = test_df_col[column]
@@ -240,9 +225,7 @@ if __name__ == "__main__":
     raw_predictions = {}
     for tag_name, trained_model in pyfunc_prediction_wrapper.models.items():
 
-        predictions_one_model = trained_model.custom_predict(
-            test_df["excerpt"], testing=True
-        )
+        predictions_one_model = trained_model.custom_predict(test_df["excerpt"], testing=True)
         raw_predictions[tag_name] = predictions_one_model
 
     outputs = {

@@ -118,11 +118,11 @@ class Transformer(pl.LightningModule):
         self.num_labels = len(self.tagname_to_tagid)
         self.max_len = max_len
         self.model = Model(
-            model_name_or_path,
-            self.num_labels,
-            max_len,
-            dropout_rate,
-            self.output_length,
+            model_name_or_path=model_name_or_path,
+            num_labels=self.num_labels,
+            token_len=max_len,
+            dropout_rate=dropout_rate,
+            output_length=self.output_length,
         )
         self.tokenizer = tokenizer
         self.val_params = val_params
@@ -136,10 +136,19 @@ class Transformer(pl.LightningModule):
         self.keep_neg_examples = keep_neg_examples
 
         self.training_loader = self.get_loaders(
-            train_dataset, train_params, self.tagname_to_tagid, self.tokenizer, max_len, train=True
+            dataset=train_dataset,
+            params=train_params,
+            tagname_to_tagid=self.tagname_to_tagid,
+            tokenizer=self.tokenizer,
+            max_len=max_len,
+            train=True,
         )
         self.val_loader = self.get_loaders(
-            val_dataset, val_params, self.tagname_to_tagid, self.tokenizer, max_len
+            dataset=val_dataset,
+            params=val_params,
+            tagname_to_tagid=self.tagname_to_tagid,
+            tokenizer=self.tokenizer,
+            max_len=max_len,
         )
         self.loss_func = ResampleLoss(
             reweight_func="rebalance",
@@ -158,7 +167,7 @@ class Transformer(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
         train_loss = self.loss_func(outputs, batch["targets"].type_as(outputs))
-        #train_loss = self.Focal_loss(outputs, batch["targets"], class_weights=self.weight_classes)
+        # train_loss = self.Focal_loss(outputs, batch["targets"], class_weights=self.weight_classes)
 
         self.log("train_loss", train_loss.item(), prog_bar=True)
         return train_loss
@@ -231,7 +240,12 @@ class Transformer(pl.LightningModule):
         self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 150, train: bool = False
     ):
 
-        _set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
+        _set = CustomDataset(
+            dataframe=dataset,
+            tagname_to_tagid=tagname_to_tagid,
+            tokenizer=tokenizer,
+            max_len=max_len,
+        )
 
         if train:
             multilabel_binarizer = MultiLabelBinarizer()

@@ -21,7 +21,7 @@ class CustomDataset(Dataset):
     ):
         self.tokenizer = tokenizer
         self.data = dataframe
-        self.automodel = AutoModel.from_pretrained(model_name_or_path)
+        # self.automodel = AutoModel.from_pretrained(model_name_or_path)
         if dataframe is None:
             self.excerpt_text = None
         elif type(dataframe) is pd.Series:
