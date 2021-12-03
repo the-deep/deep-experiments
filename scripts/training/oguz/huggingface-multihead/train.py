@@ -135,7 +135,7 @@ if __name__ == "__main__":
         targets=args.target,
         groups=groups,
         group_names=group_names,
-        filter=args.split,
+        filter=None,
         flatten=True,
     )
 
