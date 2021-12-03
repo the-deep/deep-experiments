@@ -250,7 +250,11 @@ class Transformer(pl.LightningModule):
                 targets_one_level = targets[:, ids_one_level]
                 mask_at_least_one_pos = [bool(int(torch.sum(one_row))) for one_row in targets_one_level]
                 ids_neg_example = [i for i in range (outputs.shape[0]) if not mask_at_least_one_pos[i]]
-                outputs[ids_neg_example, ids_one_level] = 0
+
+                for id_col in ids_one_level:
+                    for id_neg in ids_neg_example:
+                        outputs[id_neg, id_col] = 0
+                        
             return self.Focal_loss(outputs, targets)
 
 
