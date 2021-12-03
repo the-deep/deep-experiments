@@ -36,11 +36,11 @@ from transformers.optimization import (
 )
 
 from data import CustomDataset
-
+from pooling import Pooling
 from utils import compute_weights, tagname_to_id, get_flat_labels
 
 
-class Model(nn.Module):
+class Model(torch.nn.Module):
     def __init__(
         self,
         model_name_or_path: str,
@@ -51,46 +51,44 @@ class Model(nn.Module):
     ):
         super().__init__()
         self.l0 = AutoModel.from_pretrained(model_name_or_path)
-        self.l0_dropout = torch.nn.Dropout(dropout_rate)
-        self.l0_norm = torch.nn.BatchNorm1d(output_length)
-        self.l1 = torch.nn.Linear(output_length, token_len)
-        self.l1_dropout = torch.nn.Dropout(dropout_rate)
-        self.l1_norm = torch.nn.BatchNorm1d(token_len)
-        self.l2 = torch.nn.Linear(token_len, num_labels)
+        self.pool = Pooling(word_embedding_dimension=output_length, pooling_mode="mean")
+        self.l1 = torch.nn.Dropout(dropout_rate)
+        self.l2 = torch.nn.Linear(output_length, token_len)
+        self.l4 = torch.nn.Dropout(dropout_rate)
+        self.l5 = torch.nn.Linear(token_len, num_labels)
 
     def forward(self, inputs):
         output = self.l0(
             inputs["ids"],
             attention_mask=inputs["mask"],
         )
-        output = F.selu(output.last_hidden_state)
-        output = self.l0_dropout(output)
-        #output = self.l0_norm(output)
-        output = F.selu(self.l1(output))
-        output = self.l1_dropout(output)
-        #output = self.l1_norm(output)
-        output = self.l2(output)
-        return output[:, 0, :]
+
+        output = self.pool(
+            {"token_embeddings": output.last_hidden_state, "attention_mask": inputs["mask"]}
+        )
+
+        output = F.selu(output["sentence_embedding"])
+        output = self.l1(output)
+        output = F.selu(self.l2(output))
+        output = self.l4(output)
+        output = self.l5(output)
+        return output
+
 
 class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.3, gamma=1.5):
+    def __init__(self, alpha=0.5, gamma=1):
         super(FocalLoss, self).__init__()
         self.alpha = alpha
         self.gamma = gamma
 
-    def forward(self, outputs, targets, class_weights=None):
+    def forward(self, outputs, targets):
 
-        if class_weights is not None:
-            BCE_loss = F.binary_cross_entropy_with_logits(
-                outputs, targets, reduce=False
-            )
-        else:
-            BCE_loss = F.binary_cross_entropy_with_logits(
-                outputs, targets, reduce=False
-            )
+        BCE_loss = F.binary_cross_entropy_with_logits(
+            outputs, targets, reduce=False
+        )
 
         pt = torch.exp(-BCE_loss)
-        F_loss = self.alpha * (1-pt)**self.gamma * BCE_loss
+        F_loss = self.alpha * ((1 - pt) ** self.gamma) * BCE_loss
 
         return torch.sum(F_loss)
 
@@ -127,6 +125,8 @@ class Transformer(pl.LightningModule):
         self.targets = train_dataset["target"]
         self.tagname_to_tagid = tagname_to_id(train_dataset["target"])
         self.num_labels = len(self.tagname_to_tagid)
+        self.get_first_level_ids()
+
         self.max_len = max_len
         self.model = Model(
             model_name_or_path,
@@ -160,8 +160,8 @@ class Transformer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        train_loss = self.Focal_loss(
-            outputs, batch["targets"], class_weights=self.weight_classes
+        train_loss = self.get_loss(
+            outputs, batch["targets"]
         )
 
         self.log("train_loss", train_loss.item(), prog_bar=True)
@@ -170,9 +170,7 @@ class Transformer(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         outputs = self(batch)
 
-        val_loss = self.Focal_loss(
-            outputs, batch["targets"]
-        )
+        val_loss = self.get_loss(outputs, batch["targets"])
 
         self.log(
             "val_loss",
@@ -207,7 +205,7 @@ class Transformer(pl.LightningModule):
             self.parameters(),
             lr=self.hparams.learning_rate,
             eps=self.hparams.adam_epsilon,
-            weight_decay=self.hparams.weight_decay
+            weight_decay=self.hparams.weight_decay,
         )
 
         scheduler = get_linear_schedule_with_warmup(
@@ -232,7 +230,7 @@ class Transformer(pl.LightningModule):
             nb_data_in_class = self.targets.apply(lambda x: tag in (x)).sum()
             number_data_classes.append(nb_data_in_class)
         weights = compute_weights(number_data_classes, self.targets.shape[0])
-        #weights = [weight if weight < 1 else weight ** 2 for weight in weights]
+        # weights = [weight if weight < 1 else weight ** 2 for weight in weights]
         return weights
 
     def get_loaders(
@@ -243,7 +241,39 @@ class Transformer(pl.LightningModule):
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
-    def custom_predict(self, validation_dataset, testing=False, hypertuning_threshold: bool = False):
+    def get_loss(self, outputs, targets):
+        if self.ids_each_level is None:
+            return self.Focal_loss(outputs, targets)
+        else:
+            tot_loss = 0
+            for ids_one_level in self.ids_each_level:
+                targets_one_level = targets[:, ids_one_level]
+                outputs_one_level = targets[:, ids_one_level]
+                mask_at_least_one_pos = torch.Tensor([torch.sum(one_row) for one_row in targets_one_level]).bool()
+                positive_example_targets = targets_one_level[mask_at_least_one_pos]
+                positive_example_outputs = outputs_one_level[mask_at_least_one_pos]
+                loss_one_id = self.Focal_loss(positive_example_outputs, positive_example_targets)
+                tot_loss += loss_one_id
+            return tot_loss
+
+
+    def get_first_level_ids(self):
+        all_names = list(self.tagname_to_tagid.keys())
+        if np.all(['->' in name for name in all_names]):
+            first_level_names = list(np.unique(
+                [name.split('->')[0] for name in all_names]
+            ))
+            self.ids_each_level = [
+                [i for i in range(len(all_names)) if name in all_names[i]] for name in first_level_names
+            ]
+                    
+        else:
+            self.ids_each_level = None
+            
+
+    def custom_predict(
+        self, validation_dataset, testing=False, hypertuning_threshold: bool = False
+    ):
         """
         1) get raw predictions
         2) postprocess them to output an output compatible with what we want in the inference
@@ -314,7 +344,9 @@ class Transformer(pl.LightningModule):
                 if hypertuning_threshold:
                     probabilities_item_dict[target_list[j]] = row_logits[j]
                 else:
-                    probabilities_item_dict[target_list[j]] = row_logits[j] / self.optimal_thresholds[target_list[j]]
+                    probabilities_item_dict[target_list[j]] = (
+                        row_logits[j] / self.optimal_thresholds[target_list[j]]
+                    )
 
             probabilities_dict.append(probabilities_item_dict)
 
@@ -341,42 +373,48 @@ class Transformer(pl.LightningModule):
         optimal_thresholds_dict = {}
         optimal_scores = []
 
-        for j in range(logit_predictions.shape[1]):
-            scores = []
-            for thresh_tmp in thresholds_list:
+        for ids_one_level in self.ids_each_level:
+            y_true_one_level = y_true[:, ids_one_level]
+            mask_at_least_one_pos = [bool(sum(row)) for row in y_true_one_level]
+            threshold_tuning_gt_one_level = y_true_one_level[mask_at_least_one_pos]
+            threshold_tuning_logit_preds_one_level = logit_predictions[mask_at_least_one_pos]
 
-                columns_logits = np.array(logit_predictions[:, j])
+            for j in range(len(ids_one_level)):
+                scores = []
+                for thresh_tmp in thresholds_list:
 
-                column_pred = [
-                    1 if columns_logits[i] > thresh_tmp else 0
-                    for i in range(logit_predictions.shape[0])
-                ]
+                    columns_logits = np.array(threshold_tuning_logit_preds_one_level[:, j])
 
-                if self.multiclass:
-                    metric = metrics.fbeta_score(
-                        y_true[:, j], column_pred, beta_f1, average='macro'
-                    )
-                else:
-                    metric = metrics.f1_score(
-                        y_true[:, j], column_pred, average='macro'
-                    )
+                    column_pred = [
+                        1 if columns_logits[i] > thresh_tmp else 0
+                        for i in range(threshold_tuning_logit_preds_one_level.shape[0])
+                    ]
 
-                scores.append(metric)
+                    if self.multiclass:
+                        metric = metrics.fbeta_score(
+                            threshold_tuning_gt_one_level[:, j], column_pred, beta_f1, average="macro"
+                        )
+                    else:
+                        metric = metrics.f1_score(
+                            threshold_tuning_gt_one_level[:, j], column_pred, average="macro"
+                        )
 
-            max_threshold = 0
-            max_score = 0
-            for i in range(1, len(scores) - 1):
-                score = np.mean(scores[i - 1 : i + 2])
-                if score >= max_score:
-                    max_score = score
-                    max_threshold = thresholds_list[i]
-            
-            optimal_scores.append(max_score)
+                    scores.append(metric)
 
-            optimal_thresholds_dict[
-                list(self.tagname_to_tagid.keys())[j]
-            ] = max_threshold
+                max_threshold = 0
+                max_score = 0
+                for i in range(1, len(scores) - 1):
+                    score = np.mean(scores[i - 1 : i + 2])
+                    if score >= max_score:
+                        max_score = score
+                        max_threshold = thresholds_list[i]
+
+                optimal_scores.append(max_score)
+
+                optimal_thresholds_dict[
+                    list(self.tagname_to_tagid.keys())[ids_one_level[j]]
+                ] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-        return np.mean(optimal_scores) 
+        return np.mean(optimal_scores)
