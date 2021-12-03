@@ -245,16 +245,14 @@ class Transformer(pl.LightningModule):
         if self.ids_each_level is None:
             return self.Focal_loss(outputs, targets)
         else:
-            tot_loss = 0
             for ids_one_level in self.ids_each_level:
+                #main objective: for each level, if row contains only zeros, not to do backpropagation
                 targets_one_level = targets[:, ids_one_level]
-                outputs_one_level = targets[:, ids_one_level]
-                mask_at_least_one_pos = torch.Tensor([torch.sum(one_row) for one_row in targets_one_level]).bool()
-                positive_example_targets = targets_one_level[mask_at_least_one_pos]
-                positive_example_outputs = outputs_one_level[mask_at_least_one_pos]
-                loss_one_id = self.Focal_loss(positive_example_outputs, positive_example_targets)
-                tot_loss += loss_one_id
-            return tot_loss
+                mask_at_least_one_pos = [bool(int(torch.sum(one_row))) for one_row in targets_one_level]
+                ids_neg_example = [i for i in range (outputs.shape[0]) if not mask_at_least_one_pos[i]]
+                outputs[ids_neg_example, ids_one_level] = 0
+            return self.Focal_loss(outputs, targets)
+
 
 
     def get_first_level_ids(self):
@@ -365,14 +363,67 @@ class Transformer(pl.LightningModule):
         2) without being an aberrant value
         """
 
-        thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
+        
         data_for_threshold_tuning = self.val_loader.dataset.data
         indexes, logit_predictions, y_true, _ = self.custom_predict(
             data_for_threshold_tuning, hypertuning_threshold=True
         )
+        if self.ids_each_level is not None:
+            return self.threshold_tuning_multitask (y_true, logit_predictions, beta_f1)
+        else:
+            return self.threshold_tuning_standard(y_true, logit_predictions, beta_f1)
+
+    def threshold_tuning_standard(self, y_true, logit_predictions, beta_f1):
+        thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
+        
         optimal_thresholds_dict = {}
         optimal_scores = []
 
+        for j in range(logit_predictions.shape[1]):
+            scores = []
+            for thresh_tmp in thresholds_list:
+
+                columns_logits = np.array(logit_predictions[:, j])
+
+                column_pred = [
+                    1 if columns_logits[i] > thresh_tmp else 0
+                    for i in range(logit_predictions.shape[0])
+                ]
+
+                if self.multiclass:
+                    metric = metrics.fbeta_score(
+                        y_true[:, j], column_pred, beta_f1, average="macro"
+                    )
+                else:
+                    metric = metrics.f1_score(
+                        y_true[:, j], column_pred, average="macro"
+                    )
+
+                scores.append(metric)
+
+            max_threshold = 0
+            max_score = 0
+            for i in range(1, len(scores) - 1):
+                score = np.mean(scores[i - 1 : i + 2])
+                if score >= max_score:
+                    max_score = score
+                    max_threshold = thresholds_list[i]
+
+            optimal_scores.append(max_score)
+
+            optimal_thresholds_dict[
+                list(self.tagname_to_tagid.keys())[j]
+            ] = max_threshold
+
+        self.optimal_thresholds = optimal_thresholds_dict
+
+        return np.mean(optimal_scores)
+
+    def threshold_tuning_multitask(self, y_true, logit_predictions, beta_f1):
+
+        thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
+        optimal_thresholds_dict = {}
+        optimal_scores = []
         for ids_one_level in self.ids_each_level:
             y_true_one_level = y_true[:, ids_one_level]
             mask_at_least_one_pos = [bool(sum(row)) for row in y_true_one_level]
