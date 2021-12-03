@@ -29,29 +29,25 @@ sess = sagemaker.Session(default_bucket=DEV_BUCKET.name)
 job_name = f"{args.task}-train-{formatted_time()}"
 
 # load dataset
-dataset_version = "0.5" if args.task == "1D" else "0.4.4"
-target_field = "subpillars_1d" if args.task == "1D" else "subpillars"
-train_df = pd.read_csv(
-    f"data/frameworks_data/data_v{dataset_version}/data_v{dataset_version}_train.csv"
-)
-val_df = pd.read_csv(
-    f"data/frameworks_data/data_v{dataset_version}/data_v{dataset_version}_val.csv"
-)
+dataset_version = "0.7.1"
+target_field = "subpillars_1d" if args.task == "1D" else "subpillars_2d"
+train_df = pd.read_csv(f"data/frameworks_data/data_v{dataset_version}/train_v{dataset_version}.csv")
+test_df = pd.read_csv(f"data/frameworks_data/data_v{dataset_version}/test_v{dataset_version}.csv")
 
 # resample if debug
 if args.debug:
     train_df = train_df.sample(n=1000)
-    val_df = val_df.sample(n=1000)
+    test_df = test_df.sample(n=1000)
 
 # upload dataset to s3
 input_path = DEV_BUCKET / "training" / "input_data" / job_name  # Do not change this
 train_path = str(input_path / "train_df.pickle")
-val_path = str(input_path / "test_df.pickle")
+test_path = str(input_path / "test_df.pickle")
 
 train_df.to_pickle(
     train_path, protocol=4
 )  # protocol 4 is necessary, since SageMaker uses python 3.6
-val_df.to_pickle(val_path, protocol=4)
+test_df.to_pickle(test_path, protocol=4)
 
 # hyperparameters for the run
 hyperparameters = {
