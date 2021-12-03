@@ -66,8 +66,7 @@ def merge_dicts(x):
         z.update(x[i])
     return z
 
-def get_preds_entry (ratio_proba_threshold, column, entry_nb, return_at_least_one=True, ratio_nb=1):
-    preds_column = ratio_proba_threshold[column][entry_nb]
+def get_preds_entry (preds_column, return_at_least_one=True, ratio_nb=1):
     preds_entry = [
         sub_tag for sub_tag in list(preds_column.keys()) if preds_column[sub_tag]>1
     ]
@@ -92,6 +91,7 @@ def compare_preds(groundtruth_col, preds_col):
     len_col = len(groundtruth_col)
     n_neg_examples = sum([1 if item==[] else 0 for item in groundtruth_col])
     n_neg_examples_truly_classified = 0
+    wrong_preds = []
     for i in range (len_col):
         gt_sentence = set(clean_col(groundtruth_col[i]))
         pred_sentence = set(clean_col(preds_col[i]))
@@ -101,6 +101,7 @@ def compare_preds(groundtruth_col, preds_col):
             perfect_matches += 1
             if len(union_tags)==0:
                 n_neg_examples_truly_classified += 1
+                wrong_preds.append(i)
         else:
             union_minus_preds = union_tags - pred_sentence
             len_union_minus_preds = len(union_minus_preds)
@@ -111,9 +112,10 @@ def compare_preds(groundtruth_col, preds_col):
             if len_union_minus_gt >= 1:
                 at_least_one_false += 1
     return {
-        'proportion_perfect_matches': np.round(perfect_matches / len_col, 2),
-        'proportion_negative_examples': np.round(n_neg_examples / len_col, 2),
-        'proportion_neg_examples_truly_classified': np.round(n_neg_examples_truly_classified / n_neg_examples, 2) if n_neg_examples!=0 else 0,
-        'proportion_at_least_one_false': np.round(at_least_one_false / len_col, 2),
-        'proportion_at_leaset_one_missing': np.round(at_leaset_one_missing / len_col, 2)
+        'wrong_matches_locs': wrong_preds,
+        'scores': {
+            'proportion_perfect_matches': np.round(perfect_matches / len_col, 2),
+            'proportion_at_least_one_false': np.round(at_least_one_false / len_col, 2),
+            'proportion_at_leaset_one_missing': np.round(at_leaset_one_missing / len_col, 2)
+        }
     }
