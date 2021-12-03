@@ -106,7 +106,6 @@ if __name__ == "__main__":
     # build classifier model from backbone
     model = MultiHeadTransformer(
         backbone,
-        num_heads=len(groups),
         num_classes=[len(group) for group in groups],
         num_layers=args.num_layers,
         dropout=args.dropout,
