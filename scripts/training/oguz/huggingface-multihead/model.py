@@ -161,7 +161,7 @@ class MultiHeadTransformer(torch.nn.Module):
             num_classes = [num_classes]
 
         self.dropout = torch.nn.Dropout(dropout)
-        self.heads.append(torch.nn.ModuleList())
+        self.heads = torch.nn.ModuleList()
 
         for num_cls in num_classes:
             self.heads.append(
