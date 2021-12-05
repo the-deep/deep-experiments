@@ -124,6 +124,7 @@ if __name__ == "__main__":
         targets=args.target,
         groups=groups,
         group_names=group_names,
+        exclude=["NOT_MAPPED"],
         filter=args.split,
         flatten=True,
     )
@@ -134,6 +135,7 @@ if __name__ == "__main__":
         targets=args.target,
         groups=groups,
         group_names=group_names,
+        exclude=["NOT_MAPPED"],
         filter=None,
         flatten=True,
     )
