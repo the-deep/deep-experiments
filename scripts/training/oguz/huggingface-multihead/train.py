@@ -86,18 +86,19 @@ if __name__ == "__main__":
     backbone = AutoModel.from_pretrained(args.model_name)
 
     # get target groups
-    if args.target == "subpillars_1d":
-        groups = SUBPILLARS_1D
-        group_names = PILLARS_1D
-        target_group = "pillars_1d"
-    elif args.target == "subpillars" or args.target == "subpillars_2d":
-        groups = SUBPILLARS_2D
-        group_names = PILLARS_2D
-        target_group = "pillars_2d"
-    else:
-        groups = [SECTORS]
-        group_names = ["Sectors"]
-        target_group = None
+    groups, group_names = [], []
+    for target in args.target:
+        if target == "subpillars_1d":
+            groups.append(SUBPILLARS_1D)
+            group_names.append(PILLARS_1D)
+        elif target == "subpillars" or target == "subpillars_2d":
+            groups.append(SUBPILLARS_2D)
+            group_names.append(PILLARS_2D)
+        elif target == "sectors":
+            groups.append([SECTORS])
+            group_names.append(["Sectors"])
+        else:
+            raise NotImplementedError
 
     # sanity check for iterative option
     if args.iterative:
@@ -330,8 +331,6 @@ if __name__ == "__main__":
         target_file = os.path.join(args.output_data_dir, "targets.txt")
         with open(target_file, "w") as writer:
             writer.write(f"{args.target}\n")
-            if target_group:
-                writer.write(f"{target_group}\n")
         artifacts.update({"targets": target_file})
 
         # log experiment params to MLFlow
