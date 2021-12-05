@@ -109,7 +109,7 @@ class MultiTargetDataFrame(Dataset):
             if group_names is not None:
                 assert len(groups) == len(
                     group_names
-                ), "Group names should be at equal length with groups"
+                ), f"Group names '{group_names}' should be at equal length with groups '{groups}'"
             else:
                 group_names = [f"Group {i}" for i in range(len(groups))]
         else:
