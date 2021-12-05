@@ -91,6 +91,7 @@ class MultiTargetDataFrame(Dataset):
             e.g., 6 label classification with two groups: [A, B, C], [D, E, F]
         group_names: name assoaciated with each classification head
             e.g., 2 group names: ABC and DEF
+        exclude: omit the given target labels.
         flatten: flatten targets to 1D for convenience
     """
 
@@ -100,6 +101,7 @@ class MultiTargetDataFrame(Dataset):
         target: str = "target",
         groups: Optional[List[List[str]]] = None,
         group_names: Optional[List[str]] = None,
+        exclude: Optional[List[str]] = None,
         flatten: bool = True,
     ):
         # process groups
@@ -123,9 +125,16 @@ class MultiTargetDataFrame(Dataset):
             self.logger.info(f"Loading dataframe: {dataframe}")
             dataframe = read_dataframe(dataframe)
 
+        # apply literal eval to have lists in target
         if not isinstance(dataframe[target].iloc[0], list):
-            # apply literal eval to have lists in target
             dataframe[target] = dataframe[target].apply(literal_eval)
+
+        # omit the given exclude labels
+        if exclude:
+            dataframe[target] = [
+                [label for label in labels if label not in exclude]
+                for labels in dataframe[target].tolist()
+            ]
 
         if groups:
             # process given groups
@@ -275,6 +284,9 @@ class MultiHeadDataFrame(Dataset):
             strings is given, each key is used to check positivity of the sample,
             e.g., ['sector', 'pillar2d'] checks whether the data point has at
             least one target in `sector` or in `pillar2d` fields.
+        exclude: (None, List of strings, List of List of strings) omit the given
+            targets. For multi-target classification, expects a list with
+            elements of lists.
         flatten: flatten group targets to 1D for convenience
         online: online or offline tokenization
         inference: if True, does not process target or groups
@@ -289,6 +301,7 @@ class MultiHeadDataFrame(Dataset):
         targets: Union[str, List[str]] = "target",
         groups: Optional[Union[List[List[str]], List[List[List[str]]]]] = None,
         group_names: Optional[Union[List[str], List[List[str]]]] = None,
+        exclude: Optional[List[str]] = None,
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
         online: bool = False,
@@ -354,15 +367,22 @@ class MultiHeadDataFrame(Dataset):
             # ), "Expecting `group_names` to be a list of lists"
             self.single = False
 
+        # prepare omit lists
+        if exclude is None:
+            exclude = [None for target in targets]
+
         self.targets = []
         if not inference:
-            for _target, _groups, _group_names in zip(targets, groups, group_names):
+            for _target, _groups, _group_names, _exclude in zip(
+                targets, groups, group_names, exclude
+            ):
                 self.targets.append(
                     MultiTargetDataFrame(
                         dataframe=dataframe,
                         target=_target,
                         groups=_groups,
                         group_names=_group_names,
+                        exclude=_exclude,
                         flatten=flatten,
                     )
                 )
