@@ -20,17 +20,23 @@ class CustomDataset(Dataset):
 
         if dataframe is None:
             self.excerpt_text = None
-        elif type(dataframe) is pd.Series:
-            self.excerpt_text = dataframe.tolist()
-        else:
-            self.excerpt_text = dataframe["excerpt"].tolist()
-
-        try:
-            self.targets = list(dataframe["target"])
-            self.entry_ids = list(dataframe["entry_id"])
-        except Exception:
             self.targets = None
             self.entry_ids = None
+        elif type(dataframe) is pd.Series:
+            self.excerpt_text = dataframe.tolist()
+            self.targets = None
+            self.entry_ids = None
+            
+        else:
+            self.excerpt_text = dataframe["excerpt"].tolist()
+            df_cols = dataframe.columns
+            if 'target' in df_cols and 'entry_id' in df_cols:
+                self.targets = list(dataframe["target"])
+                self.entry_ids = list(dataframe["entry_id"])
+            else:
+                self.targets = None
+                self.entry_ids = None
+        
 
         self.tagname_to_tagid = tagname_to_tagid
         self.tagid_to_tagname = list(tagname_to_tagid.keys())
