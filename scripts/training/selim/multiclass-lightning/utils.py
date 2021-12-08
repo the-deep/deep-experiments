@@ -3,13 +3,19 @@ import random
 import numpy as np
 import pandas as pd
 from sklearn import metrics
-
+import re
 import warnings
 
 warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
 
+def clean_regex(name):
+    claned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
+    return f'threshold_{claned_name}'
+
+def clean_name_for_logging(thresholds):
+    return {clean_regex(key): value for key, value in thresholds.items()}
 
 def tagname_to_id(target):
     """

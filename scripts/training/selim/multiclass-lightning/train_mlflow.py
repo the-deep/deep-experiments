@@ -17,7 +17,7 @@ from pathlib import Path
 
 import mlflow
 
-from utils import read_merge_data, preprocess_df
+from utils import read_merge_data, preprocess_df, clean_name_for_logging
 import torch
 
 from inference import TransformersPredictionsWrapper
@@ -167,21 +167,24 @@ if __name__ == "__main__":
             groundtruth_column = test_df_col[column]
 
             iter_nb = 0
-            while best_score < min_results[column] and iter_nb < args.nb_repetitions:
+            while best_score < 0.7 and iter_nb < args.nb_repetitions:
 
                 train_df, val_df = preprocess_df(
                     whole_df, column, multiclass_bool, keep_neg_examples
                 )
 
                 if len(train_df) > 200_000:
-                    dropout_column = 0.3
-                    weight_decay_col = 0.02
+                    dropout_column = 0.2
+                    weight_decay_col = 0.005
+                    dim_hidden_layer = 512
                 elif len(train_df) > 100_000:
-                    dropout_column = 0.4
-                    weight_decay_col = 0.05
+                    dropout_column = 0.3
+                    weight_decay_col = 0.01
+                    dim_hidden_layer = 256
                 else:
-                    dropout_column = 0.5
-                    weight_decay_col = 0.1
+                    dropout_column = 0.4
+                    weight_decay_col = 0.02
+                    dim_hidden_layer = 128
 
                 model_trainer = CustomTrainer(
                     train_dataset=train_df,
@@ -203,6 +206,7 @@ if __name__ == "__main__":
                     multiclass_bool=multiclass_bool,
                     training_device=training_device,
                     beta_f1=args.beta_f1,
+                    dim_hidden_layer=dim_hidden_layer
                 )
 
                 model = model_trainer.train_model()
@@ -210,6 +214,10 @@ if __name__ == "__main__":
 
                 mlflow.log_metric(
                     f"{args.beta_f1}_f1_score_{column}_iter{iter_nb + 1}", model_score
+                )
+                mlflow.log_param(f'lr_{column}_iter{iter_nb + 1}', model.hparams.learning_rate)
+                mlflow.log_metrics(
+                    clean_name_for_logging(model.optimal_thresholds)
                 )
 
                 if model_score > best_score:
@@ -230,7 +238,9 @@ if __name__ == "__main__":
                     "inference.py",
                     "generate_models.py",
                     "data.py",
-                    "get_outputs_user.py",
+                    "pooling.py",
+                    "architecture.py",
+                    "loss.py"
                 ],
                 await_registration_for=600,
             )

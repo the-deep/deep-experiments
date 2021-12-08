@@ -45,6 +45,7 @@ class CustomTrainer:
         weighted_loss: str = "sqrt",
         training_device: str = "cuda",
         beta_f1: float = 0.8,
+        dim_hidden_layer: int = 256
     ) -> None:
         self.train_dataset = train_dataset
         self.val_dataset = val_dataset
@@ -67,6 +68,7 @@ class CustomTrainer:
         self.weighted_loss = weighted_loss
         self.training_device = training_device
         self.beta_f1 = beta_f1
+        self.dim_hidden_layer = dim_hidden_layer
 
     def train_model(self):
         PATH_NAME = self.MODEL_DIR
@@ -95,7 +97,7 @@ class CustomTrainer:
         trainer = pl.Trainer(
             logger=logger,
             callbacks=[early_stopping_callback, checkpoint_callback],
-            progress_bar_refresh_rate=30,
+            progress_bar_refresh_rate=20,
             profiler="simple",
             log_gpu_memory=True,
             weights_summary=None,
@@ -134,7 +136,8 @@ class CustomTrainer:
             multiclass=self.multiclass_bool,
             weighted_loss=self.weighted_loss,
             training_device=self.training_device,
-            keep_neg_examples=self.keep_neg_examples_bool
+            keep_neg_examples=self.keep_neg_examples_bool,
+            dim_hidden_layer=self.dim_hidden_layer
         )
 
         lr_finder = trainer.tuner.lr_find(model)
