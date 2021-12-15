@@ -9,7 +9,7 @@ from utils import build_mlp
 ZERO_SIGMOID_INVERSE = -10
 
 
-class MultiTargetHead(torch.nn.Module):
+class MultiTargetTransformer(torch.nn.Module):
     """Multi-target MLP classifier head that is able to handle group structure in
     multi-label classifications problems (e.g., 6 label classification with two groups:
     [A, B, C], [D, E, F]).
@@ -107,8 +107,8 @@ class MultiTargetHead(torch.nn.Module):
 
 
 class MultiHeadTransformer(torch.nn.Module):
-    """Multi-task classifier each supporting multi-target groups using the same
-    transformer backbone.
+    """Multi-task classifier each supporting multi-target groups (MultiTargetTransformer)
+    using the same transformer backbone.
 
     Args:
         backbone: Pre-trained transformer.
@@ -165,7 +165,7 @@ class MultiHeadTransformer(torch.nn.Module):
 
         for num_cls in num_classes:
             self.heads.append(
-                MultiTargetHead(
+                MultiTargetTransformer(
                     num_classes=num_cls,
                     num_layers=num_layers,
                     iterative=iterative,
