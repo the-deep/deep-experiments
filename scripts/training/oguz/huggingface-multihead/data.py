@@ -93,6 +93,7 @@ class MultiTargetDataFrame(Dataset):
             e.g., 2 group names: ABC and DEF
         exclude: omit the given target labels.
         flatten: flatten targets to 1D for convenience
+        iterative: include group targets on top of regular targets
     """
 
     def __init__(
@@ -103,6 +104,7 @@ class MultiTargetDataFrame(Dataset):
         group_names: Optional[List[str]] = None,
         exclude: Optional[List[str]] = None,
         flatten: bool = True,
+        iterative: bool = True,
     ):
         # process groups
         if groups is not None:
@@ -118,6 +120,7 @@ class MultiTargetDataFrame(Dataset):
         self.groups = groups
         self.group_names = group_names
         self.flatten = flatten
+        self.iterative = iterative
         self.logger = logging.getLogger()
 
         # read dataframe manually if given as path
@@ -145,6 +148,8 @@ class MultiTargetDataFrame(Dataset):
             self.target_decoding = [revdict(encoding) for encoding in self.target_encoding]
             self.target_classes = [len(encoding.keys()) for encoding in self.target_encoding]
         else:
+            assert not self.iterative, "Provide groups if iterative labels are asked"
+
             # prepare target encoding
             all_targets = np.hstack(dataframe[target].to_numpy())
             uniq_targets = np.unique(all_targets)
@@ -186,7 +191,7 @@ class MultiTargetDataFrame(Dataset):
                 }
             )
 
-        if self.group is not None:
+        if self.iterative:
             item["groups"] = torch.tensor(self.group[idx])
 
         return item
@@ -288,6 +293,7 @@ class MultiHeadDataFrame(Dataset):
             targets. For multi-target classification, expects a list with
             elements of lists.
         flatten: flatten group targets to 1D for convenience
+        iterative: include group targets on top of regular targets
         online: online or offline tokenization
         inference: if True, does not process target or groups
         tokenizer_max_len: maximum output length for the tokenizer
@@ -304,11 +310,14 @@ class MultiHeadDataFrame(Dataset):
         exclude: Optional[List[str]] = None,
         filter: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
+        iterative: bool = True,
         online: bool = False,
         inference: bool = False,
         tokenizer_max_len: Optional[int] = None,
     ):
         self.logger = logging.getLogger()
+        self.flatten = flatten
+        self.iterative = iterative
 
         if online:
             # ensure that we are in training
@@ -348,6 +357,7 @@ class MultiHeadDataFrame(Dataset):
             online=online,
             tokenizer_max_len=tokenizer_max_len,
         )
+        self.data_len = self.data.data_len
 
         # prepare targets
         if isinstance(targets, str):
@@ -367,9 +377,12 @@ class MultiHeadDataFrame(Dataset):
             # ), "Expecting `group_names` to be a list of lists"
             self.single = False
 
-        # prepare omit lists
+        # set defaults for groups, group_names and exclude
+        if groups is None:
+            groups = [None for _ in targets]
+            group_names = [None for _ in targets]
         if exclude is None:
-            exclude = [None for target in targets]
+            exclude = [None for _ in targets]
 
         self.tasks = targets
         self.targets = []
@@ -385,12 +398,12 @@ class MultiHeadDataFrame(Dataset):
                         group_names=_group_names,
                         exclude=_exclude,
                         flatten=flatten,
+                        iterative=iterative,
                     )
                 )
                 assert len(self.data) == len(
                     self.targets[-1]
                 ), "Text source and target have different lengths!"
-        self.data_len = self.data.data_len
 
     def __len__(self):
         return self.data_len
@@ -399,10 +412,10 @@ class MultiHeadDataFrame(Dataset):
         item = self.data[idx]
 
         if self.single:
-            item.update(self.target[0])
+            item.update(self.targets[0][idx])
         else:
-            for i, target in enumerate(self.targets):
-                item.update({(f"head{i}_" + k): v for k, v in target[idx].items()})
+            for task, target in zip(self.tasks, self.targets):
+                item.update({(f"{task}_" + k): v for k, v in target[idx].items()})
 
         return item
 
