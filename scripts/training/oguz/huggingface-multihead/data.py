@@ -371,6 +371,7 @@ class MultiHeadDataFrame(Dataset):
         if exclude is None:
             exclude = [None for target in targets]
 
+        self.tasks = targets
         self.targets = []
         if not inference:
             for _target, _groups, _group_names, _exclude in zip(
@@ -404,3 +405,11 @@ class MultiHeadDataFrame(Dataset):
                 item.update({(f"head{i}_" + k): v for k, v in target[idx].items()})
 
         return item
+
+    def compute_stats(self) -> Dict[str, int]:
+        """Computes occurences of each target and group"""
+
+        counts = {}
+        for task, target in zip(self.tasks, self.targets):
+            counts[task] = target.compute_stats()
+        return counts
