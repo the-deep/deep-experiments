@@ -8,6 +8,8 @@ from utils import build_mlp
 
 ZERO_SIGMOID_INVERSE = -10
 
+"""Models here only work with flattened datasets."""
+
 
 class MultiTargetTransformer(torch.nn.Module):
     """Multi-target MLP classifier head that is able to handle group structure in
@@ -41,6 +43,8 @@ class MultiTargetTransformer(torch.nn.Module):
         backbone_dim: Optional[int] = None,
     ):
         super().__init__()
+
+        self.iterative = iterative
         self.use_gt_training = use_gt_training
         self.heads = torch.nn.ModuleList()
 
@@ -52,7 +56,7 @@ class MultiTargetTransformer(torch.nn.Module):
             "final_norm": False,
         }
 
-        if iterative:
+        if self.iterative:
             self.heads.append(
                 build_mlp(
                     middle_features=np.floor(np.sqrt(len(num_classes) * backbone_dim)).astype(int),
