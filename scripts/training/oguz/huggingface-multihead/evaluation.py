@@ -33,7 +33,7 @@ def _compute(preds, labels, average="micro", threshold=0.5):
     }
 
 
-def compute_multitarget_metrics(preds, labels, names: List[str], threshold: float = 0.5):
+def compute_multiclass_metrics(preds, labels, names: List[str], threshold: float = 0.5):
     """Compute metrics for multi-target classification tasks"""
     metrics = {}
 
@@ -55,7 +55,7 @@ def compute_multitarget_metrics(preds, labels, names: List[str], threshold: floa
     return metrics
 
 
-def compute_multigroup_metrics(
+def compute_multitarget_metrics(
     preds,
     labels,
     groups: List[List[str]],
@@ -66,7 +66,7 @@ def compute_multigroup_metrics(
     for idx, group_name in group_names:
         metrics.update(
             _prefix(
-                compute_multitarget_metrics(
+                compute_multiclass_metrics(
                     preds[idx], labels[idx], names=groups[idx], threshold=threshold
                 ),
                 _process(group_name),
@@ -84,26 +84,26 @@ def compute_multigroup_metrics(
     return metrics
 
 
-def compute_multitask_metrics(
+def compute_multihead_metrics(
     preds,
     labels,
     groups: List[List[List[str]]],
     group_names: List[List[str]],
-    task_names: List[str],
+    targets: List[str],
     threshold: float = 0.5,
 ):
     metrics = {}
-    for idx, task_name in task_names:
+    for idx, target in targets:
         metrics.update(
             _prefix(
-                compute_multigroup_metrics(
+                compute_multitarget_metrics(
                     preds[idx],
                     labels[idx],
                     groups=groups[idx],
                     group_names=group_names[idx],
                     threshold=threshold,
                 ),
-                _process(task_name),
+                _process(target),
             )
         )
 
