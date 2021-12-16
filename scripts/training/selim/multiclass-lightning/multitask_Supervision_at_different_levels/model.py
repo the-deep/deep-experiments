@@ -7,10 +7,8 @@ import dill
 
 dill.extend(True)
 
-
 from typing import Optional
 from tqdm.auto import tqdm
-
 
 from torchmetrics.functional import auroc
 
@@ -35,28 +33,28 @@ from loss import FocalLoss
 
 class Transformer(pl.LightningModule):
     def __init__(
-        self,
-        model_name_or_path: str,
-        train_dataset,
-        val_dataset,
-        train_params,
-        val_params,
-        tokenizer,
-        column_name,
-        multiclass,
-        learning_rate: float = 1e-5,
-        adam_epsilon: float = 1e-7,
-        warmup_steps: int = 500,
-        weight_decay: float = 0.1,
-        train_batch_size: int = 32,
-        eval_batch_size: int = 32,
-        dropout_rate: float = 0.3,
-        max_len: int = 512,
-        output_length: int = 384,
-        training_device: str = "cuda",
-        keep_neg_examples: bool = False,
-        dim_hidden_layer: int = 256,
-        **kwargs,
+            self,
+            model_name_or_path: str,
+            train_dataset,
+            val_dataset,
+            train_params,
+            val_params,
+            tokenizer,
+            column_name,
+            multiclass,
+            learning_rate: float = 1e-5,
+            adam_epsilon: float = 1e-7,
+            warmup_steps: int = 500,
+            weight_decay: float = 0.1,
+            train_batch_size: int = 32,
+            eval_batch_size: int = 32,
+            dropout_rate: float = 0.3,
+            max_len: int = 512,
+            output_length: int = 384,
+            training_device: str = "cuda",
+            keep_neg_examples: bool = False,
+            dim_hidden_layer: int = 256,
+            **kwargs,
     ):
 
         super().__init__()
@@ -103,8 +101,8 @@ class Transformer(pl.LightningModule):
         train_loss = self.get_loss(outputs, batch["targets"])
 
         self.log(
-            "train_loss", 
-            train_loss.item(), 
+            "train_loss",
+            train_loss.item(),
             prog_bar=True)
         return train_loss
 
@@ -124,9 +122,9 @@ class Transformer(pl.LightningModule):
         self.dataset_size = len(self.train_dataloader().dataset)
         num_devices = max(1, self.hparams.gpus)
         effective_batch_size = (
-            self.hparams.train_batch_size
-            * self.hparams.accumulate_grad_batches
-            * num_devices
+                self.hparams.train_batch_size
+                * self.hparams.accumulate_grad_batches
+                * num_devices
         )
         return (self.dataset_size / effective_batch_size) * self.hparams.max_epochs
 
@@ -155,7 +153,7 @@ class Transformer(pl.LightningModule):
         return self.val_loader
 
     def get_loaders(
-        self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 128
+            self, dataset, params, tagname_to_tagid, tokenizer, max_len: int = 128
     ):
 
         set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
@@ -163,7 +161,6 @@ class Transformer(pl.LightningModule):
         return loader
 
     def get_loss(self, outputs, targets):
-
 
         # keep the if because we want to take negative examples into account for the models that contain
         # no hierarchy (upper level models)
@@ -177,9 +174,9 @@ class Transformer(pl.LightningModule):
                 targets_one_level = targets[:, ids_one_level]
 
                 loss_one_level = self.Focal_loss(
-                    outputs_i_th_level, 
+                    outputs_i_th_level,
                     targets_one_level
-                    )
+                )
                 # main objective: for each level, if row contains only zeros, not to do backpropagation
 
                 """mask_ids_not_neg_example = [
@@ -196,24 +193,37 @@ class Transformer(pl.LightningModule):
             return tot_loss
 
     def get_first_level_ids(self):
-        all_names = list(self.tagname_to_tagid.keys())
+        all_names = list(self.tagname_to_tagid.keys())  # all tags names
         if np.all(["->" in name for name in all_names]):
+            # if we have '->' then we have two levels, the first level and the second level
             first_levels = [[name.split("->")[0] for name in row] for row in self.val_targets]
             unique_first_level_names = list(
                 set(flatten(first_levels))
-            )
+            )  # get unique first level names
             nb_first_levels = len(unique_first_level_names)
+
+            # examples of ids_each_level:
+            # if we have the tags: 'A->a1', 'A->a2', 'A->a3', 'B->b1', 'B->b2'
+            # then we have a matrix of the form [[0, 1, 2], [3, 4]]
             self.ids_each_level = [
                 [i for i in range(len(all_names)) if name in all_names[i]]
                 for name in unique_first_level_names
             ]
+            # for each first level, get the number of rows that contain it
             nb_pos_tags_first_level = [
                 sum([
                     name in target for target in first_levels
                 ]) for name in unique_first_level_names
             ]
+            # get the argsort (descending) of the number of rows for each first level tag
             sorted_args_lengths = np.argsort(nb_pos_tags_first_level)[::-1]
+            # after that, link the most present entries to the highest hidden layers
+            # if 'A' is present in 6_000 entries and 'B' is present in 10_000 entries
+            # hidden_layer_ids = [-2, -1]
+            # 'A' second level is linked to the hidden state layer[-2]
+            # 'B' second level is linked to the hidden state layer[-1]
             if nb_first_levels > 4:
+                # condition so that if we have many level1 tags -> 2 heads per hidden state layer
                 self.hidden_layer_ids = [
                     (item - nb_first_levels) // 2 for item in sorted_args_lengths
                 ]
@@ -225,7 +235,7 @@ class Transformer(pl.LightningModule):
             self.hidden_layer_ids = [-1]
 
     def custom_predict(
-        self, validation_dataset, testing=False, hypertuning_threshold: bool = False
+            self, validation_dataset, testing=False, hypertuning_threshold: bool = False
     ):
         """
         1) get raw predictions
@@ -260,8 +270,8 @@ class Transformer(pl.LightningModule):
 
         with torch.no_grad():
             for batch in tqdm(
-                validation_loader,
-                total=len(validation_loader.dataset) // validation_loader.batch_size,
+                    validation_loader,
+                    total=len(validation_loader.dataset) // validation_loader.batch_size,
             ):
 
                 if not testing:
@@ -275,8 +285,8 @@ class Transformer(pl.LightningModule):
                         "token_type_ids": batch["token_type_ids"].to(testing_device),
                     }
                 )
-                logits = torch.cat(logits, dim=1) #have a matrix like in the beginning
-                logits_to_array = np.array([np.array(t) for t in logits.cpu()]) 
+                logits = torch.cat(logits, dim=1)  # have a matrix like in the beginning
+                logits_to_array = np.array([np.array(t) for t in logits.cpu()])
                 logit_predictions.append(logits_to_array)
 
         logit_predictions = np.concatenate(logit_predictions)
@@ -298,7 +308,7 @@ class Transformer(pl.LightningModule):
                     probabilities_item_dict[target_list[j]] = row_logits[j]
                 else:
                     probabilities_item_dict[target_list[j]] = (
-                        row_logits[j] / self.optimal_thresholds[target_list[j]]
+                            row_logits[j] / self.optimal_thresholds[target_list[j]]
                     )
 
             probabilities_dict.append(probabilities_item_dict)
@@ -330,17 +340,17 @@ class Transformer(pl.LightningModule):
             y_true_one_level = y_true[:, ids_one_level]
             logit_preds_one_level = logit_predictions[:, ids_one_level]
 
-            if len(self.ids_each_level) > 1: #multitask
+            if len(self.ids_each_level) > 1:  # multitask
 
                 mask_at_least_one_pos = [bool(sum(row)) for row in y_true_one_level]
                 threshold_tuning_gt = y_true_one_level[mask_at_least_one_pos]
                 threshold_tuning_logit_preds = logit_preds_one_level[mask_at_least_one_pos]
-            else: #no multitask
+            else:  # no multitask
                 threshold_tuning_gt = y_true_one_level
                 threshold_tuning_logit_preds = logit_preds_one_level
 
-            assert(threshold_tuning_logit_preds.shape == threshold_tuning_gt.shape)
-            
+            assert (threshold_tuning_logit_preds.shape == threshold_tuning_gt.shape)
+
             for j in range(len(ids_one_level)):
                 scores = []
                 for thresh_tmp in thresholds_list:
@@ -356,7 +366,7 @@ class Transformer(pl.LightningModule):
                 max_threshold = 0
                 max_score = 0
                 for i in range(1, len(scores) - 1):
-                    score = np.mean(scores[i - 1 : i + 2])
+                    score = np.mean(scores[i - 1: i + 2])
                     if score >= max_score:
                         max_score = score
                         max_threshold = thresholds_list[i]
