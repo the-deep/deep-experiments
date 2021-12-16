@@ -1,8 +1,8 @@
 from typing import List
 
-import numpy as np
-
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+
+"""Evaluation logic here only work with flattened datasets."""
 
 
 def _prefix(dic, prefix):
@@ -15,8 +15,11 @@ def _process(text):
     """Replaces special characters in text (for MLFlow)"""
     text = text.lower()
     text = text.replace(" ", "_")
-    text = text.replace(">", "")
     text = text.replace("&", "_")
+    text = text.replace(">", "")
+    text = text.replace(",", "")
+    text = text.replace("(", "")
+    text = text.replace(")", "")
     return text
 
 
@@ -47,7 +50,9 @@ def compute_multiclass_metrics(preds, labels, names: List[str], threshold: float
         # per class micro evaluation
         metrics.update(
             _prefix(
-                _compute(preds[:, idx], labels[:, idx], "binary", threshold=threshold),
+                _compute(
+                    preds[:, idx : idx + 1], labels[:, idx : idx + 1], "binary", threshold=threshold
+                ),
                 f"{_process(name)}_binary_",
             )
         )
@@ -63,18 +68,20 @@ def compute_multitarget_metrics(
     threshold: float = 0.5,
 ):
     metrics = {}
-    for idx, group_name in group_names:
+    start = 0
+    for idx, group_name in enumerate(group_names):
         metrics.update(
             _prefix(
                 compute_multiclass_metrics(
-                    preds[idx], labels[idx], names=groups[idx], threshold=threshold
+                    preds[:, start : start + len(groups[idx])],
+                    labels[:, start : start + len(groups[idx])],
+                    names=groups[idx],
+                    threshold=threshold,
                 ),
-                _process(group_name),
+                f"{_process(group_name)}_",
             )
         )
-
-    preds = np.concatenate(preds, axis=-1)
-    labels = np.concatenate(labels, axis=-1)
+        start = start + len(groups[idx])
 
     # micro evaluation
     metrics.update(_prefix(_compute(preds, labels, "micro", threshold=threshold), "micro_"))
@@ -93,7 +100,7 @@ def compute_multihead_metrics(
     threshold: float = 0.5,
 ):
     metrics = {}
-    for idx, target in targets:
+    for idx, target in enumerate(targets):
         metrics.update(
             _prefix(
                 compute_multitarget_metrics(
@@ -103,7 +110,7 @@ def compute_multihead_metrics(
                     group_names=group_names[idx],
                     threshold=threshold,
                 ),
-                _process(target),
+                f"{_process(target)}_",
             )
         )
 

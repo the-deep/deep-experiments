@@ -110,7 +110,7 @@ class MultiTargetTrainer(Trainer):
         return (loss, logits) if return_outputs else loss
 
 
-class MultiHeadTrainer(MultiTargetTrainer):
+class MultiHeadTrainer(Trainer):
     """HuggingFace Trainer compatible with MultiHeadTransformer models.
 
     Args:

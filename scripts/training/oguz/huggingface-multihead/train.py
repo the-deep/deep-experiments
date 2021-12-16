@@ -6,9 +6,6 @@ import json
 
 import mlflow
 import pandas as pd
-
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-
 from transformers import AutoModel, AutoTokenizer, TrainingArguments
 
 from constants import SECTORS, PILLARS_1D, SUBPILLARS_1D, PILLARS_2D, SUBPILLARS_2D
@@ -16,6 +13,7 @@ from data import MultiHeadDataFrame
 from model import MultiHeadTransformer
 from wrapper import MLFlowWrapper
 from trainer import MultiHeadTrainer
+from evaluation import compute_multihead_metrics, compute_multitarget_metrics, _prefix
 from utils import str2bool, str2list, get_conda_env_specs
 
 if __name__ == "__main__":
@@ -86,12 +84,12 @@ if __name__ == "__main__":
     backbone = AutoModel.from_pretrained(args.model_name)
 
     # get target groups
-    groups, group_names = [], []
+    targets, groups, group_names = [], [], []
     for target in args.target:
         if target == "subpillars_1d":
             groups.append(SUBPILLARS_1D)
             group_names.append(PILLARS_1D)
-        elif target == "subpillars" or target == "subpillars_2d":
+        elif target == "subpillars_2d":
             groups.append(SUBPILLARS_2D)
             group_names.append(PILLARS_2D)
         elif target == "sectors":
@@ -99,6 +97,7 @@ if __name__ == "__main__":
             group_names.append(["Sectors"])
         else:
             raise NotImplementedError
+        targets.append(target)
 
     # sanity check for iterative option
     if args.iterative:
@@ -107,7 +106,7 @@ if __name__ == "__main__":
     # build classifier model from backbone
     model = MultiHeadTransformer(
         backbone,
-        num_classes=[len(group) for group in groups],
+        num_classes=[[len(group) for group in _group] for _group in groups],
         num_layers=args.num_layers,
         dropout=args.dropout,
         pooling=args.pooling,
@@ -122,112 +121,70 @@ if __name__ == "__main__":
         train_df,
         tokenizer=tokenizer,
         source="excerpt",
-        targets=args.target,
+        targets=targets,
         groups=groups,
         group_names=group_names,
         exclude=["NOT_MAPPED"],
         filter=args.split,
+        iterative=args.iterative,
         flatten=True,
     )
     test_dataset = MultiHeadDataFrame(
         test_df,
         tokenizer=tokenizer,
         source="excerpt",
-        targets=args.target,
+        targets=targets,
         groups=groups,
         group_names=group_names,
         exclude=["NOT_MAPPED"],
         filter=None,
+        iterative=args.iterative,
         flatten=True,
     )
 
     # compute metrics function for multi-class classification
     def compute_metrics(pred, threshold=0.5):
-        # add prefix to dictionary keys
-        def _prefix(dic, prefix):
-            return {(prefix + k): v for k, v in dic.items()}
-
-        # compute metrics given preds and labels
-        def _compute(preds, labels, average="micro"):
-            preds = preds > threshold
-            precision, recall, f1, _ = precision_recall_fscore_support(
-                labels, preds, average=average
-            )
-            accuracy = accuracy_score(labels, preds)
-            return {
-                "accuracy": accuracy,
-                "f1": f1,
-                "precision": precision,
-                "recall": recall,
-            }
-
-        # process pillar texts for MLFlow
-        def _process(text):
-            text = text.lower()
-            text = text.replace(" ", "_")
-            text = text.replace(">", "")
-            text = text.replace("&", "_")
-            return text
-
-        metrics = {}
-
+        # read predictions and labels
         if args.iterative:
             # TODO: ensure the ordering is stable
             preds, preds_group = pred.predictions
             labels, labels_group = pred.label_ids
-
-            # group micro evaluation
-            metrics.update(_prefix(_compute(preds_group, labels_group, "micro"), "pillar_micro_"))
-            # group macro evaluation
-            metrics.update(_prefix(_compute(preds_group, labels_group, "macro"), "pillar_macro_"))
-            # per group evaluation
-            for i, pillar in enumerate(group_names):
-                metrics.update(
-                    _prefix(
-                        _compute(preds_group[:, i], labels_group[:, i], "binary"),
-                        f"{_process(pillar)}_binary_",
-                    )
-                )
         else:
-            labels = pred.label_ids
             preds = pred.predictions
+            labels = pred.label_ids
 
-        # micro evaluation
-        metrics.update(_prefix(_compute(preds, labels, "micro"), "subpillar_micro_"))
-        # macro evaluation
-        metrics.update(_prefix(_compute(preds, labels, "macro"), "subpillar_macro_"))
-        # per head evaluation
-        idx = 0
-        for i, pillar in enumerate(group_names):
-            idx_end = idx + len(groups[i])
+        if not (isinstance(preds, list) or isinstance(preds, tuple)):
+            preds = [preds]
+            labels = [labels]
 
-            # per head micro evaluation
+            if args.iterative:
+                preds_group = [preds_group]
+                labels_group = [labels_group]
+
+        # compute metrics for preds
+        metrics = compute_multihead_metrics(
+            preds,
+            labels,
+            groups=groups,
+            group_names=group_names,
+            targets=targets,
+            threshold=threshold,
+        )
+
+        # compute metrics for group preds
+        if args.iterative:
             metrics.update(
                 _prefix(
-                    _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "micro"),
-                    f"{_process(pillar)}_micro_",
-                )
-            )
-            # per head macro evaluation
-            metrics.update(
-                _prefix(
-                    _compute(preds[:, idx:idx_end], labels[:, idx:idx_end], "macro"),
-                    f"{_process(pillar)}_macro_",
-                )
-            )
-
-            # per head target evaluation
-            for j, subpillar in enumerate(groups[i]):
-                metrics.update(
-                    _prefix(
-                        _compute(preds[:, idx + j], labels[:, idx + j], "binary"),
-                        f"{_process(subpillar)}_binary_",
+                    compute_multitarget_metrics(
+                        preds_group,
+                        labels_group,
+                        groups=group_names,
+                        group_names=targets,
+                        threshold=threshold,
                     )
-                )
-
-            # update index
-            idx = idx_end
-
+                ),
+                "group_",
+            )
         return metrics
 
     # define training args
@@ -238,11 +195,12 @@ if __name__ == "__main__":
         per_device_eval_batch_size=args.eval_batch_size,
         warmup_steps=args.warmup_steps,
         evaluation_strategy="epoch",
+        save_strategy="epoch",
         logging_dir=f"{args.output_data_dir}/logs",
         learning_rate=float(args.learning_rate),
         skip_memory_metrics=False,
-        label_names=["labels", "groups"] if args.iterative else ["labels"],
-        metric_for_best_model="eval_subpillar_micro_f1",
+        label_names=train_dataset.label_names(),
+        metric_for_best_model="eval_subpillars_1d_micro_f1",
         greater_is_better=True,
         load_best_model_at_end=True,
         save_total_limit=1,
@@ -251,11 +209,19 @@ if __name__ == "__main__":
     # calculate weighting coefficients
     loss_weights, loss_pos_weights = None, None
     if args.weighting == "inverse":
-        classes = [target for group in groups for target in group]
         stats = train_dataset.compute_stats()
 
-        loss_weights = [(stats["ALL"] / stats[c]) for c in classes]
-        loss_pos_weights = [weight - 1 for weight in loss_weights]
+        classes = [[target for group in _groups for target in group] for _groups in groups]
+        loss_weights = [
+            [
+                0 if stats[_target][c] else (stats[_target]["ALL"] / stats[_target][c])
+                for c in _classes
+            ]
+            for _target, _classes in zip(targets, classes)
+        ]
+        loss_pos_weights = [
+            [weight - 1 for _loss_weights in loss_weights for weight in _loss_weights]
+        ]
     if args.weighting == "inverse_square":
         raise NotImplementedError
 
@@ -269,6 +235,7 @@ if __name__ == "__main__":
         loss_fn=args.loss,
         loss_weights=loss_weights,
         loss_pos_weights=loss_pos_weights,
+        targets=targets,
     )
 
     # set env variable for MLFlow artifact logging

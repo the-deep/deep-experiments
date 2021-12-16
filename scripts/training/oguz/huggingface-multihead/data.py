@@ -91,7 +91,9 @@ class MultiTargetDataFrame(Dataset):
             e.g., 6 label classification with two groups: [A, B, C], [D, E, F]
         group_names: name assoaciated with each classification head
             e.g., 2 group names: ABC and DEF
-        exclude: omit the given target labels.
+        exclude: (None, List of strings, List of List of strings) omit the given
+            targets. For multi-target classification, expects a list with
+            elements of lists.
         flatten: flatten targets to 1D for convenience
         iterative: include group targets on top of regular targets
     """
@@ -102,7 +104,7 @@ class MultiTargetDataFrame(Dataset):
         target: str = "target",
         groups: Optional[List[List[str]]] = None,
         group_names: Optional[List[str]] = None,
-        exclude: Optional[List[str]] = None,
+        exclude: Optional[Union[str, List[str]]] = None,
         flatten: bool = True,
         iterative: bool = True,
     ):
@@ -134,6 +136,9 @@ class MultiTargetDataFrame(Dataset):
 
         # omit the given exclude labels
         if exclude:
+            if isinstance(exclude, str):
+                exclude = [exclude]
+
             dataframe[target] = [
                 [label for label in labels if label not in exclude]
                 for labels in dataframe[target].tolist()
@@ -195,6 +200,10 @@ class MultiTargetDataFrame(Dataset):
             item["groups"] = torch.tensor(self.group[idx])
 
         return item
+
+    def label_names(self) -> List[str]:
+        """Return label names"""
+        return self[0].keys()
 
     def compute_stats(self) -> Dict[str, int]:
         """Computes occurences of each target and group"""
@@ -358,6 +367,7 @@ class MultiHeadDataFrame(Dataset):
             tokenizer_max_len=tokenizer_max_len,
         )
         self.data_len = self.data.data_len
+        self.tokenizer_options = self.data.tokenizer_options
 
         # prepare targets
         if isinstance(targets, str):
@@ -381,22 +391,18 @@ class MultiHeadDataFrame(Dataset):
         if groups is None:
             groups = [None for _ in targets]
             group_names = [None for _ in targets]
-        if exclude is None:
-            exclude = [None for _ in targets]
 
         self.tasks = targets
         self.targets = []
         if not inference:
-            for _target, _groups, _group_names, _exclude in zip(
-                targets, groups, group_names, exclude
-            ):
+            for _target, _groups, _group_names in zip(targets, groups, group_names):
                 self.targets.append(
                     MultiTargetDataFrame(
                         dataframe=dataframe,
                         target=_target,
                         groups=_groups,
                         group_names=_group_names,
-                        exclude=_exclude,
+                        exclude=exclude,
                         flatten=flatten,
                         iterative=iterative,
                     )
@@ -418,6 +424,11 @@ class MultiHeadDataFrame(Dataset):
                 item.update({(f"{task}_" + k): v for k, v in target[idx].items()})
 
         return item
+
+    def label_names(self) -> List[str]:
+        """Return label names"""
+        data_keys = self.data[0].keys()
+        return [key for key in self[0].keys() if key not in data_keys]
 
     def compute_stats(self) -> Dict[str, int]:
         """Computes occurences of each target and group"""
