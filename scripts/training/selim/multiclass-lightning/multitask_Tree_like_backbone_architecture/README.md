@@ -1,3 +1,3 @@
-Folder containing script used to generate models that are performing the best.  
+Folder containing script used to generate models pretrained on all the vocabulary then finetuned on specific tasks for each model.  
 <ins>loss</ins>: Focal Loss
-<ins>one model architecture</ins>: ![alt text](one_model_architecture.png)
+
