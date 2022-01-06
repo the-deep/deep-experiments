@@ -17,8 +17,12 @@ import mlflow
 from utils import (
     read_merge_data,
     preprocess_df,
+    clean_name_for_logging,
+    clean_name
 )
 import torch
+
+from ast import literal_eval
 
 from inference import TransformersPredictionsWrapper
 from generate_models import CustomTrainer
@@ -36,7 +40,7 @@ if __name__ == "__main__":
     # hyperparameters sent by the client are passed as command-line arguments to the script.
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--train_batch_size", type=int, default=32)
-    parser.add_argument("--val_batch_size", type=int, default=64)
+    parser.add_argument("--val_batch_size", type=int, default=32)
 
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--warmup_steps", type=int, default=10)
@@ -44,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--dropout_rate", type=float, default=0.3)
     parser.add_argument("--output_length", type=int, default=384)
+    parser.add_argument("--nb_repetitions", type=int, default=1)
 
     parser.add_argument("--model_name", type=str, default="microsoft/xtremedistil-l6-h384-uncased")
     parser.add_argument(
@@ -123,66 +128,104 @@ if __name__ == "__main__":
         pyfunc_prediction_wrapper = TransformersPredictionsWrapper()
 
         for column in training_columns:
-            multiclass_bool = column != 'severity'
-            keep_neg_examples = 'present' in column
+            multiclass_bool = column != "severity"
+            keep_neg_examples = "present" in column
 
-            #sanity check on params
-            mlflow.log_params({
-                f'multiclass_bool_{column}': multiclass_bool,
-                f'keep_neg_examples_bool_{column}': keep_neg_examples
-            })
+            cleaned_column_name = clean_name(column)
 
-            train_df, val_df = preprocess_df(
-                whole_df, 
-                column, 
-                multiclass_bool,
-                keep_neg_examples)
-
-            mlflow.log_params({
-                f'nb_train_rows_{column}': train_df.shape[0],
-                f'nb_val_rows_{column}': val_df.shape[0]
-            })
-
-            model_trainer = CustomTrainer(
-                train_dataset=train_df,
-                val_dataset=val_df,
-                MODEL_DIR=args.model_dir,
-                MODEL_NAME=args.model_name,
-                TOKENIZER_NAME=args.tokenizer_name,
-                training_column=column,
-                gpu_nb=gpu_nb,
-                train_params=train_params,
-                val_params=val_params,
-                MAX_EPOCHS=args.epochs,
-                dropout_rate=args.dropout_rate,
-                weight_decay=args.weight_decay,
-                learning_rate=args.learning_rate,
-                max_len=args.max_len,
-                warmup_steps=args.warmup_steps,
-                output_length=args.output_length,
-                multiclass_bool=multiclass_bool,
-                training_device=training_device,
-                beta_f1 = args.beta_f1
+            # sanity check on params
+            mlflow.log_params(
+                {
+                    f"bool_multiclass_{cleaned_column_name}": multiclass_bool,
+                    f"bool_keep_neg_examples_{cleaned_column_name}": keep_neg_examples,
+                }
             )
-            
-            model = model_trainer.train_model()
-            pyfunc_prediction_wrapper.add_model(model, column)
+            best_score = 0
 
-            mlflow.log_params({f'lr_{column}': model.hparams.learning_rate})
+            iter_nb = 0
+            while best_score < 0.7 and iter_nb < args.nb_repetitions:
 
+                train_df, val_df = preprocess_df(
+                    whole_df, column, multiclass_bool, keep_neg_examples
+                )
+
+                if len(train_df) > 150_000:
+                    dropout_column = 0.2
+                    weight_decay_col = 1e-3
+                    dim_hidden_layer = 256
+                    max_epochs = 5
+                    learning_rate = 1e-4
+                elif len(train_df) > 50_000:
+                    dropout_column = 0.3
+                    weight_decay_col = 3e-3
+                    dim_hidden_layer = 256
+                    max_epochs = 8
+                    learning_rate = 7e-5
+                else:
+                    dropout_column = 0.3
+                    weight_decay_col = 0.01
+                    dim_hidden_layer = 64
+                    max_epochs = 12
+                    learning_rate = 4e-5
+
+                if iter_nb == 1:
+                    learning_rate = learning_rate * 0.7
+                    weight_decay_col = weight_decay_col * 2
+
+                model_trainer = CustomTrainer(
+                    train_dataset=train_df,
+                    val_dataset=val_df,
+                    MODEL_DIR=args.model_dir,
+                    MODEL_NAME=args.model_name,
+                    TOKENIZER_NAME=args.tokenizer_name,
+                    training_column=column,
+                    gpu_nb=gpu_nb,
+                    train_params=train_params,
+                    val_params=val_params,
+                    MAX_EPOCHS=max_epochs,
+                    dropout_rate=dropout_column,
+                    weight_decay=weight_decay_col,
+                    learning_rate=learning_rate,
+                    max_len=args.max_len,
+                    warmup_steps=args.warmup_steps,
+                    output_length=args.output_length,
+                    multiclass_bool=multiclass_bool,
+                    training_device=training_device,
+                    beta_f1=args.beta_f1,
+                    dim_hidden_layer=dim_hidden_layer
+                )
+
+                model = model_trainer.train_model()
+                model_score = model.val_f1_score
+
+                mlflow.log_metric(
+                    f"{args.beta_f1}_f1_score_{cleaned_column_name}_iter{iter_nb + 1}", model_score
+                )
+                mlflow.log_param(f'lr_{cleaned_column_name}_iter{iter_nb + 1}', model.hparams.learning_rate)
+                mlflow.log_metrics(
+                    clean_name_for_logging(model.optimal_thresholds, cleaned_column_name)
+                )
+
+                if model_score > best_score:
+                    best_score = model_score
+                    pyfunc_prediction_wrapper.add_model(model, column)
+
+                iter_nb += 1
         try:
             mlflow.pyfunc.log_model(
                 python_model=pyfunc_prediction_wrapper,
-                artifact_path="primary_tags_v1",
+                artifact_path="primary_tags_v2",
                 conda_env=get_conda_env_specs(),  # python conda dependencies
                 code_path=[
                     __file__,
+                    "train_mlflow.py",
                     "model.py",
                     "utils.py",
                     "inference.py", 
                     "generate_models.py",
                     "data.py",
-                    "get_outputs_user.py"
+                    "architecture.py",
+                    "pooling.py"
                 ],
                 await_registration_for=600
             )
