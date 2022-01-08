@@ -14,6 +14,9 @@ import sys
 sys.path.append(".")
 
 import mlflow
+import random
+import numpy as np
+from utils import get_preds_entry
 
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
@@ -29,14 +32,44 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
         self.models[model_name] = model
         self.thresholds[model_name] = model.optimal_thresholds
 
-    def predict(self, context, model_input):
+    def predict(self, context, inputs):
 
-        raw_predictions = {}
-        for tag_name, trained_model in self.models.items():
+        input_sentences = inputs["excerpt"]
+        return_type = inputs["return_type"].values[0]
 
-            predictions_one_model = trained_model.custom_predict(
-                model_input, testing=True
+        if return_type == "one_model":
+
+            specific_model = inputs["model"].values[0]
+            raw_predictions_one_model = self.models[specific_model].custom_predict(
+                input_sentences, testing=True
             )
-            raw_predictions[tag_name] = predictions_one_model
+            outputs = {
+                "raw_predictions": raw_predictions_one_model,
+                "thresholds": self.thresholds[specific_model],
+            }
+            return outputs
 
-        return raw_predictions, self.thresholds
+        elif return_type == "custom_postprocessing":
+            processing_function = inputs["processing_function"].values[0]
+            minimum_ratio = inputs["processing_function"].values[0]
+            output_columns = inputs["output_columns"].values[0]
+
+            return processing_function(
+                input_sentences, 
+                minimum_ratio, 
+                output_columns
+                )
+
+        else:
+            raw_predictions = {}
+            for tag_name, trained_model in self.models.items():
+
+                predictions_one_model = trained_model.custom_predict(
+                    input_sentences, testing=True
+                )
+                raw_predictions[tag_name] = predictions_one_model
+            outputs = {
+                "raw_predictions": raw_predictions,
+                "thresholds": self.thresholds,
+            }
+            return outputs

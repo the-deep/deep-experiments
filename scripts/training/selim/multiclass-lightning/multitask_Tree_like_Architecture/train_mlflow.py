@@ -4,6 +4,7 @@ import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # dill import needs to be kept for more robustness in multimodel serialization
 import dill
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
 
 dill.extend(True)
 
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     # hyperparameters sent by the client are passed as command-line arguments to the script.
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--train_batch_size", type=int, default=32)
-    parser.add_argument("--val_batch_size", type=int, default=64)
+    parser.add_argument("--val_batch_size", type=int, default=32)
 
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--warmup_steps", type=int, default=10)
@@ -89,7 +90,6 @@ if __name__ == "__main__":
     )
 
     training_columns = args.training_names.split(",")
-    min_results = literal_eval(args.min_results)
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
         for column in training_columns:
 
             multiclass_bool = column != "severity"
-            keep_neg_examples = "present" in column
+            keep_neg_examples = True
 
             # sanity check on params
             mlflow.log_params(
@@ -147,24 +147,6 @@ if __name__ == "__main__":
             )
             best_score = 0
 
-            test_df_col = test_df.copy()
-            test_df_col[column] = test_df_col[column].apply(literal_eval)
-
-            if column == "sectors":
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: "Cross" not in x)
-                ]
-            if not multiclass_bool:
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: len(x) == 1)
-                ]
-            if not keep_neg_examples:
-                test_df_col = test_df_col[
-                    test_df_col[column].apply(lambda x: len(x) > 0)
-                ]
-
-            testing_excerpt = test_df_col["excerpt"]
-            groundtruth_column = test_df_col[column]
 
             iter_nb = 0
             while best_score < 0.7 and iter_nb < args.nb_repetitions:
@@ -173,18 +155,29 @@ if __name__ == "__main__":
                     whole_df, column, multiclass_bool, keep_neg_examples
                 )
 
-                if len(train_df) > 200_000:
+                if len(train_df) > 120_000:
                     dropout_column = 0.2
-                    weight_decay_col = 0.005
-                    dim_hidden_layer = 512
-                elif len(train_df) > 100_000:
+                    weight_decay_col = 1e-3
+                    dim_hidden_layer = 256
+                    max_epochs = 5
+                    learning_rate = 8e-5
+
+                elif len(train_df) > 50_000:
+                    dropout_column = 0.3
+                    weight_decay_col = 3e-3
+                    dim_hidden_layer = 256
+                    max_epochs = 8
+                    learning_rate = 5e-5
+                else:
                     dropout_column = 0.3
                     weight_decay_col = 0.01
                     dim_hidden_layer = 256
-                else:
-                    dropout_column = 0.4
-                    weight_decay_col = 0.02
-                    dim_hidden_layer = 128
+                    max_epochs = 12
+                    learning_rate = 3e-5
+
+                if iter_nb == 1:
+                    learning_rate = learning_rate * 0.7
+                    weight_decay_col = weight_decay_col * 2
 
                 model_trainer = CustomTrainer(
                     train_dataset=train_df,
@@ -196,10 +189,10 @@ if __name__ == "__main__":
                     gpu_nb=gpu_nb,
                     train_params=train_params,
                     val_params=val_params,
-                    MAX_EPOCHS=args.epochs,
+                    MAX_EPOCHS=max_epochs,
                     dropout_rate=dropout_column,
                     weight_decay=weight_decay_col,
-                    learning_rate=args.learning_rate,
+                    learning_rate=learning_rate,
                     max_len=args.max_len,
                     warmup_steps=args.warmup_steps,
                     output_length=args.output_length,
@@ -210,14 +203,14 @@ if __name__ == "__main__":
                 )
 
                 model = model_trainer.train_model()
-                model_score = model.val_f1_score
+                model_score = model.train_f1_score
 
                 mlflow.log_metric(
                     f"{args.beta_f1}_f1_score_{column}_iter{iter_nb + 1}", model_score
                 )
                 mlflow.log_param(f'lr_{column}_iter{iter_nb + 1}', model.hparams.learning_rate)
                 mlflow.log_metrics(
-                    clean_name_for_logging(model.optimal_thresholds)
+                    clean_name_for_logging(model.optimal_thresholds, column)
                 )
 
                 if model_score > best_score:

@@ -26,6 +26,7 @@ from transformers import AdamW
 from transformers.optimization import (
     get_linear_schedule_with_warmup,
 )
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data import CustomDataset
 from utils import flatten, tagname_to_id, get_flat_labels
@@ -74,7 +75,7 @@ class Transformer(pl.LightningModule):
             self.ids_each_level,
             dropout_rate,
             self.output_length,
-            dim_hidden_layer
+            dim_hidden_layer,
         )
         self.tokenizer = tokenizer
         self.val_params = val_params
@@ -100,7 +101,9 @@ class Transformer(pl.LightningModule):
         outputs = self(batch)
         train_loss = self.get_loss(outputs, batch["targets"])
 
-        self.log("train_loss", train_loss.item(), prog_bar=True)
+        self.log(
+            "train_loss", train_loss.item(), prog_bar=True, on_step=False, on_epoch=True
+        )
         return train_loss
 
     def validation_step(self, batch, batch_idx):
@@ -109,7 +112,7 @@ class Transformer(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
-            on_step=True,
+            on_step=False,
             on_epoch=True,
             prog_bar=True,
             logger=False,
@@ -134,16 +137,19 @@ class Transformer(pl.LightningModule):
         optimizer = AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
-            eps=self.hparams.adam_epsilon,
             weight_decay=self.hparams.weight_decay,
+            eps=self.hparams.adam_epsilon,
         )
 
-        scheduler = get_linear_schedule_with_warmup(
-            optimizer,
-            num_warmup_steps=self.hparams.warmup_steps,
-            num_training_steps=self.total_steps(),
+        scheduler = ReduceLROnPlateau(
+            optimizer, "min", 0.5, patience=self.hparams.max_epochs // 6
         )
-        scheduler = {"scheduler": scheduler, "interval": "step", "frequency": 1}
+        scheduler = {
+            "scheduler": scheduler,
+            "interval": "epoch",
+            "frequency": 1,
+            "monitor": "val_loss",
+        }
         return [optimizer], [scheduler]
 
     def train_dataloader(self):
@@ -160,7 +166,7 @@ class Transformer(pl.LightningModule):
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
-    def get_loss(self, outputs, targets):
+    def get_loss(self, outputs, targets, only_pos: bool = False):
 
         # keep the if because we want to take negative examples into account for the models that contain
         # no hierarchy (upper level models)
@@ -174,11 +180,12 @@ class Transformer(pl.LightningModule):
                 targets_one_level = targets[:, ids_one_level]
                 # main objective: for each level, if row contains only zeros, not to do backpropagation
 
-                mask_ids_neg_example = [
-                    not bool(int(torch.sum(one_row))) for one_row in targets_one_level
-                ]
-                
-                outputs_i_th_level[mask_ids_neg_example, :] = 0
+                if only_pos:
+                    mask_ids_neg_example = [
+                        not bool(int(torch.sum(one_row)))
+                        for one_row in targets_one_level
+                    ]
+                    outputs_i_th_level[mask_ids_neg_example, :] = 1e-8
 
                 tot_loss += self.Focal_loss(outputs_i_th_level, targets_one_level)
 
@@ -249,8 +256,8 @@ class Transformer(pl.LightningModule):
                         "token_type_ids": batch["token_type_ids"].to(testing_device),
                     }
                 )
-                logits = torch.cat(logits, dim=1) #have a matrix like in the beginning
-                logits_to_array = np.array([np.array(t) for t in logits.cpu()]) 
+                logits = torch.cat(logits, dim=1)  # have a matrix like in the beginning
+                logits_to_array = np.array([np.array(t) for t in logits.cpu()])
                 logit_predictions.append(logits_to_array)
 
         logit_predictions = np.concatenate(logit_predictions)
@@ -304,7 +311,7 @@ class Transformer(pl.LightningModule):
             y_true_one_level = y_true[:, ids_one_level]
             logit_preds_one_level = logit_predictions[:, ids_one_level]
 
-            if len(self.ids_each_level) > 1: #multitask
+            """if len(self.ids_each_level) > 1: #multitask
 
                 mask_at_least_one_pos = [bool(sum(row)) for row in y_true_one_level]
                 threshold_tuning_gt = y_true_one_level[mask_at_least_one_pos]
@@ -313,14 +320,14 @@ class Transformer(pl.LightningModule):
                 threshold_tuning_gt = y_true_one_level
                 threshold_tuning_logit_preds = logit_predictions
 
-            assert(threshold_tuning_logit_preds.shape == threshold_tuning_gt.shape)
-            
+            assert(threshold_tuning_logit_preds.shape == threshold_tuning_gt.shape)"""
+
             for j in range(len(ids_one_level)):
                 scores = []
                 for thresh_tmp in thresholds_list:
                     metric = self.get_metric(
-                        threshold_tuning_logit_preds,
-                        threshold_tuning_gt,
+                        logit_preds_one_level,
+                        y_true_one_level,
                         beta_f1,
                         j,
                         thresh_tmp,

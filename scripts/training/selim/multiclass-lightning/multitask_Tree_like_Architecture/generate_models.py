@@ -76,7 +76,7 @@ class CustomTrainer:
             os.makedirs(PATH_NAME)
 
         early_stopping_callback = EarlyStopping(
-            monitor="val_loss", patience=3, mode="min"
+            monitor="val_loss", patience=2, mode="min"
         )
 
         checkpoint_callback_params = {
@@ -97,7 +97,7 @@ class CustomTrainer:
         trainer = pl.Trainer(
             logger=logger,
             callbacks=[early_stopping_callback, checkpoint_callback],
-            progress_bar_refresh_rate=20,
+            progress_bar_refresh_rate=40,
             profiler="simple",
             log_gpu_memory=True,
             weights_summary=None,
@@ -140,12 +140,12 @@ class CustomTrainer:
             dim_hidden_layer=self.dim_hidden_layer
         )
 
-        lr_finder = trainer.tuner.lr_find(model)
+        """lr_finder = trainer.tuner.lr_find(model)
         new_lr = lr_finder.suggestion()
-        model.hparams.learning_rate = new_lr
+        model.hparams.learning_rate = new_lr"""
         trainer.fit(model)
 
-        model.val_f1_score = model.hypertune_threshold(self.beta_f1)
+        model.train_f1_score = model.hypertune_threshold(self.beta_f1)
 
         del model.training_loader
         del model.val_loader

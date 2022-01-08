@@ -10,12 +10,14 @@ warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
 
-def clean_regex(name):
+def get_new_name(name, column_name):
+    #clean regex
     claned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-    return f'threshold_{claned_name}'
+    return f'threshold_{column_name}_{claned_name}'
 
-def clean_name_for_logging(thresholds):
-    return {clean_regex(key): value for key, value in thresholds.items()}
+
+def clean_name_for_logging(thresholds, column_name):
+    return {get_new_name(key, column_name): value for key, value in thresholds.items()}
 
 def tagname_to_id(target):
     """
@@ -125,8 +127,8 @@ def preprocess_df(
         dataset = dataset[dataset.target.apply(lambda x: len(x) > 0)]
 
     ratios = {
-        "train": 0.9,
-        "val": 0.1,
+        "train": 0.85,
+        "val": 0.15,
     }
 
     train_pos_entries, val_pos_entries = custom_stratified_train_test_split(
@@ -193,5 +195,15 @@ def get_flat_labels (column_of_columns, tag_to_id, nb_subtags):
     ] for column in column_of_columns]
     return np.array(flatten(matrix))
 
-
     
+def get_preds_entry (preds_column, return_at_least_one=True, ratio_nb=1):
+    preds_entry = [
+        sub_tag for sub_tag in list(preds_column.keys()) if preds_column[sub_tag]>ratio_nb
+    ]
+    if return_at_least_one:
+        if len(preds_entry)==0:
+            preds_entry = [
+                sub_tag for sub_tag in list(preds_column.keys())\
+                    if preds_column[sub_tag]==max(list(preds_column.values()))
+            ]
+    return preds_entry
