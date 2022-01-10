@@ -42,5 +42,6 @@ def detect_locs(text, ret_locs_in_db=True, aug_preds=False):
         else:
             locs_processed.append(loc)
     if ret_locs_in_db:
-        return [loc for loc in locs_processed if unidecode(loc).lower() in geo_areas]
+        locs_processed = [loc for loc in locs_processed if unidecode(loc).lower() in geo_areas]
+    locs_processed = list(set(locs_processed))
     return locs_processed
