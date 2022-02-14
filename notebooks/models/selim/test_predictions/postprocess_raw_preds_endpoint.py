@@ -30,12 +30,15 @@ output_columns = [
     "affected_groups",
 ]
 
+primary_tags = ["sectors", "subpillars_2d", "subpillars_1d"]
+secondary_tags = ["age", "gender", "affected_groups", "specific_needs_groups"]
+
 
 def get_predictions_all(
     ratio_proba_threshold,
     output_columns=output_columns,
-    pillars_2d = pillars_2d_tags,
-    pillars_1d = pillars_1d_tags,
+    pillars_2d=pillars_2d_tags,
+    pillars_1d=pillars_1d_tags,
     nb_entries: int = 1,
     ratio_nb: int = 1,
 ):
@@ -129,38 +132,131 @@ def get_preds_entry(
             ]
     return preds_entry
 
+
+def get_clean_thresholds(
+    thresholds,
+    output_columns=output_columns,
+    pillars_2d=pillars_2d_tags,
+    pillars_1d=pillars_1d_tags,
+    primary_tags=primary_tags,
+    secondary_tags=secondary_tags,
+):
+
+    final_thresholds = {name: {} for name in output_columns}
+    final_thresholds["sectors"] = thresholds["sectors"]
+    subpillars_thresholds = thresholds["subpillars"]
+
+    subpillars_2d_thresholds = {
+        key: value
+        for key, value in subpillars_thresholds.items()
+        if key.split("->")[0] in pillars_2d
+    }
+    subpillars_1d_thresholds = {
+        key: value
+        for key, value in subpillars_thresholds.items()
+        if key.split("->")[0] in pillars_1d
+    }
+    final_thresholds["subpillars_2d"] = subpillars_2d_thresholds
+    final_thresholds["subpillars_1d"] = subpillars_1d_thresholds
+
+    secondary_tags_thresholds = thresholds["secondary_tags"]
+    for secondary_tag in ["age", "gender", "affected_groups", "specific_needs_groups"]:
+        final_thresholds[secondary_tag] = {
+            key.split("->")[1]: value
+            for key, value in secondary_tags_thresholds.items()
+            if key.split("->")[0] == secondary_tag
+        }
+
+    output_ratios = {
+        "primary_tags": {key: final_thresholds[key] for key in primary_tags},
+        "secondary_tags": {key: final_thresholds[key] for key in secondary_tags},
+    }
+    return output_ratios
+
+
+def get_clean_ratios(
+    ratios,
+    output_columns=output_columns,
+    pillars_2d=pillars_2d_tags,
+    pillars_1d=pillars_1d_tags,
+    primary_tags=primary_tags,
+    secondary_tags=secondary_tags,
+    nb_entries: int = 1,
+):
+
+    final_ratios = {name: [] for name in output_columns}
+    final_ratios["sectors"] = ratios["sectors"]
+
+    subpillars_ratios = ratios["subpillars"]
+    secondary_tags_ratios = ratios["secondary_tags"]
+
+    for i in range(nb_entries):
+        subpillars_2d_ratio_tmp = {
+            key: value
+            for key, value in subpillars_ratios[i].items()
+            if key.split("->")[0] in pillars_2d
+        }
+
+        subpillars_1d_ratio_tmp = {
+            key: value
+            for key, value in subpillars_ratios[i].items()
+            if key.split("->")[0] in pillars_1d
+        }
+
+        final_ratios["subpillars_2d"].append(subpillars_2d_ratio_tmp)
+        final_ratios["subpillars_1d"].append(subpillars_1d_ratio_tmp)
+
+        for secondary_tag in secondary_tags:
+            secondary_tags_ratios_tmp = {
+                key.split("->")[1]: value
+                for key, value in secondary_tags_ratios[i].items()
+                if key.split("->")[0] == secondary_tag
+            }
+            final_ratios[secondary_tag].append(secondary_tags_ratios_tmp)
+
+    output_ratios = {
+        "primary_tags": {key: final_ratios[key] for key in primary_tags},
+        "secondary_tags": {key: final_ratios[key] for key in secondary_tags},
+    }
+    return output_ratios
+
+
 import boto3
 import pandas as pd
 from tqdm import tqdm
 import os
 from ast import literal_eval
 
-#sample code for predictions with endpoint
-client = boto3.session.Session().client("sagemaker-runtime", region_name='us-east-1')
-DATA_PATH = os.path.join(
-    '..', '..', '..', "data", "frameworks_data", 'data_v0.7.1'
-)
-test_df = pd.read_csv(os.path.join(DATA_PATH, 'test_v0.7.1.csv'))
+# sample code for predictions with endpoint
+client = boto3.session.Session().client("sagemaker-runtime", region_name="us-east-1")
+DATA_PATH = os.path.join("..", "..", "..", "data", "frameworks_data", "data_v0.7.1")
+test_df = pd.read_csv(os.path.join(DATA_PATH, "test_v0.7.1.csv"))
 
-for i in tqdm(range(0,test_df.shape[0],1)):
+for i in tqdm(range(0, test_df.shape[0], 1)):
     # tests sentence by sentence
-    test_tmp = test_df[i:i+1]
-    data = test_tmp[['excerpt']]
+    test_tmp = test_df[i : i + 1]
+    data = test_tmp[["excerpt"]]
     # new parameter for input
-    return_type = 'all_models'
-    data['return_type'] = return_type
-    
+    return_type = "all_models"
+    data["return_type"] = return_type
+
     input_json = data.to_json(orient="split")
 
     response = client.invoke_endpoint(
-        EndpointName='models-testing-selim',
+        EndpointName="MODEL-NAME",
         Body=input_json,
         ContentType="application/json; format=pandas-split",
     )
     output = response["Body"].read().decode("ascii")
     output = literal_eval(output)
 
-    #get final output
-    processed_output = get_predictions_all(output['preds'])
+    #threshold ready to be logged
+    clean_thresholds = get_clean_thresholds(output["thresholds"])
 
-    #log results...
+    #ratios ready to be logged
+    clean_ratios = get_clean_ratios(output['preds'])
+
+    # get final output
+    processed_output = get_predictions_all(output["preds"])
+
+    # log results...
