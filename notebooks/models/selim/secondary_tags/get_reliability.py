@@ -6,7 +6,7 @@ publishing_organisations = list(organisation_reliabilities['Publishing Organizat
 def return_org_reliability(publishing_org, authoring_org=None):
     if authoring_org is None or authoring_org not in authoring_organisations:
         if publishing_org not in publishing_organisations:
-            return 'Usually reliable'
+            return ''
         else:
             return organisation_reliabilities['Publishing Organizations'][publishing_org]
     else:
