@@ -1,0 +1,26 @@
+{
+    "data_path": "data_new.json",
+    "output_dir": "output",
+    "model_name_or_path": "microsoft/xtremedistil-l12-h384-uncased",
+    "do_train": true,
+    "do_eval": true,
+    "report_to": [
+        "wandb"
+    ],
+    "weight_decay": 0.01,
+    "per_device_train_batch_size": 2,
+    "per_device_eval_batch_size": 2,
+    "gradient_accumulation_steps": 4,
+    "learning_rate": 3e-5,
+    "logging_steps": 50,
+    "evaluation_strategy": "epoch",
+    "num_train_epochs": 5,
+    "save_strategy": "epoch",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.98,
+    "adam_epsilon": 1e-6,
+    "warmup_ratio": 0.3,
+    "fp16": true,
+    "dataloader_num_workers": 6,
+    "mode": "sentence"
+}
