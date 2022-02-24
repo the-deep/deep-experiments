@@ -159,20 +159,20 @@ if __name__ == "__main__":
                     dropout_column = 0.2
                     weight_decay_col = 1e-3
                     dim_hidden_layer = 256
-                    max_epochs = 5
-                    learning_rate = 8e-5
+                    max_epochs = 6
+                    learning_rate = 1e-4
 
                 elif len(train_df) > 50_000:
                     dropout_column = 0.3
                     weight_decay_col = 3e-3
                     dim_hidden_layer = 256
-                    max_epochs = 8
+                    max_epochs = 6
                     learning_rate = 5e-5
                 else:
                     dropout_column = 0.3
                     weight_decay_col = 0.01
                     dim_hidden_layer = 256
-                    max_epochs = 12
+                    max_epochs = 10
                     learning_rate = 3e-5
 
                 if iter_nb == 1:

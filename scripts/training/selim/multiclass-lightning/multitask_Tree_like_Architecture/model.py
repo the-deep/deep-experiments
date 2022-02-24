@@ -142,7 +142,7 @@ class Transformer(pl.LightningModule):
         )
 
         scheduler = ReduceLROnPlateau(
-            optimizer, "min", 0.5, patience=self.hparams.max_epochs // 6
+            optimizer, "min", 0.3, patience=1, threshold=1e-3
         )
         scheduler = {
             "scheduler": scheduler,
@@ -167,11 +167,12 @@ class Transformer(pl.LightningModule):
         return loader
 
     def get_loss(self, outputs, targets, only_pos: bool = False):
+        return self.Focal_loss(outputs, targets)
 
-        # keep the if because we want to take negative examples into account for the models that contain
+        """# keep the if because we want to take negative examples into account for the models that contain
         # no hierarchy (upper level models)
         if len(self.ids_each_level) == 1:
-            return self.Focal_loss(outputs[0], targets)
+            
         else:
             tot_loss = 0
             for i_th_level in range(len(self.ids_each_level)):
@@ -189,7 +190,7 @@ class Transformer(pl.LightningModule):
 
                 tot_loss += self.Focal_loss(outputs_i_th_level, targets_one_level)
 
-            return tot_loss
+            return tot_loss"""
 
     def get_first_level_ids(self):
         all_names = list(self.tagname_to_tagid.keys())
@@ -256,7 +257,7 @@ class Transformer(pl.LightningModule):
                         "token_type_ids": batch["token_type_ids"].to(testing_device),
                     }
                 )
-                logits = torch.cat(logits, dim=1)  # have a matrix like in the beginning
+                # have a matrix like in the beginning
                 logits_to_array = np.array([np.array(t) for t in logits.cpu()])
                 logit_predictions.append(logits_to_array)
 
@@ -307,68 +308,50 @@ class Transformer(pl.LightningModule):
         thresholds_list = np.linspace(0.0, 1.0, 101)[::-1]
         optimal_thresholds_dict = {}
         optimal_scores = []
-        for ids_one_level in self.ids_each_level:
-            y_true_one_level = y_true[:, ids_one_level]
-            logit_preds_one_level = logit_predictions[:, ids_one_level]
 
-            """if len(self.ids_each_level) > 1: #multitask
+        for j in range(logit_predictions.shape[1]):
+            scores = []
+            for thresh_tmp in thresholds_list:
+                metric = self.get_metric(
+                    logit_predictions[:, j],
+                    y_true[:, j],
+                    beta_f1,
+                    thresh_tmp,
+                )
+                scores.append(metric)
 
-                mask_at_least_one_pos = [bool(sum(row)) for row in y_true_one_level]
-                threshold_tuning_gt = y_true_one_level[mask_at_least_one_pos]
-                threshold_tuning_logit_preds = logit_preds_one_level[mask_at_least_one_pos]
-            else: #no multitask
-                threshold_tuning_gt = y_true_one_level
-                threshold_tuning_logit_preds = logit_predictions
+            max_threshold = 0
+            max_score = 0
+            for i in range(1, len(scores) - 1):
+                score = np.mean(scores[i - 1 : i + 2])
+                if score >= max_score:
+                    max_score = score
+                    max_threshold = thresholds_list[i]
 
-            assert(threshold_tuning_logit_preds.shape == threshold_tuning_gt.shape)"""
+            optimal_scores.append(max_score)
 
-            for j in range(len(ids_one_level)):
-                scores = []
-                for thresh_tmp in thresholds_list:
-                    metric = self.get_metric(
-                        logit_preds_one_level,
-                        y_true_one_level,
-                        beta_f1,
-                        j,
-                        thresh_tmp,
-                    )
-                    scores.append(metric)
-
-                max_threshold = 0
-                max_score = 0
-                for i in range(1, len(scores) - 1):
-                    score = np.mean(scores[i - 1 : i + 2])
-                    if score >= max_score:
-                        max_score = score
-                        max_threshold = thresholds_list[i]
-
-                optimal_scores.append(max_score)
-
-                optimal_thresholds_dict[
-                    list(self.tagname_to_tagid.keys())[ids_one_level[j]]
-                ] = max_threshold
+            optimal_thresholds_dict[
+                list(self.tagname_to_tagid.keys())[j]
+            ] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
 
         return np.mean(optimal_scores)
 
-    def get_metric(self, preds, groundtruth, beta_f1, column_idx, threshold_tmp):
-        columns_logits = np.array(preds[:, column_idx])
-
-        column_pred = [
-            1 if one_logit > threshold_tmp else 0 for one_logit in columns_logits
-        ]
+    def get_metric(self, preds, groundtruth, beta_f1, threshold_tmp):
+        columns_logits = np.array(preds)
+        column_pred = np.array(columns_logits > threshold_tmp).astype(int)
 
         if self.multiclass:
             metric = metrics.fbeta_score(
-                groundtruth[:, column_idx],
+                groundtruth,
                 column_pred,
                 beta_f1,
                 average="macro",
             )
         else:
             metric = metrics.f1_score(
-                groundtruth[:, column_idx],
+                groundtruth,
                 column_pred,
                 average="macro",
             )

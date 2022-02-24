@@ -53,7 +53,7 @@ class Model(torch.nn.Module):
         heads = []
         for i in range(len(self.ids_each_level)):
             # specific hidden layer
-            output_tmp = F.selu(last_hidden_states[i])
+            output_tmp = torch.tanh(last_hidden_states[i])
             output_tmp = self.dropout(output_tmp)
             output_tmp = self.LayerNorm_specific_hidden(output_tmp)
 
@@ -61,4 +61,4 @@ class Model(torch.nn.Module):
             output_tmp = self.output_layer[i](output_tmp)
             heads.append(output_tmp)
 
-        return heads
+        return torch.cat(heads, dim=1)

@@ -10,14 +10,16 @@ warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
 
+
 def get_new_name(name, column_name):
-    #clean regex
+    # clean regex
     claned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-    return f'threshold_{column_name}_{claned_name}'
+    return f"threshold_{column_name}_{claned_name}"
 
 
 def clean_name_for_logging(thresholds, column_name):
     return {get_new_name(key, column_name): value for key, value in thresholds.items()}
+
 
 def tagname_to_id(target):
     """
@@ -64,19 +66,16 @@ def custom_stratified_train_test_split(df, ratios):
     1) take unique sub-tags (example: ['Health'])
     2) For each unique subtag:
         i) take all indexes that have that specific subtag
-        ii) split them ransomly to train and test sets
-
-    NB: a bit time consuming ~ 950 entries/second in average
+        ii) split them randomly to train and test sets
     """
     train_ids = []
     val_ids = []
     positive_df = df.copy()
+    positive_df["target"] = positive_df["target"].apply(str)
+    ids = positive_df.groupby("target")["entry_id"].agg(list).values
+    unique_ids = [list(np.unique(list_)) for list_ in ids]
 
-    unique_entries = list(np.unique(positive_df["target"].apply(str)))
-    for entry in unique_entries:
-        ids_entry = list(
-            positive_df[positive_df.target.apply(str) == entry].entry_id.unique()
-        )
+    for ids_entry in unique_ids:
 
         train_ids_entry = random.sample(
             ids_entry, int(len(ids_entry) * ratios["train"])
@@ -114,22 +113,26 @@ def preprocess_df(
 
     dataset["target"] = dataset.target.apply(lambda x: clean_rows(x))
 
-    dataset['target'] = dataset.target.apply(
-        lambda x: [item for item in x if item!='NOT_MAPPED']
+    dataset["target"] = dataset.target.apply(
+        lambda x: [item for item in x if item != "NOT_MAPPED"]
     )
     if column_name == "sectors":
-        dataset = dataset[dataset.target.apply(
-            lambda x: "Cross" not in x
-        )]
+        dataset = dataset[dataset.target.apply(lambda x: "Cross" not in x)]
     if not multiclass_bool:
         dataset = dataset[dataset.target.apply(lambda x: len(x) == 1)]
     if not keep_neg_labels:
         dataset = dataset[dataset.target.apply(lambda x: len(x) > 0)]
 
-    ratios = {
-        "train": 0.85,
-        "val": 0.15,
-    }
+    if column_name == "sectors":
+        ratios = {
+            "train": 0.9,
+            "val": 0.1,
+        }
+    else:
+        ratios = {
+            "train": 0.85,
+            "val": 0.15,
+        }
 
     train_pos_entries, val_pos_entries = custom_stratified_train_test_split(
         dataset, ratios
@@ -187,23 +190,31 @@ def compute_weights(number_data_classes, n_tot):
     list of weights used for training
     """
     number_classes = 2
-    return [n_tot / (number_classes * number_data_class) for number_data_class in number_data_classes]
+    return [
+        n_tot / (number_classes * number_data_class)
+        for number_data_class in number_data_classes
+    ]
 
-def get_flat_labels (column_of_columns, tag_to_id, nb_subtags):
-    matrix = [[
-        1 if tag_to_id[i] in column else 0 for i in range (nb_subtags)
-    ] for column in column_of_columns]
+
+def get_flat_labels(column_of_columns, tag_to_id, nb_subtags):
+    matrix = [
+        [1 if tag_to_id[i] in column else 0 for i in range(nb_subtags)]
+        for column in column_of_columns
+    ]
     return np.array(flatten(matrix))
 
-    
-def get_preds_entry (preds_column, return_at_least_one=True, ratio_nb=1):
+
+def get_preds_entry(preds_column, return_at_least_one=True, ratio_nb=1):
     preds_entry = [
-        sub_tag for sub_tag in list(preds_column.keys()) if preds_column[sub_tag]>ratio_nb
+        sub_tag
+        for sub_tag in list(preds_column.keys())
+        if preds_column[sub_tag] > ratio_nb
     ]
     if return_at_least_one:
-        if len(preds_entry)==0:
+        if len(preds_entry) == 0:
             preds_entry = [
-                sub_tag for sub_tag in list(preds_column.keys())\
-                    if preds_column[sub_tag]==max(list(preds_column.values()))
+                sub_tag
+                for sub_tag in list(preds_column.keys())
+                if preds_column[sub_tag] == max(list(preds_column.values()))
             ]
     return preds_entry
