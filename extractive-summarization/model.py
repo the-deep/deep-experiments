@@ -5,11 +5,15 @@ import math
 
 
 class BasicModel(nn.Module):
-    def __init__(self, backbone, num_labels, slice_length):
+    def __init__(
+        self, backbone, tokenizer, num_labels, slice_length, extra_context_length
+    ):
         super().__init__()
 
         self.backbone = AutoModel.from_pretrained(backbone)
+        self.tokenizer = tokenizer
         self.slice_length = slice_length
+        self.extra_context_length = extra_context_length
         self.out_proj = nn.Linear(self.backbone.config.hidden_size, num_labels)
         self.num_labels = num_labels
 
@@ -21,10 +25,42 @@ class BasicModel(nn.Module):
         n_steps = int(input_ids.shape[1] / self.slice_length)
         batch_size, length = input_ids.shape
 
+        extra_context = torch.cat(
+            [
+                torch.full(
+                    (batch_size, self.extra_context_length),
+                    self.tokenizer.pad_token_id,
+                    device=input_ids.device,
+                ),
+                input_ids[:, : length - self.extra_context_length],
+            ],
+            1,
+        ).view(batch_size * n_steps, self.slice_length)[:, : self.extra_context_length]
+
         input_ids = input_ids.view((batch_size * n_steps, self.slice_length))
         attention_mask = attention_mask.view((batch_size * n_steps, self.slice_length))
 
-        hidden_state = self.backbone(input_ids, attention_mask=attention_mask).last_hidden_state
+        # add extra context
+        input_ids = torch.cat([extra_context, input_ids], 1)
+        attention_mask = torch.cat([torch.ones_like(extra_context), attention_mask], 1)
+        labels_mask = torch.cat(
+            [
+                torch.zeros_like(extra_context),
+                labels_mask.view((batch_size * n_steps, self.slice_length)),
+            ],
+            1,
+        )
+        labels = torch.cat(
+            [
+                torch.zeros_like(extra_context),
+                labels.view((batch_size * n_steps, self.slice_length)),
+            ],
+            1,
+        )
+
+        hidden_state = self.backbone(
+            input_ids, attention_mask=attention_mask
+        ).last_hidden_state
         logits = self.out_proj(hidden_state)
 
         if labels is not None:
@@ -42,7 +78,9 @@ class BasicModel(nn.Module):
 
             out_dict["loss"] = loss_fct(active_logits, active_labels)
 
-        out_dict["logits"] = logits.view((batch_size, length, self.num_labels))
+        out_dict["logits"] = logits[:, self.extra_context_length :].reshape(
+            (batch_size, length, self.num_labels)
+        )
         return out_dict
 
 
@@ -65,7 +103,9 @@ class RecurrentModel(nn.Module):
         for i in range(math.ceil(input_ids.shape[1] / self.slice_length)):
             start, end = i * self.slice_length, (i + 1) * self.slice_length
 
-            inputs_embeds = self.backbone.get_input_embeddings()(input_ids[:, start:end])
+            inputs_embeds = self.backbone.get_input_embeddings()(
+                input_ids[:, start:end]
+            )
             inputs_embeds[:, 0] = cls_token
 
             hidden_state = self.backbone(

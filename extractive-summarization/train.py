@@ -29,9 +29,10 @@ from rouge import Rouge
 class Args:
     model_name_or_path: str
     data_path: str
-    mode: str = "sentence"
-    max_full_length: int = 4096
-    max_length: int = 512
+    max_full_length: int
+    max_length: int
+    extra_context_length: int
+    mode: str = "token"
     n_subsample: int = None
 
 
@@ -405,7 +406,11 @@ def train(args, training_args):
     data = data.train_test_split(test_size=0.1, shuffle=True, seed=1234)
 
     model = BasicModel(
-        args.model_name_or_path, num_labels=2, slice_length=args.max_length
+        args.model_name_or_path,
+        tokenizer,
+        num_labels=2,
+        slice_length=args.max_length,
+        extra_context_length=args.extra_context_length,
     )
     # model.load_state_dict(torch.load("output/checkpoint-960/pytorch_model.bin"))
 

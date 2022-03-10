@@ -25,5 +25,5 @@
     "mode": "token",
     "max_full_length": 4096,
     "max_length": 256,
-    "extra_context_length": 128
+    "extra_context_length": 0
 }
