@@ -1,0 +1,7 @@
+tensorflow==2.5.0
+transformers==4.8.2
+pytorch-lightning==1.3.8
+torchmetrics==0.4.1
+tqdm==4.41.1
+scikit-learn
+scikit-multilearn==0.2.0
