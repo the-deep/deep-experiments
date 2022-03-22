@@ -17,7 +17,13 @@ from transformers import (
 import torch
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from tqdm.auto import tqdm
 from datasets import load_dataset
 from functools import partial
@@ -33,6 +39,7 @@ class Args:
     max_length: int
     extra_context_length: int
     mode: str = "token"
+    sentence_edit_threshold: int = math.inf
     n_subsample: int = None
 
 
@@ -49,7 +56,7 @@ def encode(sample, tokenizer, args):
     sentence_indices = [
         x["index"]
         for x in sample["excerpt_sentence_indices"]
-        if x["distance"] < math.inf
+        if x["distance"] < args.sentence_edit_threshold
     ]
 
     if len(sentences) > 0:
@@ -154,17 +161,37 @@ class Metrics:
     def compute_rouge(self, predicted_texts, true_texts):
         # bug in `rouge`: texts with only "." are treated as empty but not ignored
         evaluatable_pairs = [
-            (hyp, ref)
+            # lowercase because the model tokenizer might lowercase.
+            # in that case it is not trivial to get uppercase predictions
+            (hyp.lower(), ref.lower())
             for hyp, ref in zip(predicted_texts, true_texts)
             if len(hyp.replace(".", "")) > 0 and len(ref.replace(".", "")) > 0
         ]
+        n_empty_hypotheses = sum(
+            1
+            for hyp, ref in zip(predicted_texts, true_texts)
+            if (len(hyp.replace(".", "")) == 0) and len(ref.replace(".", "")) > 0
+        )
         if len(evaluatable_pairs) == 0:
             scores = {}
         else:
             hyps, refs = list(zip(*evaluatable_pairs))
-            scores = self.scorer.get_scores(hyps, refs, ignore_empty=True, avg=True)
-            # flattens the dict
-            scores = pd.json_normalize(scores, sep="/").to_dict(orient="records")[0]
+            all_scores = self.scorer.get_scores(
+                hyps, refs, ignore_empty=True, avg=False
+            )
+            # flattens the dicts
+            all_scores = [
+                pd.json_normalize(score, sep="/").to_dict(orient="records")[0]
+                for score in all_scores
+            ]
+
+            scores = {k: [0] * n_empty_hypotheses for k in all_scores[0].keys()}
+
+            for score in all_scores:
+                for key, value in score.items():
+                    scores[key].append(value)
+
+            scores = {k: np.mean(v) for k, v in scores.items()}
 
         return scores
 
@@ -175,7 +202,7 @@ class Metrics:
         if self.mode == "sentence":
             token_predictions = np.zeros(
                 (len(self.dataset), len(self.dataset["input_ids"][0]), 2),
-                dtype=np.int32,
+                dtype=np.float32,
             )
 
             predicted_indices = [
@@ -248,6 +275,12 @@ class Metrics:
             scores["sentence_f1_score"] = f1_score(
                 flat_sentence_labels, flat_sentence_predictions
             )
+            scores["sentence_recall"] = recall_score(
+                flat_sentence_labels, flat_sentence_predictions
+            )
+            scores["sentence_precision"] = precision_score(
+                flat_sentence_labels, flat_sentence_predictions
+            )
         else:
             token_predictions = results.predictions
 
@@ -278,22 +311,11 @@ class Metrics:
                 best_mask = attention_mask & ((labels == I_LABEL) | (labels == I_LABEL))
 
                 predicted_texts.append(
-                    "".join(
-                        # TODO: maybe there's a way to make this independent of the tokenizer
-                        ("" if self.tokenizer.decode(i).startswith("##") else " ")
-                        + text[start:end]
-                        for i, (start, end) in zip(
-                            input_ids[mask], offset_mapping[mask]
-                        )
-                    )
+                    self.tokenizer.decode(input_ids[mask], skip_special_tokens=True)
                 )
                 best_possible_predicted_texts.append(
-                    "".join(
-                        ("" if self.tokenizer.decode(i).startswith("##") else " ")
-                        + text[start:end]
-                        for i, (start, end) in zip(
-                            input_ids[best_mask], offset_mapping[best_mask]
-                        )
+                    self.tokenizer.decode(
+                        input_ids[best_mask], skip_special_tokens=True
                     )
                 )
 
@@ -336,6 +358,8 @@ class Metrics:
             flat_labels, flat_predictions
         )
         scores["token_f1_score"] = f1_score(flat_labels, flat_predictions)
+        scores["token_recall"] = recall_score(flat_labels, flat_predictions)
+        scores["token_precision"] = precision_score(flat_labels, flat_predictions)
 
         html = ""
 
@@ -403,7 +427,11 @@ def train(args, training_args):
     data = data.add_column("labels", data[f"{args.mode}_labels"])
     data = data.add_column("labels_mask", data[f"{args.mode}_labels_mask"])
 
-    data = data.train_test_split(test_size=0.1, shuffle=True, seed=1234)
+    datasets = {}
+    (train_indices,) = np.where(data["train"])
+    (eval_indices,) = np.where(~np.array(data["train"]))
+    datasets["train"] = data.select(train_indices)
+    datasets["test"] = data.select(eval_indices)
 
     model = BasicModel(
         args.model_name_or_path,
@@ -412,7 +440,7 @@ def train(args, training_args):
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
     )
-    # model.load_state_dict(torch.load("output/checkpoint-960/pytorch_model.bin"))
+    # model.load_state_dict(torch.load("output/checkpoint-5510/pytorch_model.bin"))
 
     if "wandb" in training_args.report_to and training_args.do_train:
         wandb.init(project="deep")
@@ -423,14 +451,17 @@ def train(args, training_args):
         training_args.report_to = []
 
     metrics = Metrics(
-        data["test"], tokenizer=tokenizer, mode=args.mode, training_args=training_args
+        datasets["test"],
+        tokenizer=tokenizer,
+        mode=args.mode,
+        training_args=training_args,
     )
 
     trainer = Trainer(
         model,
         training_args,
-        train_dataset=data["train"],
-        eval_dataset=data["test"],
+        train_dataset=datasets["train"],
+        eval_dataset=datasets["test"],
         compute_metrics=metrics,
     )
 
