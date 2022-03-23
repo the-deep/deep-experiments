@@ -41,7 +41,10 @@ def assess_performance (preds, groundtruth, subtags, column_name):
     df_results = pd.DataFrame.from_dict(results_dict, orient='index')
     if 'NOT_MAPPED' in df_results.index:
         df_results = df_results.drop('NOT_MAPPED')
-    df_results.loc[f'mean_{column_name}'] = df_results.mean()
+
+    df_results.sort_values(by='f1_score', ascending=True, inplace=True)
+    
+    df_results.loc[f'arithmetic mean {column_name}'] = df_results.mean()
         
     return df_results
 
