@@ -208,9 +208,7 @@ def flatten(lst):
 
 def main(args):
     if args.leads_dir_old is None:
-        leads_dir_old = Path(
-            "../data/frameworks_data/raw_data_excel_exports/dump/lead_previews/"
-        )
+        leads_dir_old = Path("../data/frameworks_data/raw_data_excel_exports/dump/lead_previews/")
     else:
         leads_dir_old = args.leads_dir_old
     if args.leads_dir_new is None:
@@ -221,9 +219,7 @@ def main(args):
     leads_df = pd.read_csv(args.leads_csv_path)
     train_df = pd.read_csv(args.excerpt_csv_path)
 
-    lead_tuples = set(
-        leads_df.apply(lambda row: (row["id"], row["project_id"]), axis=1)
-    )
+    lead_tuples = set(leads_df.apply(lambda row: (row["id"], row["project_id"]), axis=1))
     assert len(lead_tuples) == len(leads_df)
 
     for i, row in train_df.iterrows():
@@ -231,12 +227,8 @@ def main(args):
 
         assert lead_tuple in lead_tuples
 
-    leads_old = (
-        set(glob(str(leads_dir_old / "*.txt"))) if leads_dir_old is not None else set()
-    )
-    leads_new = (
-        set(glob(str(leads_dir_new / "*.txt"))) if leads_dir_new is not None else set()
-    )
+    leads_old = set(glob(str(leads_dir_old / "*.txt"))) if leads_dir_old is not None else set()
+    leads_new = set(glob(str(leads_dir_new / "*.txt"))) if leads_dir_new is not None else set()
 
     if "old" in args.dataset:
         leads = leads_old
@@ -283,8 +275,7 @@ def main(args):
                 full_texts[(lead_id, project_id)] = text
 
     has_text_mask = train_df.apply(
-        lambda row: (row["lead_id"], row["project_id"]) in full_texts,
-        axis=1,
+        lambda row: (row["lead_id"], row["project_id"]) in full_texts, axis=1,
     )
 
     print(f"Dropping {(~has_text_mask).sum()} excerpts with no full text.")
@@ -317,16 +308,14 @@ def main(args):
         for i in (0, -1, 1):
             for j in (0, 1, -1):
                 try:
-                    excerpt = full_text.encode("utf-8")[m[0] + i : m[1] + j].decode(
-                        "utf-8"
-                    )
+                    excerpt = full_text.encode("utf-8")[m[0] + i : m[1] + j].decode("utf-8")
                     break
                 except UnicodeDecodeError:
                     pass
             if excerpt is not None:
                 break
 
-        return excerpt
+        return (excerpt, row["excerpt"])
 
     fuzzy_matches = train_df[~exact_matches].progress_apply(find_fuzzy_match, axis=1)
 
@@ -364,19 +353,13 @@ def main(args):
 
             for sentence in doc.sents:
                 start = sentence[0].idx
-                end = (
-                    sentence[-1].idx
-                    + len(sentence[-1].text)
-                    + len(sentence[-1].whitespace_)
-                )
+                end = sentence[-1].idx + len(sentence[-1].text) + len(sentence[-1].whitespace_)
 
                 text = doc.text[start:end]
 
                 index = 0
                 for match in re.finditer("\n+", text):
-                    sentences.extend(
-                        self.sub_sentencize(text[index : match.end()], lang)
-                    )
+                    sentences.extend(self.sub_sentencize(text[index : match.end()], lang))
                     index = match.end()
 
                 if index != len(text):
@@ -409,8 +392,7 @@ def main(args):
 
     def process_batch(batch, f):
         all_sentences = sentencizer(
-            [example["text"] for example in batch],
-            [example["language"] for example in batch],
+            [example["text"] for example in batch], [example["language"] for example in batch],
         )
 
         for sentences, example in zip(all_sentences, batch):
@@ -425,9 +407,7 @@ def main(args):
                             [
                                 {
                                     "index": i,
-                                    "distance": rust_utils.levenshtein(
-                                        s, excerpt_sentence
-                                    ),
+                                    "distance": rust_utils.levenshtein(s, excerpt_sentence),
                                 }
                                 for i, s in enumerate(sentences)
                             ],
@@ -458,21 +438,17 @@ def main(args):
     out_path.parent.mkdir(exist_ok=True, parents=True)
 
     with open(out_path, "w") as f:
-        for (lead_id, project_id), group in tqdm(
-            train_df.groupby(["lead_id", "project_id"])
-        ):
+        for (lead_id, project_id), group in tqdm(train_df.groupby(["lead_id", "project_id"])):
             text = full_texts[(lead_id, project_id)]
             exact_group_matches = exact_matches[group.index]
 
-            excerpts = group[exact_group_matches]["excerpt"].tolist()
-            excerpts.extend(
-                fuzzy_matches[exact_group_matches[~exact_group_matches].index].dropna()
-            )
+            excerpts = group[exact_group_matches]["excerpt"].apply(lambda x: (x, x)).tolist()
+            excerpts.extend(fuzzy_matches[exact_group_matches[~exact_group_matches].index].dropna())
 
             raw_excerpts = group["excerpt"].tolist()
 
             for e in excerpts:
-                assert e in text
+                assert e[0] in text
 
             language = group["lang"].value_counts().index[0]
 
