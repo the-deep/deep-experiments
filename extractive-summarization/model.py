@@ -6,21 +6,36 @@ import math
 
 class BasicModel(nn.Module):
     def __init__(
-        self, backbone, tokenizer, num_labels, slice_length, extra_context_length
+        self,
+        backbone,
+        tokenizer,
+        num_labels,
+        token_loss_weight,
+        loss_weights,
+        slice_length,
+        extra_context_length,
     ):
         super().__init__()
 
         self.backbone = AutoModel.from_pretrained(backbone)
         self.tokenizer = tokenizer
-        self.slice_length = slice_length
-        self.extra_context_length = extra_context_length
         self.out_proj = nn.Linear(self.backbone.config.hidden_size, num_labels)
         self.num_labels = num_labels
+        self.token_loss_weight = token_loss_weight
+        self.slice_length = slice_length
+        self.extra_context_length = extra_context_length
+        self.loss_weights = torch.tensor(loss_weights).unsqueeze(0)
 
-    def forward(self, input_ids, attention_mask=None, labels=None, labels_mask=None):
+    def forward(
+        self,
+        input_ids,
+        attention_mask=None,
+        sentence_labels=None,
+        sentence_labels_mask=None,
+        token_labels=None,
+        token_labels_mask=None,
+    ):
         out_dict = {}
-
-        logits = []
 
         n_steps = int(input_ids.shape[1] / self.slice_length)
         batch_size, length = input_ids.shape
@@ -43,17 +58,40 @@ class BasicModel(nn.Module):
         # add extra context
         input_ids = torch.cat([extra_context, input_ids], 1)
         attention_mask = torch.cat([torch.ones_like(extra_context), attention_mask], 1)
-        labels_mask = torch.cat(
+
+        sentence_labels_mask = torch.cat(
             [
                 torch.zeros_like(extra_context),
-                labels_mask.view((batch_size * n_steps, self.slice_length)),
+                sentence_labels_mask.view((batch_size * n_steps, self.slice_length)),
             ],
             1,
         )
-        labels = torch.cat(
+        sentence_labels = torch.cat(
+            [
+                torch.zeros((*extra_context.shape, self.num_labels))
+                .type_as(sentence_labels)
+                .to(extra_context.device),
+                sentence_labels.view(
+                    (batch_size * n_steps, self.slice_length, self.num_labels)
+                ),
+            ],
+            1,
+        )
+        token_labels_mask = torch.cat(
             [
                 torch.zeros_like(extra_context),
-                labels.view((batch_size * n_steps, self.slice_length)),
+                token_labels_mask.view((batch_size * n_steps, self.slice_length)),
+            ],
+            1,
+        )
+        token_labels = torch.cat(
+            [
+                torch.zeros((*extra_context.shape, self.num_labels))
+                .type_as(token_labels)
+                .to(extra_context.device),
+                token_labels.view(
+                    (batch_size * n_steps, self.slice_length, self.num_labels)
+                ),
             ],
             1,
         )
@@ -63,20 +101,46 @@ class BasicModel(nn.Module):
         ).last_hidden_state
         logits = self.out_proj(hidden_state)
 
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            if labels_mask is not None:
-                active_loss = labels_mask.view(-1) == 1
+        if token_labels is not None:
+            loss_fct = nn.BCEWithLogitsLoss(reduction="none")
+            if token_labels_mask is not None:
+                active_loss = token_labels_mask.view(-1) == 1
             else:
                 active_loss = attention_mask.view(-1) == 1
             active_logits = logits.view(-1, self.num_labels)
-            active_labels = torch.where(
-                active_loss,
-                labels.view(-1),
-                torch.tensor(loss_fct.ignore_index).type_as(labels),
+            active_labels = token_labels.view(-1, self.num_labels)
+
+            token_loss = (
+                (
+                    loss_fct(active_logits, active_labels)
+                    * self.loss_weights.to(active_logits.device)
+                )
+                .mean(-1)[active_loss]
+                .mean()
             )
 
-            out_dict["loss"] = loss_fct(active_logits, active_labels)
+        if sentence_labels is not None:
+            loss_fct = nn.BCEWithLogitsLoss(reduction="none")
+            if sentence_labels_mask is not None:
+                active_loss = sentence_labels_mask.view(-1) == 1
+            else:
+                active_loss = attention_mask.view(-1) == 1
+            active_logits = logits.view(-1, self.num_labels)
+            active_labels = sentence_labels.view(-1, self.num_labels)
+
+            sentence_loss = (
+                (
+                    loss_fct(active_logits, active_labels)
+                    * self.loss_weights.to(active_logits.device)
+                )
+                .mean(-1)[active_loss]
+                .mean()
+            )
+
+        if token_labels is not None and sentence_labels is not None:
+            out_dict["loss"] = token_loss * self.token_loss_weight + sentence_loss * (
+                1 - self.token_loss_weight
+            )
 
         out_dict["logits"] = logits[:, self.extra_context_length :].reshape(
             (batch_size, length, self.num_labels)

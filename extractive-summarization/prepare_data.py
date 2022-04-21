@@ -11,9 +11,11 @@ import numpy as np
 import pandas as pd
 from tqdm.auto import tqdm
 from dataclasses import dataclass
-
+from functools import partial
 from transformers import HfArgumentParser
+from pandarallel import pandarallel
 
+pandarallel.initialize(progress_bar=True)
 tqdm.pandas()
 
 valid_ids = [
@@ -194,12 +196,69 @@ valid_ids = [
 
 @dataclass
 class Args:
-    dataset: str  # 'new', 'old' or 'old_matching' or 'new_matching'
+    dataset: str  # 'new"
     leads_csv_path: str = "../data/frameworks_data/data_v0.7.1/leads.csv"
     excerpt_csv_path: str = "../data/frameworks_data/data_v0.7.1/train_v0.7.1.csv"
-    leads_dir_old: str = None
-    leads_dir_new: str = None
+    lead_dirs: str = None
     out_path: str = None
+    n_subsample: int = None
+
+
+class Sentencizer:
+    def __init__(self):
+        model_names = {
+            "en": "en_core_web_sm",
+            "fr": "fr_core_news_sm",
+            "es": "es_core_news_sm",
+        }
+        self.models = {}
+        self.sub_models = {}
+
+        for lang, model_name in model_names.items():
+            model = spacy.load(model_name, disable=["parser", "ner"])
+            model.add_pipe("sentencizer")
+
+            self.models[lang] = model
+            try:
+                self.sub_models[lang] = NNSplit.load(lang)
+            except:
+                pass
+
+    def sub_sentencize(self, text, lang):
+        if lang in self.sub_models:
+            return [str(x) for x in self.sub_models[lang].split([text])[0]]
+        else:
+            return [str(text)]
+
+    def sentencize(self, doc, lang):
+        sentences = []
+
+        for sentence in doc.sents:
+            start = sentence[0].idx
+            end = (
+                sentence[-1].idx
+                + len(sentence[-1].text)
+                + len(sentence[-1].whitespace_)
+            )
+
+            text = doc.text[start:end]
+
+            index = 0
+            for match in re.finditer("\n+", text):
+                sentences.extend(self.sub_sentencize(text[index : match.end()], lang))
+                index = match.end()
+
+            if index != len(text):
+                sentences.extend(self.sub_sentencize(text[index:], lang))
+
+        return sentences
+
+    def __call__(self, text, language):
+        for model in self.models.values():
+            model.max_length = max(model.max_length, len(text))
+
+        nlp = self.models[language]
+        return self.sentencize(nlp(text), language)
 
 
 def flatten(lst):
@@ -207,19 +266,18 @@ def flatten(lst):
 
 
 def main(args):
-    if args.leads_dir_old is None:
-        leads_dir_old = Path("../data/frameworks_data/raw_data_excel_exports/dump/lead_previews/")
-    else:
-        leads_dir_old = args.leads_dir_old
-    if args.leads_dir_new is None:
-        leads_dir_new = Path("../texts/")
-    else:
-        leads_dir_new = args.leads_dir_new
-
     leads_df = pd.read_csv(args.leads_csv_path)
     train_df = pd.read_csv(args.excerpt_csv_path)
 
-    lead_tuples = set(leads_df.apply(lambda row: (row["id"], row["project_id"]), axis=1))
+    if args.n_subsample is not None:
+        train_df = train_df.sample(n=args.n_subsample, random_state=1234)
+
+    train_df["lead_id"] = train_df["lead_id"].astype(int)
+    train_df["project_id"] = train_df["project_id"].astype(int)
+
+    lead_tuples = set(
+        leads_df.apply(lambda row: (row["id"], row["project_id"]), axis=1)
+    )
     assert len(lead_tuples) == len(leads_df)
 
     for i, row in train_df.iterrows():
@@ -227,55 +285,46 @@ def main(args):
 
         assert lead_tuple in lead_tuples
 
-    leads_old = set(glob(str(leads_dir_old / "*.txt"))) if leads_dir_old is not None else set()
-    leads_new = set(glob(str(leads_dir_new / "*.txt"))) if leads_dir_new is not None else set()
+    sentencizer = Sentencizer()
 
-    if "old" in args.dataset:
-        leads = leads_old
-    else:
-        leads = leads_new
-
+    full_texts_languages = {
+        i: group["lang"].value_counts().index[0]
+        for i, group in train_df.groupby(["lead_id", "project_id"])
+    }
     full_texts = {}
+    full_texts_sentences = {}
+    bar = tqdm(total=len(full_texts_languages))
 
-    for i, row in tqdm(leads_df.iterrows()):
-        lead_id = row["id"]
-        project_id = row["project_id"]
+    for lead_dir in args.lead_dirs.split(","):
+        for project_dir in Path(lead_dir).iterdir():
+            if not project_dir.is_dir():
+                continue
 
-        old_name = f"leadid_{lead_id}_projectid_{project_id}_leadpreview.txt"
-        new_name = str(
-            Path(row["url"].rstrip("/").split("/")[-1]).with_suffix(".txt")
-            if row["url"] is not np.nan
-            else None
-        )
+            for path in project_dir.iterdir():
+                if not str(path).endswith(".txt"):
+                    continue
 
-        old_path = str(leads_dir_old / old_name) if leads_dir_old is not None else None
-        new_path = str(leads_dir_new / new_name) if leads_dir_new is not None else None
+                lead_id = int(path.name[: -len(".txt")])
+                project_id = int(project_dir.name)
 
-        if "old" in args.dataset:
-            path = old_path
-        else:
-            path = new_path
+                if (lead_id, project_id) not in full_texts_languages:
+                    continue
 
-        if args.dataset == "old_matching" and new_path not in leads_new:
-            continue
-
-        if args.dataset == "new_matching" and old_path not in leads_old:
-            continue
-
-        if path in leads:
-            if (lead_id, project_id) not in full_texts:
-                if "old" in args.dataset:
-                    text = open(path).read()
-                    text = re.sub("\n+", "\n", text)
-                else:
-                    text = "\n".join(
-                        line for line in open(path) if not line.startswith("*********")
-                    )
+                text = "".join(
+                    line
+                    for line in open(path).readlines()
+                    if not line.startswith("******")
+                )
 
                 full_texts[(lead_id, project_id)] = text
+                full_texts_sentences[(lead_id, project_id)] = sentencizer(
+                    text, full_texts_languages[(lead_id, project_id)]
+                )
+                bar.update(1)
 
     has_text_mask = train_df.apply(
-        lambda row: (row["lead_id"], row["project_id"]) in full_texts, axis=1,
+        lambda row: (row["lead_id"], row["project_id"]) in full_texts,
+        axis=1,
     )
 
     print(f"Dropping {(~has_text_mask).sum()} excerpts with no full text.")
@@ -288,7 +337,7 @@ def main(args):
 
         return row["excerpt"] in full_texts[(lead_id, project_id)]
 
-    exact_matches = train_df.progress_apply(exact_match, axis=1)
+    exact_matches = train_df.parallel_apply(exact_match, axis=1)
 
     def find_fuzzy_match(row):
         lead_id = row["lead_id"]
@@ -308,106 +357,38 @@ def main(args):
         for i in (0, -1, 1):
             for j in (0, 1, -1):
                 try:
-                    excerpt = full_text.encode("utf-8")[m[0] + i : m[1] + j].decode("utf-8")
+                    excerpt = full_text.encode("utf-8")[m[0] + i : m[1] + j].decode(
+                        "utf-8"
+                    )
                     break
                 except UnicodeDecodeError:
                     pass
             if excerpt is not None:
                 break
 
-        return (excerpt, row["excerpt"])
+        return (excerpt, row["entry_id"])
 
     fuzzy_matches = train_df[~exact_matches].progress_apply(find_fuzzy_match, axis=1)
 
-    class Sentencizer:
-        def __init__(self):
-            model_names = {
-                "en": "en_core_web_sm",
-                "fr": "fr_core_news_sm",
-                "es": "es_core_news_sm",
-            }
-            self.models = {}
-            self.sub_models = {}
-
-            max_length = max(len(text) for text in full_texts.values())
-
-            for lang, model_name in model_names.items():
-                model = spacy.load(model_name, disable=["parser", "ner"])
-                model.add_pipe("sentencizer")
-                model.max_length = max_length
-
-                self.models[lang] = model
-                try:
-                    self.sub_models[lang] = NNSplit.load(lang)
-                except:
-                    pass
-
-        def sub_sentencize(self, text, lang):
-            if lang in self.sub_models:
-                return [str(x) for x in self.sub_models[lang].split([text])[0]]
-            else:
-                return [str(text)]
-
-        def sentencize(self, doc, lang):
-            sentences = []
-
-            for sentence in doc.sents:
-                start = sentence[0].idx
-                end = sentence[-1].idx + len(sentence[-1].text) + len(sentence[-1].whitespace_)
-
-                text = doc.text[start:end]
-
-                index = 0
-                for match in re.finditer("\n+", text):
-                    sentences.extend(self.sub_sentencize(text[index : match.end()], lang))
-                    index = match.end()
-
-                if index != len(text):
-                    sentences.extend(self.sub_sentencize(text[index:], lang))
-
-            return sentences
-
-        def __call__(self, text, language):
-            if isinstance(text, str):
-                nlp = self.models[language]
-                return self.sentencize(nlp(text), language)
-            else:
-                text = np.array(text)
-                language = np.array(language)
-
-                sentences = [None for _ in range(len(text))]
-
-                for lang, model in self.models.items():
-                    indices = np.where(language == lang)[0]
-
-                    docs = model.pipe([str(t) for t in text[indices]])
-                    for i, doc in zip(indices, docs):
-                        sentences[i] = self.sentencize(doc, lang)
-
-                return sentences
-
-    sentencizer = Sentencizer()
-    batch = []
-    batch_size = 2
-
     def process_batch(batch, f):
-        all_sentences = sentencizer(
-            [example["text"] for example in batch], [example["language"] for example in batch],
-        )
+        all_sentences = [full_texts_sentences[example["id"]] for example in batch]
 
         for sentences, example in zip(all_sentences, batch):
             sentence_indices = []
 
             # could use either the raw excerpts or the fuzzily matched excerpts for matching on sentence-level
             # it probably does not make a big difference
-            for e in example["excerpts"]:
+            for e, e_source in example["excerpts"]:
                 for excerpt_sentence in sentencizer(e, example["language"]):
                     sentence_indices.append(
                         sorted(
                             [
                                 {
                                     "index": i,
-                                    "distance": rust_utils.levenshtein(s, excerpt_sentence),
+                                    "distance": rust_utils.levenshtein(
+                                        s, excerpt_sentence
+                                    ),
+                                    "source": e_source,
                                 }
                                 for i, s in enumerate(sentences)
                             ],
@@ -422,7 +403,10 @@ def main(args):
                         "text": example["text"],
                         "sentences": sentences,
                         "excerpt_sentence_indices": sentence_indices,
-                        "excerpts": example["excerpts"],
+                        "excerpts": [
+                            {"text": e, "source": e_source}
+                            for e, e_source in example["excerpts"]
+                        ],
                         "raw_excerpts": example["raw_excerpts"],
                         "train": example["train"],
                     }
@@ -430,29 +414,26 @@ def main(args):
                 + "\n"
             )
 
-    if args.out_path == None:
-        out_path = Path(f"{args.dataset}.json")
-    else:
-        out_path = Path(args.out_path)
+    def process_group(group, f):
+        lead_id, project_id = group.name
 
-    out_path.parent.mkdir(exist_ok=True, parents=True)
+        text = full_texts[(lead_id, project_id)]
+        exact_group_matches = exact_matches[group.index]
 
-    with open(out_path, "w") as f:
-        for (lead_id, project_id), group in tqdm(train_df.groupby(["lead_id", "project_id"])):
-            text = full_texts[(lead_id, project_id)]
-            exact_group_matches = exact_matches[group.index]
+        excerpts = group[exact_group_matches][["excerpt", "entry_id"]].values.tolist()
+        excerpts.extend(
+            fuzzy_matches[exact_group_matches[~exact_group_matches].index].dropna()
+        )
 
-            excerpts = group[exact_group_matches]["excerpt"].apply(lambda x: (x, x)).tolist()
-            excerpts.extend(fuzzy_matches[exact_group_matches[~exact_group_matches].index].dropna())
+        raw_excerpts = group["excerpt"].tolist()
 
-            raw_excerpts = group["excerpt"].tolist()
+        for e, _ in excerpts:
+            assert e in text
 
-            for e in excerpts:
-                assert e[0] in text
+        language = group["lang"].value_counts().index[0]
 
-            language = group["lang"].value_counts().index[0]
-
-            batch.append(
+        process_batch(
+            [
                 {
                     "id": (int(lead_id), int(project_id)),
                     "text": text,
@@ -461,13 +442,21 @@ def main(args):
                     "raw_excerpts": raw_excerpts,
                     "train": [int(lead_id), int(project_id)] not in valid_ids,
                 }
-            )
+            ],
+            f,
+        )
 
-            if len(batch) >= batch_size:
-                process_batch(batch, f)
-                batch = []
+    if args.out_path is None:
+        out_path = Path(f"{args.dataset}.json")
+    else:
+        out_path = Path(args.out_path)
 
-        process_batch(batch, f)
+    out_path.parent.mkdir(exist_ok=True, parents=True)
+
+    with open(out_path, "w") as f:
+        train_df.groupby(["lead_id", "project_id"]).progress_apply(
+            partial(process_group, f=f)
+        )
 
 
 if __name__ == "__main__":

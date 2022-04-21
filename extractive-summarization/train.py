@@ -1,13 +1,13 @@
 from bdb import Breakpoint
 from calendar import c
 import sys
-import json
 import wandb
 import math
-
+import os
+import pickle
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from transformers.hf_argparser import HfArgumentParser
 from transformers import (
     AutoTokenizer,
@@ -29,25 +29,36 @@ from datasets import load_dataset
 from functools import partial
 from model import BasicModel, RecurrentModel
 from rouge import Rouge
+from typing import List
 
 
 @dataclass
 class Args:
     model_name_or_path: str
     data_path: str
+    excerpts_csv_path: str
     max_full_length: int
     max_length: int
     extra_context_length: int
-    mode: str = "token"
+    token_loss_weight: float = 1.0
     sentence_edit_threshold: int = math.inf
     n_subsample: int = None
+    loss_weights: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
 
 
-O_LABEL = 0
-I_LABEL = 1
+label_names = ["is_relevant", "has_sectors", "has_subpillars_1d", "has_subpillars_2d"]
 
 
-def encode(sample, tokenizer, args):
+def get_label_vector(entry_id, excerpts_dict):
+    label = np.zeros(len(label_names))
+
+    for i, l in enumerate(label_names):
+        label[i] = float(excerpts_dict[entry_id][l])
+
+    return label
+
+
+def encode(sample, tokenizer, args, excerpts_dict):
     sentences = sample["sentences"]
     text = sample["text"]
 
@@ -55,6 +66,11 @@ def encode(sample, tokenizer, args):
 
     sentence_indices = [
         x["index"]
+        for x in sample["excerpt_sentence_indices"]
+        if x["distance"] < args.sentence_edit_threshold
+    ]
+    sentence_labels_list = [
+        get_label_vector(x["source"], excerpts_dict)
         for x in sample["excerpt_sentence_indices"]
         if x["distance"] < args.sentence_edit_threshold
     ]
@@ -103,9 +119,12 @@ def encode(sample, tokenizer, args):
     attention_mask[np.where(input_ids != tokenizer.pad_token_id)] = 1
 
     # token labels
-    token_labels = torch.full((args.max_full_length,), O_LABEL, dtype=torch.long)
+    token_labels = np.zeros((args.max_full_length, len(label_names)))
 
-    for e in sample["excerpts"]:
+    for excerpt in sample["excerpts"]:
+        e = excerpt["text"]
+        e_source = excerpt["source"]
+
         start_index = text.index(e)
         end_index = start_index + len(e)
 
@@ -118,23 +137,33 @@ def encode(sample, tokenizer, args):
 
         for i, offset in enumerate(offset_mapping):
             if is_in_excerpt(offset):
+                label = get_label_vector(e_source, excerpts_dict)
+
                 if i == 0 or not is_in_excerpt(offset_mapping[i - 1]):
-                    token_labels[i] = I_LABEL
+                    # the token is at the boundary, could be encoded differently (i.e B- and I-)
+                    # but currently encoded the same
+                    token_labels[i] = label
                 else:
-                    token_labels[i] = I_LABEL
+                    token_labels[i] = label
 
     token_labels_mask = attention_mask.copy()
     token_labels_mask[np.where(input_ids == tokenizer.sep_token_id)] = 0
     token_labels_mask[np.where(input_ids == tokenizer.cls_token_id)] = 0
 
     # sentence labels
-    sentence_labels = np.zeros(args.max_full_length, dtype=np.int32)
+    sentence_labels = np.zeros((args.max_full_length, len(label_names)))
     sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
 
     sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
     sentence_indices_in_ids = [i for i in sentence_indices if i < len(sep_positions)]
+    sentence_labels_in_ids = [
+        label
+        for i, label in zip(sentence_indices, sentence_labels_list)
+        if i < len(sep_positions)
+    ]
 
-    sentence_labels[sep_positions[sentence_indices_in_ids]] = I_LABEL
+    if len(sentence_indices_in_ids) > 0:
+        sentence_labels[sep_positions[sentence_indices_in_ids]] = sentence_labels_in_ids
     sentence_labels_mask[sep_positions] = 1
 
     return {
@@ -149,13 +178,12 @@ def encode(sample, tokenizer, args):
 
 
 class Metrics:
-    def __init__(self, dataset, tokenizer, mode, training_args):
+    def __init__(self, dataset, tokenizer, training_args=None):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.scorer = Rouge(metrics=["rouge-1", "rouge-2", "rouge-l"])
 
         self.called = False
-        self.mode = mode
         self.training_args = training_args
 
     def compute_rouge(self, predicted_texts, true_texts):
@@ -195,133 +223,122 @@ class Metrics:
 
         return scores
 
-    def __call__(self, results):
+    def get_metrics_for_label(
+        self, results, label_index, threshold, max_n_visualize, visualize_out
+    ):
         true_texts = [" ".join(sentences) for sentences in self.dataset["raw_excerpts"]]
         scores = {}
 
-        if self.mode == "sentence":
-            token_predictions = np.zeros(
-                (len(self.dataset), len(self.dataset["input_ids"][0]), 2),
-                dtype=np.float32,
-            )
+        results.predictions[:] = torch.sigmoid(
+            torch.from_numpy(results.predictions).float()
+        ).numpy()
 
-            predicted_indices = [
-                np.where(
-                    (predictions.argmax(-1) == I_LABEL)[np.array(labels_mask) == 1]
-                )[0]
+        ## sentence metrics
+        predicted_indices = [
+            np.where(
+                (predictions[..., label_index] >= threshold)[np.array(labels_mask) == 1]
+            )[0]
+            for predictions, labels_mask in zip(
+                results.predictions, self.dataset["sentence_labels_mask"]
+            )
+        ]
+        true_indices = [
+            np.where(
+                (np.array(labels)[..., label_index] == 1)[np.array(labels_mask) == 1]
+            )[0]
+            for labels, labels_mask in zip(
+                self.dataset["sentence_labels"], self.dataset["sentence_labels_mask"]
+            )
+        ]
+        predicted_texts = [
+            " ".join(sentences[i] for i in indices)
+            for sentences, indices in zip(self.dataset["sentences"], predicted_indices)
+        ]
+        best_possible_predicted_texts = [
+            " ".join(sentences[i] for i in indices)
+            for sentences, indices in zip(self.dataset["sentences"], true_indices)
+        ]
+
+        flat_sentence_predictions = np.concatenate(
+            [
+                predictions[np.array(labels_mask).astype(bool), label_index]
+                >= threshold
                 for predictions, labels_mask in zip(
-                    results.predictions, self.dataset["labels_mask"]
+                    results.predictions, self.dataset["sentence_labels_mask"]
                 )
             ]
-
-            for i, (predictions, labels_mask, labels) in enumerate(
-                zip(
-                    results.predictions,
-                    self.dataset["labels_mask"],
-                    self.dataset["labels"],
-                )
-            ):
-                prev_j = 1  # zero is cls token
-                for j in np.where(labels_mask)[0]:
-                    token_predictions[i, prev_j:j] = predictions[j]
-                    prev_j = j + 1  # skip sep token
-
-            true_indices = [
-                np.where((np.array(labels) == I_LABEL)[np.array(labels_mask) == 1])[0]
-                for labels, labels_mask in zip(
-                    self.dataset["labels"], self.dataset["labels_mask"]
+        )
+        flat_sentence_labels = np.concatenate(
+            [
+                np.array(labels)[np.array(mask).astype(bool), label_index]
+                for labels, mask in zip(
+                    self.dataset["sentence_labels"],
+                    self.dataset["sentence_labels_mask"],
                 )
             ]
-            predicted_texts = [
-                " ".join(sentences[i] for i in indices)
-                for sentences, indices in zip(
-                    self.dataset["sentences"], predicted_indices
-                )
-            ]
-            best_possible_predicted_texts = [
-                " ".join(sentences[i] for i in indices)
-                for sentences, indices in zip(self.dataset["sentences"], true_indices)
-            ]
+        )
 
-            flat_sentence_predictions = np.concatenate(
-                [
-                    predictions[np.array(labels_mask).astype(bool)].argmax(-1)
-                    for predictions, labels_mask in zip(
-                        results.predictions, self.dataset["sentence_labels_mask"]
-                    )
-                ]
-            )
-            flat_sentence_labels = np.concatenate(
-                [
-                    np.array(labels)[np.array(mask).astype(bool)]
-                    for labels, mask in zip(
-                        self.dataset["sentence_labels"],
-                        self.dataset["sentence_labels_mask"],
-                    )
-                ]
+        if not self.called:
+            scores["sentence_baseline_accuracy"] = accuracy_score(
+                flat_sentence_labels, np.zeros_like(flat_sentence_labels)
             )
 
-            if not self.called:
-                scores["sentence_baseline_accuracy"] = accuracy_score(
-                    flat_sentence_labels, np.zeros_like(flat_sentence_labels)
-                )
+        scores["sentence_accuracy"] = accuracy_score(
+            flat_sentence_labels, flat_sentence_predictions
+        )
+        scores["sentence_balanced_accuracy"] = balanced_accuracy_score(
+            flat_sentence_labels, flat_sentence_predictions
+        )
+        scores["sentence_f1_score"] = f1_score(
+            flat_sentence_labels, flat_sentence_predictions
+        )
+        scores["sentence_recall"] = recall_score(
+            flat_sentence_labels, flat_sentence_predictions
+        )
+        scores["sentence_precision"] = precision_score(
+            flat_sentence_labels, flat_sentence_predictions
+        )
 
-            scores["sentence_accuracy"] = accuracy_score(
-                flat_sentence_labels, flat_sentence_predictions
-            )
-            scores["sentence_balanced_accuracy"] = balanced_accuracy_score(
-                flat_sentence_labels, flat_sentence_predictions
-            )
-            scores["sentence_f1_score"] = f1_score(
-                flat_sentence_labels, flat_sentence_predictions
-            )
-            scores["sentence_recall"] = recall_score(
-                flat_sentence_labels, flat_sentence_predictions
-            )
-            scores["sentence_precision"] = precision_score(
-                flat_sentence_labels, flat_sentence_predictions
-            )
-        else:
-            token_predictions = results.predictions
+        ## token predictions
+        token_predictions = results.predictions
 
-            predicted_texts = []
-            best_possible_predicted_texts = []
+        predicted_texts = []
+        best_possible_predicted_texts = []
 
-            for (
-                text,
-                input_ids,
-                attention_mask,
-                offset_mapping,
-                predictions,
-                labels,
-            ) in zip(
-                self.dataset["text"],
-                self.dataset["input_ids"],
-                self.dataset["attention_mask"],
-                self.dataset["offset_mapping"],
-                token_predictions,
-                self.dataset["labels"],
-            ):
-                attention_mask = np.array(attention_mask).astype(bool)
-                labels = np.array(labels)
-                input_ids = np.array(input_ids)
-                offset_mapping = np.array(offset_mapping)
+        for (
+            text,
+            input_ids,
+            attention_mask,
+            offset_mapping,
+            predictions,
+            labels,
+        ) in zip(
+            self.dataset["text"],
+            self.dataset["input_ids"],
+            self.dataset["attention_mask"],
+            self.dataset["offset_mapping"],
+            token_predictions,
+            self.dataset["token_labels"],
+        ):
+            attention_mask = np.array(attention_mask).astype(bool)
+            labels = np.array(labels)
+            input_ids = np.array(input_ids)
+            offset_mapping = np.array(offset_mapping)
 
-                mask = attention_mask & ((predictions.argmax(-1) == I_LABEL))
-                best_mask = attention_mask & ((labels == I_LABEL) | (labels == I_LABEL))
+            mask = attention_mask & ((predictions[..., label_index] >= threshold))
+            best_mask = attention_mask & ((labels[..., label_index] == 1))
 
-                predicted_texts.append(
-                    self.tokenizer.decode(input_ids[mask], skip_special_tokens=True)
-                )
-                best_possible_predicted_texts.append(
-                    self.tokenizer.decode(
-                        input_ids[best_mask], skip_special_tokens=True
-                    )
-                )
+            predicted_texts.append(
+                self.tokenizer.decode(input_ids[mask], skip_special_tokens=True)
+            )
+            best_possible_predicted_texts.append(
+                self.tokenizer.decode(input_ids[best_mask], skip_special_tokens=True)
+            )
 
         flat_predictions = np.concatenate(
             [
-                predictions[np.array(labels_mask).astype(bool)].argmax(-1)
+                predictions[np.array(labels_mask).astype(bool), label_index]
+                >= threshold
                 for predictions, labels_mask in zip(
                     token_predictions, self.dataset["token_labels_mask"]
                 )
@@ -330,7 +347,7 @@ class Metrics:
 
         flat_labels = np.concatenate(
             [
-                np.array(labels)[np.array(mask).astype(bool)]
+                np.array(labels)[np.array(mask).astype(bool), label_index]
                 for labels, mask in zip(
                     self.dataset["token_labels"], self.dataset["token_labels_mask"]
                 )
@@ -372,12 +389,10 @@ class Metrics:
             )
         ):
             # otherwise HTML gets too large
-            if i >= 10:
+            if max_n_visualize is not None and i >= max_n_visualize:
                 break
 
-            probs = torch.softmax(torch.from_numpy(predictions).to(torch.float32), -1)[
-                :, I_LABEL
-            ]
+            probs = predictions[..., label_index]
 
             html += f"<h2>Text #{i} - ID {id}</h2>"
             html += "<p>"
@@ -403,12 +418,30 @@ class Metrics:
             html += "/<p>"
 
         html = html.replace("\n", "<br>")
-        if "wandb" in self.training_args.report_to:
+        if self.training_args is not None and "wandb" in self.training_args.report_to:
             wandb.log({"highlighted_texts": wandb.Html(html)})
+        if visualize_out is not None:
+            open(visualize_out, "w").write(html)
 
         print("METRICS:", scores)
 
         return scores
+
+    def __call__(self, results, threshold=0.5, max_n_visualize=10, visualize_out=None):
+        all_scores = {}
+
+        for label_name in label_names:
+            scores = self.get_metrics_for_label(
+                results,
+                label_names.index(label_name),
+                threshold,
+                max_n_visualize,
+                visualize_out,
+            )
+
+            all_scores.update({f"{label_name}/{k}": v for k, v in scores.items()})
+
+        return all_scores
 
 
 def train(args, training_args):
@@ -418,29 +451,49 @@ def train(args, training_args):
         split="train" if args.n_subsample is None else f"train[:{args.n_subsample}]",
     )
 
+    if os.path.exists("excerpts_dict.pkl"):
+        with open("excerpts_dict.pkl", "rb") as f:
+            excerpts_dict = pickle.load(f)
+    else:
+        excerpts_df = pd.read_csv(args.excerpts_csv_path)
+        excerpts_df["has_sectors"] = excerpts_df["sectors"].apply(eval).apply(len) > 0
+        excerpts_df["has_subpillars_1d"] = (
+            excerpts_df["subpillars_1d"].apply(eval).apply(len) > 0
+        )
+        excerpts_df["has_subpillars_2d"] = (
+            excerpts_df["subpillars_2d"].apply(eval).apply(len) > 0
+        )
+        excerpts_df["is_relevant"] = 1
+        excerpts_dict = {}
+        for _, row in excerpts_df.iterrows():
+            excerpts_dict[row["entry_id"]] = {
+                k: v for k, v in row.to_dict().items() if k in label_names
+            }
+        pickle.dump(excerpts_dict, open("excerpts_dict.pkl", "wb"))
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
     data = data.map(
-        partial(encode, tokenizer=tokenizer, args=args),
+        partial(encode, tokenizer=tokenizer, args=args, excerpts_dict=excerpts_dict),
         num_proc=training_args.dataloader_num_workers,
     )
-    data = data.add_column("labels", data[f"{args.mode}_labels"])
-    data = data.add_column("labels_mask", data[f"{args.mode}_labels_mask"])
 
     datasets = {}
-    (train_indices,) = np.where(data["train"])
-    (eval_indices,) = np.where(~np.array(data["train"]))
+    train_indices, eval_indices = train_test_split(
+        np.arange(len(data)), test_size=0.1, shuffle=True, random_state=1234
+    )
     datasets["train"] = data.select(train_indices)
     datasets["test"] = data.select(eval_indices)
 
     model = BasicModel(
         args.model_name_or_path,
         tokenizer,
-        num_labels=2,
+        num_labels=len(label_names),
+        token_loss_weight=args.token_loss_weight,
+        loss_weights=args.loss_weights,
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
     )
-    # model.load_state_dict(torch.load("output/checkpoint-5510/pytorch_model.bin"))
 
     if "wandb" in training_args.report_to and training_args.do_train:
         wandb.init(project="deep")
@@ -450,10 +503,11 @@ def train(args, training_args):
     else:
         training_args.report_to = []
 
+    training_args.label_names = ["token_labels", "sentence_labels"]
+
     metrics = Metrics(
         datasets["test"],
         tokenizer=tokenizer,
-        mode=args.mode,
         training_args=training_args,
     )
 
