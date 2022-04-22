@@ -34,3 +34,8 @@ You can find an example of deployment in the repo.
 - The key of the deployment is creating a class that inherits from `mlflow.pyfunc.PythonModel` with a `predict()` function.
 - That class is pickled and logged as artifact of the training. At inference time it will be used to make predictions.
 
+Additionally, consider the following for more configurable deployment:
+
+- *Dynamic inference parameters*: Store inference hyperparameters (e.g., batch size or thresholds) as a separate artifact in MLFlow.  Use `artifacts` options in `log_model` and then retrieve the file using the `context` object provided by the MLFlow in `load_context` or `predict`.
+- *Multiple outputs*: `predict` function can return a Pandas DataFrame object. Employ it if the model has multiple targets or for providing logits scores for dynamic threshold adjusting on the client-side.
+- *Serving labels*: Log a separate artifact in MLFlow for the client-side to map predictions back to human-readable labels.

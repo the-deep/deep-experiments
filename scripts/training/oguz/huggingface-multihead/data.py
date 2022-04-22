@@ -1,34 +1,24 @@
 import logging
 from ast import literal_eval
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
-from utils import revdict
+from utils import revdict, read_dataframe
 
 
-class MultiHeadDataFrame(Dataset):
-    """Creates a PyTorch dataset out of a Pandas DataFrame
+class TextDataFrame(Dataset):
+    """Creates a PyTorch dataset out of a text field inside a Pandas DataFrame.
 
     Args:
-        dataframe: path to a DataFrame or directly a DataFrame
+        dataframe: path to a DataFrame or a DataFrame
         tokenizer: tokenizer to pre-process source text
         source: textual source field that will be the input of models
-        target: target classification field that will be the output of models
-        groups: transforms target into a multi-target (each multi-label)
-            that is, each sample is associated with 2D one-hot target matrix
-        group_names: name assoaciated with each classification head
-        filter: (None, str, List of strings) filter dataset according
-            to given group. `None` uses all of the data points. Single str key
-            uses all data points with at least one target key value. If a list of
-            strings is given, each key is used to check positivity of the sample,
-            e.g., ['sector', 'pillar2d'] checks whether the data point has at
-            least one target in `sector` or in `pillar2d` fields.
-        flatten: flatten group targets to 1D for convenience
         online: online or offline tokenization
+        tokenizer_max_len: maximum output length for the tokenizer
     """
 
     def __init__(
@@ -36,15 +26,9 @@ class MultiHeadDataFrame(Dataset):
         dataframe: Union[str, pd.DataFrame],
         tokenizer: PreTrainedTokenizer,
         source: str = "excerpt",
-        target: str = "target",
-        groups: Optional[List[List[str]]] = None,
-        group_names: Optional[List[str]] = None,
-        filter: Optional[Union[str, List[str]]] = None,
-        flatten: bool = True,
         online: bool = False,
+        tokenizer_max_len: Optional[int] = None,
     ):
-        self.group_names = group_names
-        self.flatten = flatten
         self.tokenizer = tokenizer
         self.online = online
         self.logger = logging.getLogger()
@@ -52,37 +36,116 @@ class MultiHeadDataFrame(Dataset):
         # read dataframe manually if given as path
         if isinstance(dataframe, str):
             self.logger.info(f"Loading dataframe: {dataframe}")
-            dataframe = pd.read_pickle(dataframe)
+            dataframe = read_dataframe(dataframe)
+
+        # prepare tokenizer options
+        self.tokenizer_options = {
+            "truncation": True,
+            "padding": True,
+        }
+        if tokenizer_max_len:
+            self.tokenizer_options.update(
+                {
+                    "padding": "max_length",
+                    "max_length": min(tokenizer_max_len, tokenizer.model_max_length),
+                }
+            )
+            if tokenizer.model_max_length < tokenizer_max_len:
+                self.logger.info(
+                    f"Using maximum model length: {tokenizer.model_max_length} instead"
+                    f"of given length: {tokenizer_max_len}"
+                )
+
+        # save data as exceprt
+        self.data = dataframe[source].tolist()
+        self.data_len = len(self.data)
+
+        if not self.online:
+            # tokenize and save source data
+            self.logger.info("Applying offline tokenization")
+            self.data = tokenizer(self.data, **self.tokenizer_options)
+
+    def __len__(self):
+        return self.data_len
+
+    def __getitem__(self, idx):
+        if self.online:
+            data = self.tokenizer(self.data[idx : idx + 1], **self.tokenizer_options)
+            item = {key: torch.tensor(val[0]) for key, val in data.items()}
+        else:
+            item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
+
+        return item
+
+
+class MultiTargetDataFrame(Dataset):
+    """Creates a PyTorch dataset out of a field containing list of labels
+    for a multi-label classification problem out of a Pandas DataFrame.
+
+
+    Args:
+        dataframe: path to a DataFrame or a DataFrame
+        target: target classification field that will be the output of models
+        groups: transforms target into a multi-target problem (each multi-label)
+            that is, each sample is associated with 2D one-hot target matrix
+            e.g., 6 label classification with two groups: [A, B, C], [D, E, F]
+        group_names: name assoaciated with each classification head
+            e.g., 2 group names: ABC and DEF
+        exclude: (None, List of strings, List of List of strings) omit the given
+            targets. For multi-target classification, expects a list with
+            elements of lists.
+        flatten: flatten targets to 1D for convenience
+        iterative: include group targets on top of regular targets
+    """
+
+    def __init__(
+        self,
+        dataframe: Union[str, pd.DataFrame],
+        target: str = "target",
+        groups: Optional[List[List[str]]] = None,
+        group_names: Optional[List[str]] = None,
+        exclude: Optional[Union[str, List[str]]] = None,
+        flatten: bool = True,
+        iterative: bool = True,
+    ):
+        # process groups
+        if groups is not None:
+            if group_names is not None:
+                assert len(groups) == len(
+                    group_names
+                ), f"Group names '{group_names}' should be at equal length with groups '{groups}'"
+            else:
+                group_names = [f"Group {i}" for i in range(len(groups))]
+        else:
+            assert flatten, "Use flatten if no group information is provided"
+
+        self.groups = groups
+        self.group_names = group_names
+        self.flatten = flatten
+        self.iterative = iterative
+        self.logger = logging.getLogger()
+
+        # read dataframe manually if given as path
+        if isinstance(dataframe, str):
+            self.logger.info(f"Loading dataframe: {dataframe}")
+            dataframe = read_dataframe(dataframe)
 
         # apply literal eval to have lists in target
-        dataframe[target] = dataframe[target].apply(literal_eval)
+        if not isinstance(dataframe[target].iloc[0], list):
+            dataframe[target] = dataframe[target].apply(literal_eval)
 
-        # cast filter to array
-        if isinstance(filter, str):
-            filter = [filter]
+        # omit the given exclude labels
+        if exclude:
+            if isinstance(exclude, str):
+                exclude = [exclude]
 
-        # filter data frame
-        if filter is not None:
-            pos = np.zeros(len(dataframe), dtype=np.bool)
-            for f in filter:
-                pos |= np.array([len(item) > 0 for item in dataframe[f].tolist()], dtype=np.bool)
-            dataframe = dataframe[pos]
-            self.logger.info(f"Filtered data points with non-empty (or) {','.join(filter)} values")
+            dataframe[target] = [
+                [label for label in labels if label not in exclude]
+                for labels in dataframe[target].tolist()
+            ]
 
-        if self.online:
-            # save data as exceprt
-            self.data = dataframe[source].tolist()
-        else:
-            # tokenize and save source data
-            self.logger.info(f"Applying offline tokenization")
-            self.data = tokenizer(dataframe[source].tolist(), truncation=True, padding=True)
-
-        # prepare target encoding
-        all_targets = np.hstack(dataframe[target].to_numpy())
-        uniq_targets = np.unique(all_targets)
-
-        # cluster into groups
         if groups:
+            # process given groups
             self.group_encoding = {t: idx for idx, group in enumerate(groups) for t in group}
             self.group_decoding = {idx: group for idx, group in enumerate(groups)}
 
@@ -90,21 +153,80 @@ class MultiHeadDataFrame(Dataset):
             self.target_decoding = [revdict(encoding) for encoding in self.target_encoding]
             self.target_classes = [len(encoding.keys()) for encoding in self.target_encoding]
         else:
+            assert not self.iterative, "Provide groups if iterative labels are asked"
+
+            # prepare target encoding
+            all_targets = np.hstack(dataframe[target].to_numpy())
+            uniq_targets = np.unique(all_targets)
+
+            # single group encoding - decoding
             self.group_encoding = {t: 0 for t in uniq_targets}
             self.group_decoding = {0: uniq_targets}
+            self.groups = [uniq_targets.tolist()]
+            self.group_names = ["ALL"]
 
             self.target_encoding = {t: idx for idx, t in enumerate(uniq_targets)}
             self.target_encoding = revdict(self.target_encoding)
             self.target_classes = [len(self.target_encoding.keys())]
 
-        self.logger.info(f"Automatically set target encodings: {self.target_encoding}")
-        self.logger.info(f"Target size: [{self.target_classes}]")
+            self.logger.info(f"Using target encodings: {self.target_encoding}")
+            self.logger.info(f"Target size: [{self.target_classes}]")
 
         # prepare targets
         self.target = [self.onehot_encode(ts) for ts in dataframe[target].tolist()]
+        self.data_len = len(self.target)
 
+        # prepare group targets
         if groups:
             self.group = [self.group_encode(ts) for ts in dataframe[target].tolist()]
+
+    def __len__(self):
+        return self.data_len
+
+    def __getitem__(self, idx):
+        item = {}
+
+        if self.flatten:
+            item["labels"] = torch.tensor(self.target[idx])
+        else:
+            item.update(
+                {
+                    f"labels_{self.group_names[i]}": torch.tensor(self.target[idx][i])
+                    for i in range(len(self.target_classes))
+                }
+            )
+
+        if self.iterative:
+            item["groups"] = torch.tensor(self.group[idx])
+
+        return item
+
+    def label_names(self) -> List[str]:
+        """Return label names"""
+        return self[0].keys()
+
+    def compute_stats(self) -> Dict[str, int]:
+        """Computes occurences of each target and group"""
+
+        counts = {}
+        classes = [target for group in self.groups for target in group]
+        if self.flatten:
+            sums = np.sum(np.stack(self.target, axis=-1), axis=-1)
+            counts.update({c: s for c, s in zip(classes, sums.tolist())})
+        else:
+            for i, _ in enumerate(self.group_names):
+                targets = [target[i] for target in self.target]
+                sums = np.sum(np.stack(targets, axis=-1), axis=-1)
+                counts.update({c: s for c, s in zip(self.groups[i], sums)})
+
+        for i, group_name in enumerate(self.group_names):
+            counts.update(
+                {group_name: np.sum(np.array([counts[group] for group in self.groups[i]]))}
+            )
+        counts.update(
+            {"ALL": np.sum(np.array([counts[group_name] for group_name in self.group_names]))}
+        )
+        return counts
 
     def group_encode(self, targets: List[str]) -> np.ndarray:
         """Encodes given targets to group representation"""
@@ -155,27 +277,163 @@ class MultiHeadDataFrame(Dataset):
             if onehot[i][j] == 1
         ]
 
-    def __len__(self):
-        return len(self.target)
 
-    def __getitem__(self, idx):
-        if self.online:
-            data = self.tokenizer(self.data[idx : idx + 1], truncation=True, padding=True)
-            item = {key: torch.tensor(val[0]) for key, val in data.items()}
-        else:
-            item = {key: torch.tensor(val[idx]) for key, val in self.data.items()}
+class MultiHeadDataFrame(Dataset):
+    """Creates a PyTorch dataset out of a Pandas DataFrame that supports
+    multi-head classification tasks where each fine-grained label belongs
+    to a super-category or a group.
 
-        if self.flatten:
-            item["labels"] = torch.tensor(self.target[idx])
-        else:
-            item.update(
-                {
-                    f"labels_{self.group_names[i]}": torch.tensor(self.target[idx][i])
-                    for i in range(len(self.target_classes))
-                }
+
+    Args:
+        dataframe: path to a DataFrame or a DataFrame
+        tokenizer: tokenizer to pre-process source text
+        source: textual source field that will be the input of models
+        targets: target classification fields that will be the output of models
+        groups: transforms target into a multi-target (each multi-label)
+            that is, each sample is associated with 2D one-hot target matrix
+        group_names: name assoaciated with each classification head
+        filter: (None, str, List of strings) filter dataset according
+            to given group. `None` uses all of the data points. Single str key
+            uses all data points with at least one target key value. If a list of
+            strings is given, each key is used to check positivity of the sample,
+            e.g., ['sector', 'pillar2d'] checks whether the data point has at
+            least one target in `sector` or in `pillar2d` fields.
+        exclude: (None, List of strings, List of List of strings) omit the given
+            targets. For multi-target classification, expects a list with
+            elements of lists.
+        flatten: flatten group targets to 1D for convenience
+        iterative: include group targets on top of regular targets
+        online: online or offline tokenization
+        inference: if True, does not process target or groups
+        tokenizer_max_len: maximum output length for the tokenizer
+    """
+
+    def __init__(
+        self,
+        dataframe: Union[str, pd.DataFrame],
+        tokenizer: PreTrainedTokenizer,
+        source: str = "excerpt",
+        targets: Union[str, List[str]] = "target",
+        groups: Optional[Union[List[List[str]], List[List[List[str]]]]] = None,
+        group_names: Optional[Union[List[str], List[List[str]]]] = None,
+        exclude: Optional[List[str]] = None,
+        filter: Optional[Union[str, List[str]]] = None,
+        flatten: bool = True,
+        iterative: bool = True,
+        online: bool = False,
+        inference: bool = False,
+        tokenizer_max_len: Optional[int] = None,
+    ):
+        self.logger = logging.getLogger()
+        self.flatten = flatten
+        self.iterative = iterative
+
+        if online:
+            # ensure that we are in training
+            assert not inference, "Online tokenization is only supported in training-time"
+
+        # read dataframe manually if given as path
+        if isinstance(dataframe, str):
+            self.logger.info(f"Loading dataframe: {dataframe}")
+            dataframe = read_dataframe(dataframe)
+
+        # cast filter to array
+        if isinstance(filter, str):
+            filter = [filter]
+
+        # filter data frame
+        if filter is not None:
+            pos = np.zeros(len(dataframe), dtype=np.bool)
+            for f in filter:
+                # apply literal eval to have lists
+                dataframe[f] = dataframe[f].apply(literal_eval)
+
+                # get positive fields
+                pos |= np.array([len(item) > 0 for item in dataframe[f].tolist()], dtype=np.bool)
+
+            # filter negative rows
+            dataframe = dataframe[pos]
+            self.logger.info(
+                f"Filtered data points with non-empty {','.join(filter)} values"
+                "(using 'or' if multiple fields)"
             )
 
-        if self.group is not None:
-            item["groups"] = torch.tensor(self.group[idx])
+        # prepare text source data
+        self.data = TextDataFrame(
+            dataframe=dataframe,
+            tokenizer=tokenizer,
+            source=source,
+            online=online,
+            tokenizer_max_len=tokenizer_max_len,
+        )
+        self.data_len = self.data.data_len
+        self.tokenizer_options = self.data.tokenizer_options
+
+        # prepare targets
+        if isinstance(targets, str):
+            # assert isinstance(groups, List[List[str]]), "Expecting `groups` to be a list of lists"
+            # assert isinstance(group_names, List[str]), "Expecting `group_names` to be a list"
+
+            targets = [targets]
+            groups = [groups]
+            group_names = [group_names]
+            self.single = True
+        else:
+            # assert isinstance(
+            #    groups, List[List[List[str]]]
+            # ), "Expecting `groups` to be a list of lists of lists"
+            # assert isinstance(
+            #    group_names, List[List[str]]
+            # ), "Expecting `group_names` to be a list of lists"
+            self.single = False
+
+        # set defaults for groups, group_names and exclude
+        if groups is None:
+            groups = [None for _ in targets]
+            group_names = [None for _ in targets]
+
+        self.tasks = targets
+        self.targets = []
+        if not inference:
+            for _target, _groups, _group_names in zip(targets, groups, group_names):
+                self.targets.append(
+                    MultiTargetDataFrame(
+                        dataframe=dataframe,
+                        target=_target,
+                        groups=_groups,
+                        group_names=_group_names,
+                        exclude=exclude,
+                        flatten=flatten,
+                        iterative=iterative,
+                    )
+                )
+                assert len(self.data) == len(
+                    self.targets[-1]
+                ), "Text source and target have different lengths!"
+
+    def __len__(self):
+        return self.data_len
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+
+        if self.single:
+            item.update(self.targets[0][idx])
+        else:
+            for task, target in zip(self.tasks, self.targets):
+                item.update({(f"{task}_" + k): v for k, v in target[idx].items()})
 
         return item
+
+    def label_names(self) -> List[str]:
+        """Return label names"""
+        data_keys = self.data[0].keys()
+        return [key for key in self[0].keys() if key not in data_keys]
+
+    def compute_stats(self) -> Dict[str, int]:
+        """Computes occurences of each target and group"""
+
+        counts = {}
+        for task, target in zip(self.tasks, self.targets):
+            counts[task] = target.compute_stats()
+        return counts

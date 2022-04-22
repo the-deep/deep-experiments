@@ -1,51 +1,3 @@
-PILLARS_1D = [
-    "Context",
-    "Humanitarian Profile",
-    "Displacement",
-    "Casualties",
-    "Humanitarian Access",
-    "Information",
-]
-
-SUBPILLARS_1D = [
-    [
-        "Context->Security & Stability",
-        "Context->Demography",
-        "Context->Economy",
-        "Context->Hazard & Threats",
-        "Context->Politics",
-        "Context->Overview",
-        "Context->Key Event",
-        "Context->Socio Cultural",
-        "Context->Legal  & Policy",
-        "Context->Environment",
-        "Context->Stakeholders",
-        "Context->Response gap",
-    ],
-    [
-        "Humanitarian Profile->Affected Groups",
-        "Humanitarian Profile->Casualties",
-        "Humanitarian Profile->Population Movement",
-    ],
-    [
-        "Displacement->Push/Pull Factors",
-        "Displacement->Type/Numbers",
-        "Displacement->Local Integration",
-        "Displacement->Intentions",
-        "Displacement->Displacement",
-    ],
-    ["Casualties->Dead", "Casualties->Injured", "Casualties->Missing"],
-    [
-        "Humanitarian Access->Physical Constraints",
-        "Humanitarian Access->Humanitarian Access Gaps",
-    ],
-    [
-        "Information->Information Gaps",
-        "Information->Channels & Means",
-        "Information->Information Challenges",
-    ],
-]
-
 SECTORS = [
     "Agriculture",
     "Cross",
@@ -60,12 +12,72 @@ SECTORS = [
     "WASH",
 ]
 
+PILLARS_1D = [
+    "Context",
+    "Shock/Event",
+    "Casualties",
+    "Displacement",
+    "Humanitarian Access",
+    "Information And Communication",
+    "Covid-19",
+]
+
+SUBPILLARS_1D = [
+    [
+        "Context->Demography",
+        "Context->Economy",
+        "Context->Environment",
+        "Context->Security & Stability",
+        "Context->Socio Cultural",
+        "Context->Legal & Policy",
+        "Context->Politics",
+        "Context->Technological",
+    ],
+    [
+        "Shock/Event->Type And Characteristics",
+        "Shock/Event->Underlying/Aggravating Factors",
+        "Shock/Event->Hazard & Threats",
+    ],
+    ["Casualties->Dead", "Casualties->Injured", "Casualties->Missing"],
+    [
+        "Displacement->Type/Numbers/Movements",
+        "Displacement->Push Factors",
+        "Displacement->Pull Factors",
+        "Displacement->Intentions",
+        "Displacement->Local Integration",
+    ],
+    [
+        "Humanitarian Access->Relief To Population",
+        "Humanitarian Access->Population To Relief",
+        "Humanitarian Access->Physical Constraints",
+        (
+            "Humanitarian Access->Number Of People Facing Humanitarian Access Constraints"
+            "/Humanitarian Access Gaps"
+        ),
+    ],
+    [
+        "Information And Communication->Information Challenges And Barriers",
+        "Information And Communication->Communication Means And Preferences",
+        "Information And Communication->Knowledge And Info Gaps (Pop)",
+        "Information And Communication->Knowledge And Info Gaps (Hum)",
+    ],
+    [
+        "Covid-19->Cases",
+        "Covid-19->Deaths",
+        "Covid-19->Testing",
+        "Covid-19->Contact Tracing",
+        "Covid-19->Hospitalization & Care",
+        "Covid-19->Vaccination",
+        "Covid-19->Restriction Measures",
+    ],
+]
+
 PILLARS_2D = [
     "Humanitarian Conditions",
     "Capacities & Response",
     "Impact",
     "Priority Interventions",
-    "People At Risk",
+    "At Risk",
     "Priority Needs",
 ]
 
@@ -73,21 +85,19 @@ SUBPILLARS_2D = [
     [
         "Humanitarian Conditions->Coping Mechanisms",
         "Humanitarian Conditions->Living Standards",
-        "Humanitarian Conditions->Number Of People In Need",
         "Humanitarian Conditions->Physical And Mental Well Being",
+        "Humanitarian Conditions->Number Of People In Need",
     ],
     [
         "Capacities & Response->International Response",
         "Capacities & Response->National Response",
-        "Capacities & Response->Number Of People Reached",
-        "Capacities & Response->Response Gaps",
+        "Capacities & Response->Local Response",
+        "Capacities & Response->Number Of People Reached/Response Gaps",
     ],
     [
         "Impact->Driver/Aggravating Factors",
         "Impact->Impact On People",
-        "Impact->Impact On People Or Impact On Services",
-        "Impact->Impact On Services",
-        "Impact->Impact On Systems And Services",
+        "Impact->Impact On Systems, Services And Networks",
         "Impact->Number Of People Affected",
     ],
     [
@@ -95,8 +105,8 @@ SUBPILLARS_2D = [
         "Priority Interventions->Expressed By Population",
     ],
     [
-        "People At Risk->Number Of People At Risk",
-        "People At Risk->Risk And Vulnerabilities",
+        "At Risk->Risk And Vulnerabilities",
+        "At Risk->Number Of People At Risk",
     ],
     [
         "Priority Needs->Expressed By Humanitarian Staff",

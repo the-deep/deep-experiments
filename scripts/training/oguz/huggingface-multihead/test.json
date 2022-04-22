@@ -1,0 +1,42 @@
+[
+    {
+        "predictions": {
+            "subpillars_2d": {
+                "subpillar #1": 0.25,
+                "subpillar #2": 0.75
+            },
+            "subpillars_1d": {
+                "subpillar #1": 0.25,
+                "subpillar #2": 0.75
+            }
+        },
+        "confidence": {
+            "subpillars_2d": {
+                "subpillar #1": 1.0,
+                "subpillar #2": 0.8
+            },
+            "subpillars_1d": {
+                "subpillar #1": 1.0,
+                "subpillar #2": 0.8
+            }
+        }
+    },
+    {
+        "predictions": {
+            "subpillars_2d": {
+                "subpillar #1": 0.25,
+                "subpillar #2": 0.75
+            }
+        },
+        "confidence": {
+            "subpillars_2d": {
+                "subpillar #1": 1.0,
+                "subpillar #2": 0.8
+            },
+            "subpillars_1d": {
+                "subpillar #1": 1.0,
+                "subpillar #2": 0.8
+            }
+        }
+    }
+]

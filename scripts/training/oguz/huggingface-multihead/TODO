@@ -1,8 +1,0 @@
-1. Training logic
-2. MLFlow hyperparameters logging
-2. MLFlow artifact logging
-3. Tensorboard training + evaluation logging artifacts
-4. HuggingFace: skip_memory_metrics
-5. Check Selim's notebook for tricks on optimizer, scheduler, etc.
-6. AUC-ROC
-7. Not logging parameters I have set?
