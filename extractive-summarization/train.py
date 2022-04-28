@@ -371,7 +371,6 @@ class Metrics:
             scores["token_baseline_accuracy"] = accuracy_score(
                 flat_labels, np.zeros_like(flat_labels)
             )
-            self.called = True
 
         scores["token_accuracy"] = accuracy_score(flat_labels, flat_predictions)
         scores["token_balanced_accuracy"] = balanced_accuracy_score(
@@ -422,7 +421,9 @@ class Metrics:
 
         html = html.replace("\n", "<br>")
         if self.training_args is not None and "wandb" in self.training_args.report_to:
-            wandb.log({"highlighted_texts": wandb.Html(html)})
+            wandb.log(
+                {f"highlighted_texts_{label_names[label_index]}": wandb.Html(html)}
+            )
         if visualize_out is not None:
             open(visualize_out, "w").write(html)
 
@@ -460,6 +461,8 @@ class Metrics:
             )
 
             all_scores.update({f"{label_name}/{k}": v for k, v in scores.items()})
+
+        self.called = True
 
         return all_scores
 
