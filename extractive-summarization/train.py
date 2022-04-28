@@ -32,6 +32,15 @@ from rouge import Rouge
 from typing import List
 
 
+label_names = [
+    "is_relevant",
+    "has_sectors",
+    "has_subpillars_1d",
+    "has_subpillars_2d",
+    "has_other",
+]
+
+
 @dataclass
 class Args:
     model_name_or_path: str
@@ -43,10 +52,10 @@ class Args:
     token_loss_weight: float = 1.0
     sentence_edit_threshold: int = math.inf
     n_subsample: int = None
-    loss_weights: List[float] = field(default_factory=lambda: [1.0, 0.0, 0.0, 0.0])
-
-
-label_names = ["is_relevant", "has_sectors", "has_subpillars_1d", "has_subpillars_2d"]
+    compute_relevant_with_or: bool = False
+    loss_weights: List[float] = field(
+        default_factory=lambda: [1.0] + [0.0] * (1 - len(label_names))
+    )
 
 
 def get_label_vector(entry_id, excerpts_dict):
@@ -75,13 +84,10 @@ def encode(sample, tokenizer, args, excerpts_dict):
         if x["distance"] < args.sentence_edit_threshold
     ]
 
-    if len(sentences) > 0:
-        encoding = tokenizer(
-            sentences, add_special_tokens=False, return_offsets_mapping=True
-        )
-    else:
-        # TODO: empty texts should be removed in preprocessing
-        encoding = {"input_ids": [], "offset_mapping": []}
+    encoding = tokenizer(
+        sentences, add_special_tokens=False, return_offsets_mapping=True
+    )
+
     input_ids = [tokenizer.cls_token_id]
     offset_mapping = [(0, 0)]
 
@@ -178,12 +184,13 @@ def encode(sample, tokenizer, args, excerpts_dict):
 
 
 class Metrics:
-    def __init__(self, dataset, tokenizer, training_args=None):
+    def __init__(self, dataset, tokenizer, args=None, training_args=None):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.scorer = Rouge(metrics=["rouge-1", "rouge-2", "rouge-l"])
 
         self.called = False
+        self.args = args
         self.training_args = training_args
 
     def compute_rouge(self, predicted_texts, true_texts):
@@ -430,10 +437,23 @@ class Metrics:
     def __call__(self, results, threshold=0.5, max_n_visualize=10, visualize_out=None):
         all_scores = {}
 
-        for label_name in label_names:
+        # only compute metrics for relevancy since it takes quite some time
+        for label_name in label_names[:1]:
+            idx = label_names.index(label_name)
+
+            if (
+                label_name == "is_relevant"
+                and self.args is not None
+                and self.args.compute_relevant_with_or
+            ):
+                other_idx = sorted(set(np.arange(len(label_names))) - {idx})
+                results.predictions[..., idx] = results.predictions[..., other_idx].max(
+                    axis=-1
+                )
+
             scores = self.get_metrics_for_label(
                 results,
-                label_names.index(label_name),
+                idx,
                 threshold,
                 max_n_visualize,
                 visualize_out,
@@ -450,6 +470,7 @@ def train(args, training_args):
         data_files=args.data_path,
         split="train" if args.n_subsample is None else f"train[:{args.n_subsample}]",
     )
+    data = data.filter(lambda x: len(x["excerpts"]) > 0)
 
     if os.path.exists("excerpts_dict.pkl"):
         with open("excerpts_dict.pkl", "rb") as f:
@@ -464,6 +485,11 @@ def train(args, training_args):
             excerpts_df["subpillars_2d"].apply(eval).apply(len) > 0
         )
         excerpts_df["is_relevant"] = 1
+        excerpts_df["has_other"] = ~(
+            excerpts_df["has_sectors"]
+            | excerpts_df["has_subpillars_1d"]
+            | excerpts_df["has_subpillars_2d"]
+        )
         excerpts_dict = {}
         for _, row in excerpts_df.iterrows():
             excerpts_dict[row["entry_id"]] = {
@@ -480,7 +506,7 @@ def train(args, training_args):
 
     datasets = {}
     train_indices, eval_indices = train_test_split(
-        np.arange(len(data)), test_size=0.1, shuffle=True, random_state=1234
+        np.arange(len(data)), test_size=0.01, shuffle=True, random_state=1234
     )
     datasets["train"] = data.select(train_indices)
     datasets["test"] = data.select(eval_indices)
@@ -506,9 +532,7 @@ def train(args, training_args):
     training_args.label_names = ["token_labels", "sentence_labels"]
 
     metrics = Metrics(
-        datasets["test"],
-        tokenizer=tokenizer,
-        training_args=training_args,
+        datasets["test"], tokenizer=tokenizer, training_args=training_args, args=args
     )
 
     trainer = Trainer(
