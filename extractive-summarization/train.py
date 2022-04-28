@@ -236,10 +236,6 @@ class Metrics:
         true_texts = [" ".join(sentences) for sentences in self.dataset["raw_excerpts"]]
         scores = {}
 
-        results.predictions[:] = torch.sigmoid(
-            torch.from_numpy(results.predictions).float()
-        ).numpy()
-
         ## sentence metrics
         predicted_indices = [
             np.where(
@@ -437,8 +433,12 @@ class Metrics:
     def __call__(self, results, threshold=0.5, max_n_visualize=10, visualize_out=None):
         all_scores = {}
 
+        results.predictions[:] = torch.sigmoid(
+            torch.from_numpy(results.predictions).float()
+        ).numpy()
+
         # only compute metrics for relevancy since it takes quite some time
-        for label_name in label_names[:1]:
+        for label_name in label_names:
             idx = label_names.index(label_name)
 
             if (
