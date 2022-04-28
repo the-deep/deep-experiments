@@ -54,7 +54,7 @@ class Args:
     n_subsample: int = None
     compute_relevant_with_or: bool = False
     loss_weights: List[float] = field(
-        default_factory=lambda: [1.0] + [0.0] * (1 - len(label_names))
+        default_factory=lambda: [1.0] + [0.0] * (len(label_names) - 1)
     )
 
 
