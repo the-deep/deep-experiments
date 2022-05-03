@@ -9,6 +9,29 @@ from sentence_transformers import SentenceTransformer
 from googletrans import Translator
 import json
 
+import re
+from nltk.corpus import stopwords
+stop_words = set(stopwords.words())
+
+sectors_list = [
+    'Shelter',
+    'Food Security',
+    'Agriculture',
+    'Education',
+    'Health',
+    'Logistics',
+    'Protection',
+    'Livelihoods',
+    'WASH',
+    'Nutrition']
+
+affected_groups_list = ['Asylum Seekers', 'Host', 'IDP', 'Migrants', 'Refugees','Returnees']
+
+#TODO: CLUSTERING WITH FIXED NUMBER OF CLUSTERS TO BE ABLE TO GENERATE LONGER TEXT
+
+def flatten(t):
+    return [item for sublist in t for item in sublist]
+
 def custom_eval(x):
     if str(x)=='nan':
         return []
@@ -36,7 +59,7 @@ def build_graph(cosine_similarity_matrix):
     return graph_one_lang
 
 def get_number_of_clusters(n_entries: int):
-    return min((n_entries // 10) + 1, 4)
+    return min((n_entries // 10) + 1, 3)
  
 def process_df_one_part(df: pd.DataFrame, col_name: str):
     
@@ -81,17 +104,16 @@ def get_similarity_matrix(texts):
 def t2t_generation(entries: str, english_returns: bool):
 
     if english_returns:
-        en_entries = translate_sentence(entries)
+        #en_entries = translate_sentence(entries)
         MODEL_NAME = 'sshleifer/distilbart-cnn-12-6'
         model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
         tokenizer = BartTokenizer.from_pretrained(MODEL_NAME)
 
-        inputs = tokenizer([en_entries], return_tensors="pt")
+        inputs = tokenizer([entries], return_tensors="pt")
 
         # Generate Summary
         summary_ids = model.generate(inputs["input_ids"], num_beams=4, num_beam_groups=2)
         summarized_entries = tokenizer.batch_decode(summary_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-
 
     else:
         tokenizer = T5Tokenizer.from_pretrained("t5-large")
@@ -104,10 +126,18 @@ def t2t_generation(entries: str, english_returns: bool):
 
     return summarized_entries
 
-def translate_sentence(excerpt: str, destination_language: str = 'en'):
+def translate_sentence(excerpt: str):
     translator = Translator()
-    result = translator.translate(excerpt, dest=destination_language)
+    result = translator.translate(excerpt, dest='en')
     return result.text
+
+def clean_excerpt(excerpt):
+
+    # lower and remove punctuation
+    new_excerpt = re.sub(r'[^\w\s]', '', excerpt).lower()
+    # omit stop words
+    new_excerpt = ' '.join([word for word in new_excerpt.split(' ') if word not in stop_words])
+    return new_excerpt
 
 def get_summary_one_row(row, en_summary):
 
@@ -115,18 +145,19 @@ def get_summary_one_row(row, en_summary):
     function used for getting summary for one task
     """
     
-    original_excerpt = row.excerpt
+    original_excerpts = row.excerpt
     severity_scores = row.severity_scores
     #top_n_sentences = row.n_clusters
 
-    cosine_similarity_matrix = get_similarity_matrix(original_excerpt)
+    cleaned_excerpts = [clean_excerpt(one_excerpt) for one_excerpt in original_excerpts]
+    cosine_similarity_matrix = get_similarity_matrix(cleaned_excerpts)
 
     graph_one_lang = build_graph(cosine_similarity_matrix)
 
     scores_pagerank = nx.pagerank(graph_one_lang)
     scores = {key: value * severity_scores[key] for key, value in scores_pagerank.items()}
 
-    top_n_sentence_ids = np.argsort(np.array(list(scores.values())))[::-1][:25]
+    top_n_sentence_ids = np.argsort(np.array(list(scores.values())))[-10:]
     """used_ids = []
     final_summary = []
     for id_tmp in top_n_sentence_ids:
@@ -144,7 +175,7 @@ def get_summary_one_row(row, en_summary):
         capitalized_summaries = ' '.join([sent.capitalize() for sent in nltk.tokenize.sent_tokenize(summarized_entries)])
         final_summary.append(capitalized_summaries)"""
 
-    ranked_sentence = ' '.join([original_excerpt[id_tmp] for id_tmp in (top_n_sentence_ids)]) 
+    ranked_sentence = ' '.join([original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]) 
     summarized_entries = t2t_generation(ranked_sentence, en_summary)
     """sentences = nltk.tokenize.sent_tokenize(summarized_entries)
     final_summary_str = ' '.join([sent.capitalize() for sent in sentences])"""
@@ -163,15 +194,12 @@ def order_dict(x):
         return x
 
 def get_summary_one_part(df, col_name: str, en_summary):
-
-    print(f'BEGIN {col_name}')
     
     preprocessed_df = process_df_one_part(df, col_name)
 
     final_returns = {}
     for index, row in preprocessed_df.iterrows():
         tag_tmp = row.tmp_tag_str
-        print(f'For: {tag_tmp}:')
         summarized_text = get_summary_one_row(row, en_summary)
         print(summarized_text)
         final_returns[tag_tmp] = summarized_text
@@ -179,12 +207,12 @@ def get_summary_one_part(df, col_name: str, en_summary):
     return order_dict(final_returns)
 
 def get_report_relation_other_sectors(df, en_summary):
-    many_tags_df = df[df.n_sectors>1].copy()
+    many_tags_df = df[
+        (df.n_sectors>1) &
+        (df.n_secondary_tags!=1)
+        ].copy()
     many_tags_df['sectors'] = many_tags_df.sectors.apply(
-        lambda x: preprocesss_row(
-            [item for item in x if item!='Cross'], 
-            2
-            )
+        lambda x: preprocesss_row(x, 2)
     )
     #two_sectors_df = many_tags_df[many_tags_df.sectors.apply(lambda x: len(x)==2)]
     return get_summary_one_part(many_tags_df, 'sectors', en_summary)
@@ -195,17 +223,23 @@ def preprocesss_row(tags: List[str], n_tags: int):
     else:
         return tags
 
-def get_report_relation_affected_pops(df, en_summary):
+def get_report_secondary_tags(df, en_summary):
 
-    final_dict = {}
-    for col_tmp in ['age', 'specific_needs_groups', 'affected_groups']:
-        df[col_tmp] = df[col_tmp].apply(lambda x: preprocesss_row(x, 1))
-        final_dict.update(get_summary_one_part(df.copy(), col_tmp, en_summary))
+    df_secondary_tags = df[
+        (df.n_sectors==1) & 
+        (df.secondary_tags.apply(lambda x: len(x)>0)) 
+    ].copy()
 
-    return final_dict
+    df_secondary_tags['secondary_tags'] = df_secondary_tags['secondary_tags'].apply(lambda x: preprocesss_row(x, 1))
+
+    return get_summary_one_part(df_secondary_tags, 'secondary_tags', en_summary)
 
 def get_report_hum_needs(df, en_summary):
-    hum_conds_df = df[df.pillars_2d.apply(lambda x: 'Humanitarian Conditions' in x)].copy()
+    hum_conds_df = df[
+        (df.pillars_2d.apply(lambda x: 'Humanitarian Conditions' in x)) &
+        (df.n_sectors==1) &
+        (df.n_secondary_tags!=1)].copy()
+
     hum_conds_df['pillars_1d_no_casualties'] = hum_conds_df.pillars_1d.apply(
         lambda x: preprocesss_row(
             list(set([item for item in x if item!='Casualties'])),
@@ -235,28 +269,175 @@ def preprocess_df(df):
         lambda x: len(x)
     )
     df['severity_scores'] = df['severity'].apply(lambda x: get_severity_score(x))
+    df['secondary_tags'] = df.apply(
+        lambda x: flatten(
+            [f'{col}->{x[col]}' for col in ['affected_groups_level_3', 'specific_needs_groups', 'age']]
+        ), axis=1
+    )
+    df['n_secondary_tags'] = df.secondary_tags.apply(
+        lambda x: len(x)
+    )
+    df['n_affected_groups'] = df.affected_groups.apply(
+        lambda x: len(x)
+    )
 
-def get_report(full_df, tag: str, project_id: int, en_summary: bool = True, save_summary: bool = True):
+def get_report_one_sector(one_project_df: pd.DataFrame, tag: str, en_summary: bool):
     """
-    main function to get full report
+    section 3 each one
     """
-    
-    df_one_sector = full_df[(full_df.project_id==project_id) & (full_df.sectors.apply(lambda x: tag in x))].copy()    
-    preprocess_df(df_one_sector)
+    df_one_sector = one_project_df[one_project_df.sectors.apply(lambda x: tag in x)].copy()
 
-    summaries = {}
+    summaries_one_sector = {}
     
     # secondary tags
-    summaries['affected_specific'] = get_report_relation_affected_pops(df_one_sector, en_summary)
+    summaries_one_sector['Most affected population groups'] = get_report_secondary_tags(df_one_sector, en_summary)
     
     # key trends
-    summaries['key_trends'] = get_report_hum_needs(df_one_sector, en_summary)
+    summaries_one_sector['Key trends'] = get_report_hum_needs(df_one_sector, en_summary)
 
     #relation to other sectors
-    summaries['other_sectors'] = get_report_relation_other_sectors(df_one_sector, en_summary)
+    summaries_one_sector['Needs, severity and linkages with other sectors'] = get_report_relation_other_sectors(df_one_sector, en_summary)
+
+    return summaries_one_sector
+
+def get_report_shocks_impacts(df_one_project, en_summary):
+    """
+    section 1.2
+    """
+    summary = {}
+    impact_df = df_one_project[
+        df_one_project.pillars_2d.apply(lambda x: 'Impact' in x)
+    ].copy()
+
+    # Impact on people
+    impact_people_df = impact_df[
+        impact_df.subpillars_2d.apply(lambda x: 'Impact->Impact On People' in x)
+        ].copy()
+    impact_people_df['sectors'] = impact_people_df['sectors'].apply(lambda x: preprocesss_row(x, 1))
+    summary['Impact on people'] = get_summary_one_part(impact_people_df, 'sectors', en_summary)
+
+    # Impact on systems and services
+    impact_systems_services_df = impact_df[
+        impact_df.subpillars_2d.apply(lambda x: 'Impact->Impact On Systems, Services And Networks' in x)
+        ].copy()
+    impact_systems_services_df['sectors'] = impact_systems_services_df['sectors'].apply(lambda x: preprocesss_row(x, 1))
+    summary['Impact on systems and services'] = get_summary_one_part(impact_systems_services_df, 'sectors', en_summary)
+
+    # Humanitarian Access, TODO: ADD NUMBERS HERE!!
+    hum_access_df = df_one_project[
+        df_one_project.pillars_1d.apply(lambda x: 'Humanitarian Access' in x)
+        ].copy()
+    hum_access_df['non_number_hum_access'] = hum_access_df['subpillars_1d'].apply(
+        lambda x: preprocesss_row(
+                [item for item in x if item in [
+                    'Humanitarian Access->Physical Constraints',
+                    'Humanitarian Access->Population To Relief',
+                    'Humanitarian Access->Relief To Population'
+                    ]
+                ], 
+            1)
+    )
+    summary['Humanitarian Access'] = get_summary_one_part(hum_access_df, 'non_number_hum_access', en_summary)
+
+    return summary
+
+
+def get_report_context_crisis(df_one_project: pd.DataFrame, en_summary: bool):
+    """
+    section 1.1
+    """
+    df_context = df_one_project[
+        df_one_project.pillars_1d.apply(lambda x: 'Context' in x)
+    ].copy()
+
+    df_context['context_tags'] = df_context.subpillars_1d.apply(
+        lambda x: preprocesss_row(
+            [item.split('->')[1] for item in x if 'Context' in item],
+            1)
+    )
+
+    return get_summary_one_part(df_context, 'context_tags', en_summary)
+
+def get_hum_report_one_affected_group(df: pd.DataFrame, tag: str, en_summary: bool):
+    """
+    one pop in section 1.4, 
+    TODO: IMPROVE IT!!
+    """
+    if tag=='Overall Tendencies':
+        one_affected_group_df = df[df.n_affected_groups>1]
+    else:
+        one_affected_group_df = df[df.affected_groups.apply(lambda x: [tag] == x)]
+
+    one_affected_group_df['non_num_hum_conds'] = one_affected_group_df.subpillars_2d.apply(
+        lambda x: [
+            item for item in x if item in [
+                'Humanitarian Conditions->Living Standards',
+                'Humanitarian Conditions->Physical And Mental Well Being',
+                'Humanitarian Conditions->Coping Mechanisms']
+        ]
+    )
+
+    return get_summary_one_part(one_affected_group_df, 'non_num_hum_conds', en_summary)
+    
+
+def get_report_hum_conditions(df_one_project: pd.DataFrame, en_summary: bool):
+    """
+    section 1.4
+    """
+    df_all_hum_conditions = df_one_project[df_one_project.pillars_2d.apply(lambda x: 'Humanitarian Conditions' in x)].copy()
+    summary = {}
+    
+    # General Findings
+    summary['Overall Tendencies'] = get_hum_report_one_affected_group(df_all_hum_conditions, 'Overall Tendencies', en_summary)
+    
+    # specific to each affected group
+    for one_group in affected_groups_list:
+        summary[one_group] = get_hum_report_one_affected_group(df_all_hum_conditions, one_group, en_summary)
+
+    return summary
+
+
+def get_report(full_df, project_id: int, en_summary: bool = True, save_summary: bool = True, use_sample: bool = False):
+    """
+    main function to get full report for sectoral analysis section
+    """
+    
+    df_one_project = full_df[full_df.project_id==project_id].copy()    
+    if use_sample: 
+        df_one_project = df_one_project.sample(frac=0.2)
+    if use_sample: 
+        df_one_project['excerpt'] = df_one_project['excerpt'].apply(translate_sentence)
+    
+    preprocess_df(df_one_project)
+
+    final_summary = {}
+
+
+    # Part 1: Impact of the crisis and humanitarian conditions
+    summaries_impact_hum_conditions = {}
+    print('begin Context of the crisis')
+    summaries_impact_hum_conditions['Context of the crisis'] = get_report_context_crisis(df_one_project, en_summary)
+
+    print('begin Shocks and impact of the crisis')
+    summaries_impact_hum_conditions['Shocks and impact of the crisis'] = get_report_shocks_impacts(df_one_project, en_summary)
+
+    print('begin Humanitarian conditions and severity of needs')
+    summaries_impact_hum_conditions[
+        'Humanitarian conditions and severity of needs'
+        ] = get_report_hum_conditions(df_one_project, en_summary)
+
+    final_summary['Impact of the crisis and humanitarian conditions'] = summaries_impact_hum_conditions
+
+    # Part 3: Sectoral analysis
+    summaries_sectors = {}
+    for one_sector in sectors_list:
+        print(f'begin {one_sector}')
+        
+        summaries_sectors[one_sector] = get_report_one_sector(df_one_project, tag=one_sector, en_summary=en_summary)
+    final_summary['Sectoral Analysis'] = summaries_sectors
 
     if save_summary:
-        with open(f'report_{tag}_{project_id}.json', 'w') as fp:
-            json.dump(summaries, fp)
+        with open(f'report_sectors_{project_id}.json', 'w') as fp:
+            json.dump(summaries_sectors, fp)
 
-    return summaries
+    return summaries_sectors
