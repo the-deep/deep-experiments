@@ -49,6 +49,7 @@ class Args:
     max_full_length: int
     max_length: int
     extra_context_length: int
+    n_separate_layers: int = None
     token_loss_weight: float = 1.0
     sentence_edit_threshold: int = math.inf
     n_subsample: int = None
@@ -411,7 +412,7 @@ class Metrics:
 
                 html += text[prev_end:start]
                 if prob > 0.1:
-                    html += f'<span style="background-color:rgba(255, 0, 0, {prob});">{text[start:end]}</span>'
+                    html += f'<span data-prob="{prob}" style="background-color:rgba(255, 0, 0, {prob}); color:#333;">{text[start:end]}</span>'
                 else:
                     html += text[start:end]
 
@@ -431,15 +432,27 @@ class Metrics:
 
         return scores
 
-    def __call__(self, results, threshold=0.5, max_n_visualize=10, visualize_out=None):
+    def __call__(
+        self,
+        results,
+        threshold=0.5,
+        label_names_to_evaluate=None,
+        max_n_visualize=10,
+        visualize_out=None,
+    ):
         all_scores = {}
 
         results.predictions[:] = torch.sigmoid(
             torch.from_numpy(results.predictions).float()
         ).numpy()
+        used_label_names = (
+            label_names_to_evaluate
+            if label_names_to_evaluate is not None
+            else label_names
+        )
 
         # only compute metrics for relevancy since it takes quite some time
-        for label_name in label_names:
+        for label_name in used_label_names:
             idx = label_names.index(label_name)
 
             if (
@@ -522,6 +535,7 @@ def train(args, training_args):
         loss_weights=args.loss_weights,
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
+        n_separate_layers=args.n_separate_layers,
     )
 
     if "wandb" in training_args.report_to and training_args.do_train:

@@ -1,6 +1,7 @@
 from torch import nn
 import torch
-from transformers import AutoModel
+from transformers import BertModel, BertConfig, AutoModel
+from transformers.models.bert.modeling_bert import BertEncoder
 import math
 
 
@@ -14,17 +15,44 @@ class BasicModel(nn.Module):
         loss_weights,
         slice_length,
         extra_context_length,
+        n_separate_layers=None,
     ):
         super().__init__()
 
-        self.backbone = AutoModel.from_pretrained(backbone)
+        self.backbone = BertModel.from_pretrained(backbone)
+
+        if n_separate_layers is not None and n_separate_layers > 0:
+            separate_layers_config = BertConfig.from_pretrained(backbone)
+            separate_layers_config.num_hidden_layers = n_separate_layers
+
+            self.separate_layers = nn.ModuleList(
+                [BertEncoder(separate_layers_config) for _ in range(num_labels)]
+            )
+
+            for l in self.separate_layers:
+                for i, layer in enumerate(l.layer):
+                    layer.load_state_dict(
+                        self.backbone.encoder.layer[-n_separate_layers + i].state_dict()
+                    )
+
+            for _ in range(n_separate_layers):
+                del self.backbone.encoder.layer[-1]
+        else:
+            self.separate_layers = None
+
         self.tokenizer = tokenizer
-        self.out_proj = nn.Linear(self.backbone.config.hidden_size, num_labels)
+        self.out_projs = nn.ModuleList(
+            [nn.Linear(self.backbone.config.hidden_size, 1) for _ in range(num_labels)]
+        )
         self.num_labels = num_labels
         self.token_loss_weight = token_loss_weight
         self.slice_length = slice_length
         self.extra_context_length = extra_context_length
-        self.loss_weights = torch.tensor(loss_weights).unsqueeze(0)
+        self.loss_weights = (
+            torch.tensor(loss_weights).unsqueeze(0)
+            if loss_weights is not None
+            else None
+        )
 
     def forward(
         self,
@@ -96,10 +124,33 @@ class BasicModel(nn.Module):
             1,
         )
 
+        logits = torch.zeros_like(token_labels)
+
         hidden_state = self.backbone(
             input_ids, attention_mask=attention_mask
         ).last_hidden_state
-        logits = self.out_proj(hidden_state)
+
+        if self.separate_layers is None:
+            for i in range(self.num_labels):
+                logits[:, :, i] = self.out_projs[i](hidden_state)[..., 0]
+        else:
+            extended_attention_mask: torch.Tensor = (
+                self.backbone.get_extended_attention_mask(
+                    attention_mask, hidden_state.size()[:-1], self.backbone.device
+                )
+            )
+
+            for i in range(self.num_labels):
+                h = self.separate_layers[i](
+                    hidden_state, attention_mask=extended_attention_mask
+                ).last_hidden_state
+                logits[:, :, i] = self.out_projs[i](h)[..., 0]
+
+        loss_weights = (
+            self.loss_weights.to(logits.device)
+            if self.loss_weights is not None
+            else 1.0
+        )
 
         if token_labels is not None:
             loss_fct = nn.BCEWithLogitsLoss(reduction="none")
@@ -111,10 +162,7 @@ class BasicModel(nn.Module):
             active_labels = token_labels.view(-1, self.num_labels)
 
             token_loss = (
-                (
-                    loss_fct(active_logits, active_labels)
-                    * self.loss_weights.to(active_logits.device)
-                )
+                (loss_fct(active_logits, active_labels) * loss_weights)
                 .mean(-1)[active_loss]
                 .mean()
             )
@@ -129,15 +177,16 @@ class BasicModel(nn.Module):
             active_labels = sentence_labels.view(-1, self.num_labels)
 
             sentence_loss = (
-                (
-                    loss_fct(active_logits, active_labels)
-                    * self.loss_weights.to(active_logits.device)
-                )
+                (loss_fct(active_logits, active_labels) * loss_weights)
                 .mean(-1)[active_loss]
                 .mean()
             )
 
-        if token_labels is not None and sentence_labels is not None:
+        if (
+            token_labels is not None
+            and sentence_labels is not None
+            and self.token_loss_weight is not None
+        ):
             out_dict["loss"] = token_loss * self.token_loss_weight + sentence_loss * (
                 1 - self.token_loss_weight
             )
