@@ -16,6 +16,7 @@ class BasicModel(nn.Module):
         slice_length,
         extra_context_length,
         n_separate_layers=None,
+        separate_layer_groups=None,
     ):
         super().__init__()
 
@@ -25,9 +26,16 @@ class BasicModel(nn.Module):
             separate_layers_config = BertConfig.from_pretrained(backbone)
             separate_layers_config.num_hidden_layers = n_separate_layers
 
+            if separate_layer_groups is None:
+                separate_layer_groups = [[i] for i in range(num_labels)]
+
             self.separate_layers = nn.ModuleList(
-                [BertEncoder(separate_layers_config) for _ in range(num_labels)]
+                [
+                    BertEncoder(separate_layers_config)
+                    for _ in range(len(separate_layer_groups))
+                ]
             )
+            self.separate_layer_groups = separate_layer_groups
 
             for l in self.separate_layers:
                 for i, layer in enumerate(l.layer):
@@ -140,11 +148,15 @@ class BasicModel(nn.Module):
                 )
             )
 
-            for i in range(self.num_labels):
-                h = self.separate_layers[i](
+            for separate_layer_idx, label_group in enumerate(
+                self.separate_layer_groups
+            ):
+                h = self.separate_layers[separate_layer_idx](
                     hidden_state, attention_mask=extended_attention_mask
                 ).last_hidden_state
-                logits[:, :, i] = self.out_projs[i](h)[..., 0]
+
+                for i in label_group:
+                    logits[:, :, i] = self.out_projs[i](h)[..., 0]
 
         loss_weights = (
             self.loss_weights.to(logits.device)
@@ -163,7 +175,7 @@ class BasicModel(nn.Module):
 
             token_loss = (
                 (loss_fct(active_logits, active_labels) * loss_weights)
-                .mean(-1)[active_loss]
+                .sum(-1)[active_loss]
                 .mean()
             )
 
@@ -178,7 +190,7 @@ class BasicModel(nn.Module):
 
             sentence_loss = (
                 (loss_fct(active_logits, active_labels) * loss_weights)
-                .mean(-1)[active_loss]
+                .sum(-1)[active_loss]
                 .mean()
             )
 
