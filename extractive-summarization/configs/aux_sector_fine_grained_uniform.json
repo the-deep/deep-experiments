@@ -13,7 +13,7 @@
     "per_device_train_batch_size": 1,
     "per_device_eval_batch_size": 1,
     "gradient_accumulation_steps": 8,
-    "learning_rate": 3e-5,
+    "learning_rate": 1e-5,
     "logging_steps": 50,
     "evaluation_strategy": "epoch",
     "num_train_epochs": 5,
@@ -30,23 +30,43 @@
     "extra_context_length": 0,
     "sentence_edit_threshold": 32,
     "token_loss_weight": 1.0,
+    "n_separate_layers": 1,
+    "separate_layer_groups": [
+        [
+            "is_relevant"
+        ],
+        [
+            "has_sector_Agriculture",
+            "has_sector_Cross",
+            "has_sector_Education",
+            "has_sector_Food Security",
+            "has_sector_Health",
+            "has_sector_Livelihoods",
+            "has_sector_Logistics",
+            "has_sector_NOT_MAPPED",
+            "has_sector_Nutrition",
+            "has_sector_Protection",
+            "has_sector_Shelter",
+            "has_sector_WASH"
+        ]
+    ],
     "loss_weights": [
         1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
         1.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0
     ]
 }

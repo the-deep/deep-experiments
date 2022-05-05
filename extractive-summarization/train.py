@@ -38,6 +38,18 @@ label_names = [
     "has_subpillars_1d",
     "has_subpillars_2d",
     "has_other",
+    "has_sector_Agriculture",
+    "has_sector_Cross",
+    "has_sector_Education",
+    "has_sector_Food Security",
+    "has_sector_Health",
+    "has_sector_Livelihoods",
+    "has_sector_Logistics",
+    "has_sector_NOT_MAPPED",
+    "has_sector_Nutrition",
+    "has_sector_Protection",
+    "has_sector_Shelter",
+    "has_sector_WASH",
 ]
 
 
@@ -50,6 +62,7 @@ class Args:
     max_length: int
     extra_context_length: int
     n_separate_layers: int = None
+    separate_layer_groups: List[List[str]] = None
     token_loss_weight: float = 1.0
     sentence_edit_threshold: int = math.inf
     n_subsample: int = None
@@ -493,6 +506,24 @@ def train(args, training_args):
             excerpts_dict = pickle.load(f)
     else:
         excerpts_df = pd.read_csv(args.excerpts_csv_path)
+
+        possible_sectors = set(
+            s for sectors in excerpts_df["sectors"].values for s in eval(sectors)
+        )
+
+        has_sectors = np.zeros(len(excerpts_df), dtype=bool)
+        sectors_value_dict = {s: np.zeros_like(has_sectors) for s in possible_sectors}
+
+        for i, row in excerpts_df.iterrows():
+            for sector in eval(row["sectors"]):
+                sectors_value_dict[sector][i] = 1
+                has_sectors[i] = True
+
+        excerpts_df["has_sectors"] = has_sectors
+
+        for key, value in sectors_value_dict.items():
+            excerpts_df[f"has_sector_{key}"] = value
+
         excerpts_df["has_sectors"] = excerpts_df["sectors"].apply(eval).apply(len) > 0
         excerpts_df["has_subpillars_1d"] = (
             excerpts_df["subpillars_1d"].apply(eval).apply(len) > 0
@@ -506,6 +537,7 @@ def train(args, training_args):
             | excerpts_df["has_subpillars_1d"]
             | excerpts_df["has_subpillars_2d"]
         )
+
         excerpts_dict = {}
         for _, row in excerpts_df.iterrows():
             excerpts_dict[row["entry_id"]] = {
@@ -527,6 +559,14 @@ def train(args, training_args):
     datasets["train"] = data.select(train_indices)
     datasets["test"] = data.select(eval_indices)
 
+    if args.separate_layer_groups is not None:
+        separate_layer_groups = []
+
+        for group in args.separate_layer_groups:
+            separate_layer_groups.append(
+                [label_names.index(label_name) for label_name in group]
+            )
+
     model = BasicModel(
         args.model_name_or_path,
         tokenizer,
@@ -536,6 +576,7 @@ def train(args, training_args):
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
         n_separate_layers=args.n_separate_layers,
+        separate_layer_groups=separate_layer_groups,
     )
 
     if "wandb" in training_args.report_to and training_args.do_train:
@@ -571,3 +612,4 @@ if __name__ == "__main__":
 
     (args, training_args) = parser.parse_json_file(sys.argv[1])
     train(args, training_args)
+t
