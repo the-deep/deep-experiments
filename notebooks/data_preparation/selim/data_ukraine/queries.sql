@@ -80,3 +80,14 @@ WHERE
         '2022 IMAC Ukraine'
       )
   )
+
+--------------------------------------------------------------------------
+-- 7. projects.csv
+SELECT 
+  * 
+FROM 
+  project_project pp 
+WHERE 
+  pp.title IN (
+    '2022 IMAC Ukraine'
+  )
