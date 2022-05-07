@@ -2,7 +2,7 @@ from transformers import pipeline
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-
+import json
 
 questions = {
    'Displacement->Type/Numbers/Movements': 'How many people have been displaced?', 
@@ -45,7 +45,10 @@ sec_tags_mapper = {
 
 treated_cases = list(sec_tags_mapper.keys())
 
-def get_response(df: pd.DataFrame, n_highest_answers: int = 5):
+def has_numbers(inputString):
+    return any(char.isdigit() for char in inputString)
+
+def get_numbers(df: pd.DataFrame, min_ratio: float = 0.7):
 
     model_name = 'deepset/roberta-large-squad2'
 
@@ -57,15 +60,15 @@ def get_response(df: pd.DataFrame, n_highest_answers: int = 5):
     
     for one_pop, related_tag in kept_tags.items():
         one_pop_df = df_copy.copy()
-        if related_tag!='':
+        """if related_tag!='':
             one_pop_df = one_pop_df[
                 one_pop_df.secondary_tags.apply(lambda x: related_tag in x)
-            ]
+            ]"""
         print(f'begin for {one_pop}')
 
         qa_model = pipeline(model=model_name, tokenizer=model_name, task="question-answering")
 
-        question_one_project = f'How many {one_pop} need humanitarian assistance?'
+        question_one_project = f'How many {one_pop} need humanitarian assistance in Ukraine?'
         answers = []
         scores = []
         for one_excerpt in tqdm(one_pop_df.excerpt):
@@ -75,16 +78,30 @@ def get_response(df: pd.DataFrame, n_highest_answers: int = 5):
             answers.append(raw_response['answer'])
             scores.append(raw_response['score'])
 
-        one_pop_df[f'answer'] = answers
-        one_pop_df[f'confidence'] = scores
+        one_pop_df['answer'] = answers
+        one_pop_df['confidence'] = scores
 
         #confidence_names = [name for name in one_pop_df.columns if 'confidence' in name]
 
         # keep only relevant ones
-        one_pop_df = one_pop_df.sort_values(by='confidence', ascending=False, inplace=False).head(n_highest_answers)
-        #one_pop_df = one_pop_df[one_pop_df.confidence>0.7]
-        one_pop_df['confidence'] = one_pop_df['confidence'].apply(lambda x: np.round(x, 2))
+        one_pop_df = one_pop_df.sort_values(by='confidence', ascending=False, inplace=False)
+        one_pop_df = one_pop_df[
+            (one_pop_df.confidence>min_ratio) & 
+            (one_pop_df.answer.apply(has_numbers))
+            ]
 
-        returns_dict[one_pop] = one_pop_df
+        if len(one_pop_df)>0:
+                
+            returned_answer = one_pop_df.groupby(
+                'answer', as_index=False
+                )['confidence'].apply(sum).sort_values(by='confidence', ascending=False).iloc[0].answer
+
+            returns_dict[one_pop] = returned_answer
+
+        else:
+            returns_dict[one_pop] = 'UNKNOWN'
+
+        with open(f'numbers_returns.json', 'w') as fp:
+            json.dump(returns_dict, fp)
 
     return returns_dict
