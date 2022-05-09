@@ -3,6 +3,7 @@ from ast import literal_eval
 from typing import List
 import pandas as pd
 import numpy as np
+from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
 from transformers import T5Tokenizer, T5ForConditionalGeneration, BartTokenizer, BartForConditionalGeneration
 from sentence_transformers import SentenceTransformer
@@ -13,21 +14,7 @@ import re
 from nltk.corpus import stopwords
 stop_words = set(stopwords.words())
 
-sectors_list = [
-    'Shelter',
-    'Food Security',
-    'Agriculture',
-    'Education',
-    'Health',
-    'Logistics',
-    'Protection',
-    'Livelihoods',
-    'WASH',
-    'Nutrition']
-
 affected_groups_list = ['Asylum Seekers', 'Host', 'IDP', 'Migrants', 'Refugees','Returnees']
-
-#TODO: CLUSTERING WITH FIXED NUMBER OF CLUSTERS TO BE ABLE TO GENERATE LONGER TEXT
 
 def flatten(t):
     return [item for sublist in t for item in sublist]
@@ -61,22 +48,6 @@ def build_graph(cosine_similarity_matrix):
 def get_number_of_clusters(n_entries: int):
     return min((n_entries // 10) + 1, 3)
  
-def process_df_one_part(df: pd.DataFrame, col_name: str):
-    
-    df_copy = df[df[col_name].apply(lambda x: len(x)>0)].copy()
-    df_copy['tmp_tag_str'] = df_copy[col_name].apply(str)
-
-    grouped_df = df_copy.groupby('tmp_tag_str', as_index=False)[['entry_id', 'excerpt', 'severity_scores']].agg(lambda x: list(x))
-
-    grouped_df['len'] = grouped_df['entry_id'].apply(lambda x: len(x))
-    grouped_df = grouped_df[grouped_df.len>=5]
-    grouped_df['n_clusters'] = grouped_df['len'].apply(get_number_of_clusters)
-
-    grouped_df.sort_values(by='len', ascending=False, inplace=False).drop(columns='tmp_tag_str', inplace=False)
-
-    return grouped_df
-
-
 def get_severity_score(item: List[str]):
     severity_mapper = {
         'Critical': 1,
@@ -92,10 +63,32 @@ def get_severity_score(item: List[str]):
     else:
         return 0.5
 
-def get_similarity_matrix(texts):
+def get_reliability_score(item: List[str]):
+    reliability_mapper = {
+        'Completely Reliable': 1,
+        'Usually reliable': 0.75,
+        'Fairly Reliable': 0.5,
+        'Not Usually Reliable': 0.25
+    }
+
+    if len(item) == 0:
+        return 0.5
+    severity_name = item[0]
+    if severity_name in list(reliability_mapper.keys()):
+        return reliability_mapper[severity_name]
+    else:
+        return 0.5
+
+def get_embeddings(texts):
 
     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
     embeddings_all_sentences = model.encode(texts)
+
+    return np.array(embeddings_all_sentences)
+
+def get_similarity_matrix(texts):
+
+    embeddings_all_sentences = get_embeddings(texts)
 
     similarity = cosine_similarity(embeddings_all_sentences, embeddings_all_sentences)
     return similarity
@@ -131,7 +124,7 @@ def translate_sentence(excerpt: str):
     result = translator.translate(excerpt, dest='en')
     return result.text
 
-def clean_excerpt(excerpt):
+def preprocess_excerpt(excerpt):
 
     # lower and remove punctuation
     new_excerpt = re.sub(r'[^\w\s]', '', excerpt).lower()
@@ -139,48 +132,49 @@ def clean_excerpt(excerpt):
     new_excerpt = ' '.join([word for word in new_excerpt.split(' ') if word not in stop_words])
     return new_excerpt
 
-def get_summary_one_row(row, en_summary):
+
+
+def get_summary_one_row(row, en_summary, n_clusters=1):
 
     """
     function used for getting summary for one task
     """
-    
+
+    def get_top_n_sentence_ids(graph):
+        scores_pagerank = nx.pagerank(graph)
+        scores = {key: value * severity_scores[key] * reliability_scores[key] for key, value in scores_pagerank.items()}
+
+        top_n_sentence_ids = np.argsort(np.array(list(scores.values())))[-5:]
+        return top_n_sentence_ids
+
+    def get_summary_one_cluster(cleaned_text):
+        cosine_similarity_matrix = get_similarity_matrix(cleaned_text)
+        graph_one_lang = build_graph(cosine_similarity_matrix)
+        top_n_sentence_ids = get_top_n_sentence_ids(graph_one_lang)
+        ranked_sentence = ' '.join([original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]) 
+        summarized_entries = t2t_generation(ranked_sentence, en_summary)
+        return summarized_entries
+
+    if n_clusters<1:
+        AssertionError('number of clusters must be at least 1.')
+
     original_excerpts = row.excerpt
     severity_scores = row.severity_scores
-    #top_n_sentences = row.n_clusters
+    reliability_scores = row.reliability_scores
 
-    cleaned_excerpts = [clean_excerpt(one_excerpt) for one_excerpt in original_excerpts]
-    cosine_similarity_matrix = get_similarity_matrix(cleaned_excerpts)
+    cleaned_excerpts = np.array([preprocess_excerpt(one_excerpt) for one_excerpt in original_excerpts])
 
-    graph_one_lang = build_graph(cosine_similarity_matrix)
+    if n_clusters==1:
+        summarized_entries = get_summary_one_cluster(cleaned_excerpts)
+    else: 
+        summarized_entries = ''
+        embeddings_all_sentences = get_embeddings(cleaned_excerpts)
 
-    scores_pagerank = nx.pagerank(graph_one_lang)
-    scores = {key: value * severity_scores[key] for key, value in scores_pagerank.items()}
-
-    top_n_sentence_ids = np.argsort(np.array(list(scores.values())))[-10:]
-    """used_ids = []
-    final_summary = []
-    for id_tmp in top_n_sentence_ids:
-        row_id = cosine_similarity_matrix[id_tmp, :]
-        top_id_row = np.argsort(row_id)[::-1]
-        top_id_row = [id for id in top_id_row if id not in used_ids and id not in top_n_sentence_ids][:2]
-
-        top_2_id_row = [id_tmp] + top_id_row
-
-        used_ids += top_2_id_row
-
-        ranked_sentence = ' '.join([original_excerpt[id_tmp] for id_tmp in (top_2_id_row)]) 
-            
-        summarized_entries = t2t_generation(ranked_sentence, en_summary)
-        capitalized_summaries = ' '.join([sent.capitalize() for sent in nltk.tokenize.sent_tokenize(summarized_entries)])
-        final_summary.append(capitalized_summaries)"""
-
-    ranked_sentence = ' '.join([original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]) 
-    summarized_entries = t2t_generation(ranked_sentence, en_summary)
-    """sentences = nltk.tokenize.sent_tokenize(summarized_entries)
-    final_summary_str = ' '.join([sent.capitalize() for sent in sentences])"""
-    
-    #final_summary_str = ' '.join(final_summary)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(embeddings_all_sentences)
+        cluster_labels = kmeans.labels_
+        for i in range (n_clusters):
+            sentences_one_cluster = cleaned_excerpts[np.argwhere(cluster_labels==i)]
+            summarized_entries += get_summary_one_cluster(sentences_one_cluster)
     
     return summarized_entries
 
@@ -193,18 +187,37 @@ def order_dict(x):
     else:
         return x
 
-def get_summary_one_part(df, col_name: str, en_summary):
+def process_df_one_part(df: pd.DataFrame, col_name: str):
     
-    preprocessed_df = process_df_one_part(df, col_name)
+    df['tmp_tag_str'] = df[col_name].apply(str)
 
-    final_returns = {}
-    for index, row in preprocessed_df.iterrows():
-        tag_tmp = row.tmp_tag_str
-        summarized_text = get_summary_one_row(row, en_summary)
-        print(summarized_text)
-        final_returns[tag_tmp] = summarized_text
+    grouped_df = df.groupby('tmp_tag_str', as_index=False)[
+        ['excerpt', 'severity_scores', 'reliability_scores']
+        ].agg(lambda x: list(x))
 
-    return order_dict(final_returns)
+    grouped_df['len'] = grouped_df['excerpt'].apply(lambda x: len(x))
+    grouped_df = grouped_df[grouped_df.len>=3]
+    grouped_df['n_clusters'] = grouped_df['len'].apply(get_number_of_clusters)
+
+    grouped_df.sort_values(by='len', ascending=False, inplace=False).drop(columns='tmp_tag_str', inplace=False)
+
+    return grouped_df
+
+def get_summary_one_part(df, col_name: str, en_summary, n_paragraphs=1):
+    
+    preprocessed_df = df[df[col_name].apply(lambda x: len(x)>0)].copy()
+    if len(preprocessed_df)<3:
+        return {}
+    else:
+        preprocessed_df = process_df_one_part(df, col_name)
+
+        final_returns = {}
+        for index, row in preprocessed_df.iterrows():
+            tag_tmp = row.tmp_tag_str
+            summarized_text = get_summary_one_row(row, en_summary, n_paragraphs)
+            final_returns[tag_tmp] = summarized_text
+
+        return order_dict(final_returns)
 
 def get_report_relation_other_sectors(df, en_summary):
     many_tags_df = df[
@@ -236,42 +249,58 @@ def get_report_secondary_tags(df, en_summary):
 
 def get_report_hum_needs(df, en_summary):
     hum_conds_df = df[
-        (df.pillars_2d.apply(lambda x: 'Humanitarian Conditions' in x)) &
+        (df.pillars_2d.apply(lambda x: len(x)>0)) &
         (df.n_sectors==1) &
         (df.n_secondary_tags!=1)].copy()
 
-    hum_conds_df['pillars_1d_no_casualties'] = hum_conds_df.pillars_1d.apply(
-        lambda x: preprocesss_row(
-            list(set([item for item in x if item!='Casualties'])),
-            1
-        )
+    hum_conds_df['pillars_2d'] = hum_conds_df.pillars_2d.apply(
+        lambda x: preprocesss_row(x, 1)
     )
 
-    return get_summary_one_part(hum_conds_df, 'pillars_1d_no_casualties', en_summary)
+    return get_summary_one_part(hum_conds_df, 'pillars_2d', en_summary)
 
 def preprocess_df(df):
     """
     inplace!!
     """
-    for col in ['sectors', 'affected_groups_level_3', 'specific_needs_groups', 'age', 'gender', 'subpillars_1d', 'subpillars_2d', 'severity', 'geo_location']:
+    """df = df[df.excerpt.apply(
+        lambda x: all([item not in str(x).lower() for item in ['yesterday', 'tomorrow', 'last week', 'next week']])
+    )]"""
+    
+    for col in ['sectors', 'affected_groups', 'specific_needs_groups', 'age', 'gender', 'subpillars_1d', 'subpillars_2d', 'severity']:
         df[col] = df[col].apply(
             lambda x: list(set([item for item in custom_eval(x)]))
             )
+
+    """def get_custom_2d_pillars(one_2_pillars_pred: List[str]):
+        mapper = {
+            'Impact': 'Impact',
+            'Capacities & Response': 'Capacities & Response',
+            'Humanitarian Conditions': 'Humanitarian Conditions',
+            'At Risk': 'At Risk / Priority Intervention / Priority Needs',
+            'Priority Interventions': 'At Risk / Priority Intervention / Priority Needs',
+            'Priority Needs': 'At Risk / Priority Intervention / Priority Needs'
+        }
+        return list(set([mapper[item.split('->')[0]] for item in one_2_pillars_pred]))
+
+    df['pillars_2d'] = df['subpillars_2d'].apply(get_custom_2d_pillars)"""
+
     df['pillars_2d'] = df.subpillars_2d.apply(lambda x: [item.split('->')[0] for item in x])
     df['pillars_1d'] = df.subpillars_1d.apply(lambda x: [item.split('->')[0] for item in x])
-    df['affected_groups'] = df.affected_groups_level_3.apply(
+    df['affected_groups'] = df.affected_groups.apply(
         lambda x: [item for item in x if item not in ['None', 'Others of Concern']]
     )
     df['sectors'] = df.sectors.apply(
-        lambda x: [item for item in x if item not in ['Cross']]
+        lambda x: [item for item in x if item!='Cross']
     )
     df['n_sectors'] = df.sectors.apply(
         lambda x: len(x)
     )
     df['severity_scores'] = df['severity'].apply(lambda x: get_severity_score(x))
+    df['reliability_scores'] = df['reliability'].apply(lambda x: get_reliability_score(x))
     df['secondary_tags'] = df.apply(
         lambda x: flatten(
-            [f'{col}->{x[col]}' for col in ['affected_groups_level_3', 'specific_needs_groups', 'age']]
+            [f'{col}->{x[col]}' for col in ['specific_needs_groups', 'age']]
         ), axis=1
     )
     df['n_secondary_tags'] = df.secondary_tags.apply(
@@ -280,6 +309,10 @@ def preprocess_df(df):
     df['n_affected_groups'] = df.affected_groups.apply(
         lambda x: len(x)
     )
+    df['n_affected_groups'] = df.affected_groups.apply(
+        lambda x: len(x)
+    )
+
 
 def get_report_one_sector(one_project_df: pd.DataFrame, tag: str, en_summary: bool):
     """
@@ -289,7 +322,8 @@ def get_report_one_sector(one_project_df: pd.DataFrame, tag: str, en_summary: bo
 
     summaries_one_sector = {}
     
-    # secondary tags
+    # secondary tagsaffected_groups
+
     summaries_one_sector['Most affected population groups'] = get_report_secondary_tags(df_one_sector, en_summary)
     
     # key trends
@@ -299,6 +333,7 @@ def get_report_one_sector(one_project_df: pd.DataFrame, tag: str, en_summary: bo
     summaries_one_sector['Needs, severity and linkages with other sectors'] = get_report_relation_other_sectors(df_one_sector, en_summary)
 
     return summaries_one_sector
+
 
 def get_report_shocks_impacts(df_one_project, en_summary):
     """
@@ -313,12 +348,15 @@ def get_report_shocks_impacts(df_one_project, en_summary):
     impact_people_df = impact_df[
         impact_df.subpillars_2d.apply(lambda x: 'Impact->Impact On People' in x)
         ].copy()
-    impact_people_df['sectors'] = impact_people_df['sectors'].apply(lambda x: preprocesss_row(x, 1))
-    summary['Impact on people'] = get_summary_one_part(impact_people_df, 'sectors', en_summary)
+    if len(impact_people_df)==0:
+        summary['Impact on people'] = {}
+    else:
+        impact_people_df['sectors'] = impact_people_df['sectors'].apply(lambda x: preprocesss_row(x, 1))
+        summary['Impact on people'] = get_summary_one_part(impact_people_df, 'sectors', en_summary)
 
     # Impact on systems and services
     impact_systems_services_df = impact_df[
-        impact_df.subpillars_2d.apply(lambda x: 'Impact->Impact On Systems, Services And Networks' in x)
+        impact_df.subpillars_2d.apply(lambda x: 'Impact->Impact On System & Services' in x)
         ].copy()
     impact_systems_services_df['sectors'] = impact_systems_services_df['sectors'].apply(lambda x: preprocesss_row(x, 1))
     summary['Impact on systems and services'] = get_summary_one_part(impact_systems_services_df, 'sectors', en_summary)
@@ -329,12 +367,7 @@ def get_report_shocks_impacts(df_one_project, en_summary):
         ].copy()
     hum_access_df['non_number_hum_access'] = hum_access_df['subpillars_1d'].apply(
         lambda x: preprocesss_row(
-                [item for item in x if item in [
-                    'Humanitarian Access->Physical Constraints',
-                    'Humanitarian Access->Population To Relief',
-                    'Humanitarian Access->Relief To Population'
-                    ]
-                ], 
+                [item for item in x if item.split('->')[0]=='Humanitarian Access'], 
             1)
     )
     summary['Humanitarian Access'] = get_summary_one_part(hum_access_df, 'non_number_hum_access', en_summary)
@@ -361,7 +394,6 @@ def get_report_context_crisis(df_one_project: pd.DataFrame, en_summary: bool):
 def get_hum_report_one_affected_group(df: pd.DataFrame, tag: str, en_summary: bool):
     """
     one pop in section 1.4, 
-    TODO: IMPROVE IT!!
     """
     if tag=='Overall Tendencies':
         one_affected_group_df = df[df.n_affected_groups>1]
@@ -377,7 +409,7 @@ def get_hum_report_one_affected_group(df: pd.DataFrame, tag: str, en_summary: bo
         ]
     )
 
-    return get_summary_one_part(one_affected_group_df, 'non_num_hum_conds', en_summary)
+    return get_summary_one_part(one_affected_group_df, 'non_num_hum_conds', en_summary, 2)
     
 
 def get_report_hum_conditions(df_one_project: pd.DataFrame, en_summary: bool):
@@ -397,12 +429,21 @@ def get_report_hum_conditions(df_one_project: pd.DataFrame, en_summary: bool):
     return summary
 
 
-def get_report(full_df, project_id: int, en_summary: bool = True, save_summary: bool = True, use_sample: bool = False):
+def get_report(
+    full_df, 
+    project_id: int = None, 
+    en_summary: bool = True, 
+    save_summary: bool = True, 
+    use_sample: bool = False,
+    summarize_part_one: bool = True,
+    summarize_part_three: bool = True):
     """
     main function to get full report for sectoral analysis section
     """
-    
-    df_one_project = full_df[full_df.project_id==project_id].copy()    
+    if project_id is not None:
+        df_one_project = full_df[full_df.project_id==project_id].copy()    
+    else:
+        df_one_project = full_df
     if use_sample: 
         df_one_project = df_one_project.sample(frac=0.2)
     if use_sample: 
@@ -412,32 +453,43 @@ def get_report(full_df, project_id: int, en_summary: bool = True, save_summary: 
 
     final_summary = {}
 
+    if summarize_part_one:
+        # Part 1: Impact of the crisis and humanitarian conditions
+        summaries_impact_hum_conditions = {}
+        print('begin Context of the crisis')
+        summaries_impact_hum_conditions['Context of the crisis'] = get_report_context_crisis(df_one_project, en_summary)
 
-    # Part 1: Impact of the crisis and humanitarian conditions
-    summaries_impact_hum_conditions = {}
-    print('begin Context of the crisis')
-    summaries_impact_hum_conditions['Context of the crisis'] = get_report_context_crisis(df_one_project, en_summary)
+        print('begin Shocks and impact of the crisis')
+        summaries_impact_hum_conditions['Shocks and impact of the crisis'] = get_report_shocks_impacts(df_one_project, en_summary)
 
-    print('begin Shocks and impact of the crisis')
-    summaries_impact_hum_conditions['Shocks and impact of the crisis'] = get_report_shocks_impacts(df_one_project, en_summary)
+        """print('begin Humanitarian conditions and severity of needs')
+        summaries_impact_hum_conditions[
+            'Humanitarian conditions and severity of needs'
+            ] = get_report_hum_conditions(df_one_project, en_summary)"""
 
-    print('begin Humanitarian conditions and severity of needs')
-    summaries_impact_hum_conditions[
-        'Humanitarian conditions and severity of needs'
-        ] = get_report_hum_conditions(df_one_project, en_summary)
+        final_summary['Impact of the crisis and humanitarian conditions'] = summaries_impact_hum_conditions
 
-    final_summary['Impact of the crisis and humanitarian conditions'] = summaries_impact_hum_conditions
+        if save_summary:
+            with open(f'first_section_report.json', 'w') as fp:
+                json.dump(summaries_impact_hum_conditions, fp)
 
-    # Part 3: Sectoral analysis
-    summaries_sectors = {}
-    for one_sector in sectors_list:
-        print(f'begin {one_sector}')
-        
-        summaries_sectors[one_sector] = get_report_one_sector(df_one_project, tag=one_sector, en_summary=en_summary)
-    final_summary['Sectoral Analysis'] = summaries_sectors
+    if summarize_part_three:
+        # Part 3: Sectoral analysis
+        sectors_list = list(set(flatten(df_one_project.sectors)))
 
-    if save_summary:
-        with open(f'report_sectors_{project_id}.json', 'w') as fp:
-            json.dump(summaries_sectors, fp)
+        summaries_sectors = {}
+        for one_sector in sectors_list:
+            print(f'begin {one_sector}')
+            summaries_sectors[one_sector] = get_report_one_sector(df_one_project, tag=one_sector, en_summary=en_summary)
 
-    return summaries_sectors
+        final_summary['Sectoral Analysis'] = summaries_sectors
+
+        if save_summary:
+            with open(f'third_section_report.json', 'w') as fp:
+                json.dump(summaries_sectors, fp)
+
+    if save_summary and summarize_part_three and summarize_part_one:
+        with open(f'full_report.json', 'w') as fp:
+            json.dump(final_summary, fp)
+
+    return final_summary
