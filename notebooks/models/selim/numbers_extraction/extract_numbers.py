@@ -4,15 +4,6 @@ import numpy as np
 from tqdm import tqdm
 import json
 
-questions = {
-   'Displacement->Type/Numbers/Movements': 'How many people have been displaced?', 
-   'Capacities & Response->Number Of People Reached/Response Gaps': 'How many people have been reached?',
-   'Impact->Number Of People Affected': 'How many people are affected?',
-   'Humanitarian Conditions->Number Of People In Need': 'How many people are in need of humanitarian assistance?',
-   'Humanitarian Access->Number Of People Facing Humanitarian Access Constraints/Humanitarian Access Gaps': 'How many people are facing humanitarian acceess gaps or constrainsts?',
-   'At Risk->Number Of People At Risk': 'How many people are at risk?'
-}
-
 kept_tags = {
     'people': '',
     'severly': '',
@@ -66,11 +57,15 @@ def get_numbers(df: pd.DataFrame, min_ratio: float = 0.7):
             ]"""
         print(f'begin for {one_pop}')
 
+        # define Question Answering Pipeline
         qa_model = pipeline(model=model_name, tokenizer=model_name, task="question-answering")
 
+        # define specific question depending on population
         question_one_project = f'How many {one_pop} need humanitarian assistance in Ukraine?'
         answers = []
         scores = []
+
+        # generate answers and confidentiality of answer for each excerpt
         for one_excerpt in tqdm(one_pop_df.excerpt):
         
             raw_response = qa_model(question = question_one_project, context = one_excerpt)
@@ -81,9 +76,7 @@ def get_numbers(df: pd.DataFrame, min_ratio: float = 0.7):
         one_pop_df['answer'] = answers
         one_pop_df['confidence'] = scores
 
-        #confidence_names = [name for name in one_pop_df.columns if 'confidence' in name]
-
-        # keep only relevant ones
+        # keep only relevant answers
         one_pop_df = one_pop_df.sort_values(by='confidence', ascending=False, inplace=False)
         one_pop_df = one_pop_df[
             (one_pop_df.confidence>min_ratio) & 
@@ -92,6 +85,7 @@ def get_numbers(df: pd.DataFrame, min_ratio: float = 0.7):
 
         if len(one_pop_df)>0:
                 
+            # keep the most confident answer
             returned_answer = one_pop_df.groupby(
                 'answer', as_index=False
                 )['confidence'].apply(sum).sort_values(by='confidence', ascending=False).iloc[0].answer
