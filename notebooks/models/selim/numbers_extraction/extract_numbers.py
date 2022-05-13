@@ -36,6 +36,8 @@ sec_tags_mapper = {
 
 treated_cases = list(sec_tags_mapper.keys())
 
+question = 'How many {} need humanitarian assistance in Ukraine?'
+
 def has_numbers(inputString):
     return any(char.isdigit() for char in inputString)
 
@@ -61,7 +63,7 @@ def get_numbers(df: pd.DataFrame, min_ratio: float = 0.7):
         qa_model = pipeline(model=model_name, tokenizer=model_name, task="question-answering")
 
         # define specific question depending on population
-        question_one_project = f'How many {one_pop} need humanitarian assistance in Ukraine?'
+        question_one_project = question.format(one_pop)
         answers = []
         scores = []
 
