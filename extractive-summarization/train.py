@@ -1,5 +1,3 @@
-from bdb import Breakpoint
-from calendar import c
 import sys
 import wandb
 import math
@@ -30,7 +28,8 @@ from functools import partial
 from model import BasicModel, RecurrentModel
 from rouge import Rouge
 from typing import List
-
+from pathlib import Path
+import json
 
 label_names = [
     "is_relevant",
@@ -81,22 +80,11 @@ def get_label_vector(entry_id, excerpts_dict):
     return label
 
 
-def encode(sample, tokenizer, args, excerpts_dict):
+def encode(sample, tokenizer, args, excerpts_dict=None):
     sentences = sample["sentences"]
     text = sample["text"]
 
-    assert sum(len(x) for x in sentences) == len(text)
-
-    sentence_indices = [
-        x["index"]
-        for x in sample["excerpt_sentence_indices"]
-        if x["distance"] < args.sentence_edit_threshold
-    ]
-    sentence_labels_list = [
-        get_label_vector(x["source"], excerpts_dict)
-        for x in sample["excerpt_sentence_indices"]
-        if x["distance"] < args.sentence_edit_threshold
-    ]
+    has_labels = "excerpts" in sample
 
     encoding = tokenizer(
         sentences, add_special_tokens=False, return_offsets_mapping=True
@@ -139,62 +127,150 @@ def encode(sample, tokenizer, args, excerpts_dict):
     attention_mask[np.where(input_ids != tokenizer.pad_token_id)] = 1
 
     # token labels
-    token_labels = np.zeros((args.max_full_length, len(label_names)))
+    if has_labels:
+        token_labels = np.zeros((args.max_full_length, len(label_names)))
 
-    for excerpt in sample["excerpts"]:
-        e = excerpt["text"]
-        e_source = excerpt["source"]
+        for excerpt in sample["excerpts"]:
+            e = excerpt["text"]
+            e_source = excerpt["source"]
 
-        start_index = text.index(e)
-        end_index = start_index + len(e)
+            start_index = text.index(e)
+            end_index = start_index + len(e)
 
-        def is_in_excerpt(offset):
-            return (
-                offset[0] != offset[1]
-                and offset[0] >= start_index
-                and offset[1] <= end_index
-            )
+            def is_in_excerpt(offset):
+                return (
+                    offset[0] != offset[1]
+                    and offset[0] >= start_index
+                    and offset[1] <= end_index
+                )
 
-        for i, offset in enumerate(offset_mapping):
-            if is_in_excerpt(offset):
-                label = get_label_vector(e_source, excerpts_dict)
+            for i, offset in enumerate(offset_mapping):
+                if is_in_excerpt(offset):
+                    label = get_label_vector(e_source, excerpts_dict)
 
-                if i == 0 or not is_in_excerpt(offset_mapping[i - 1]):
-                    # the token is at the boundary, could be encoded differently (i.e B- and I-)
-                    # but currently encoded the same
-                    token_labels[i] = label
-                else:
-                    token_labels[i] = label
+                    if i == 0 or not is_in_excerpt(offset_mapping[i - 1]):
+                        # the token is at the boundary, could be encoded differently (i.e B- and I-)
+                        # but currently encoded the same
+                        token_labels[i] = label
+                    else:
+                        token_labels[i] = label
 
-    token_labels_mask = attention_mask.copy()
-    token_labels_mask[np.where(input_ids == tokenizer.sep_token_id)] = 0
-    token_labels_mask[np.where(input_ids == tokenizer.cls_token_id)] = 0
+        token_labels_mask = attention_mask.copy()
+        token_labels_mask[np.where(input_ids == tokenizer.sep_token_id)] = 0
+        token_labels_mask[np.where(input_ids == tokenizer.cls_token_id)] = 0
+    else:
+        token_labels = token_labels_mask = None
 
     # sentence labels
-    sentence_labels = np.zeros((args.max_full_length, len(label_names)))
-    sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
+    if has_labels and sentences is not None:
+        assert sum(len(x) for x in sentences) == len(text)
 
-    sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
-    sentence_indices_in_ids = [i for i in sentence_indices if i < len(sep_positions)]
-    sentence_labels_in_ids = [
-        label
-        for i, label in zip(sentence_indices, sentence_labels_list)
-        if i < len(sep_positions)
-    ]
+        sentence_indices = (
+            [
+                x["index"]
+                for x in sample["excerpt_sentence_indices"]
+                if x["distance"] < args.sentence_edit_threshold
+            ]
+            if has_labels
+            else None
+        )
+        sentence_labels_list = (
+            [
+                get_label_vector(x["source"], excerpts_dict)
+                for x in sample["excerpt_sentence_indices"]
+                if x["distance"] < args.sentence_edit_threshold
+            ]
+            if has_labels
+            else None
+        )
 
-    if len(sentence_indices_in_ids) > 0:
-        sentence_labels[sep_positions[sentence_indices_in_ids]] = sentence_labels_in_ids
-    sentence_labels_mask[sep_positions] = 1
+        sentence_labels = np.zeros((args.max_full_length, len(label_names)))
+        sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
 
-    return {
+        sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
+        sentence_indices_in_ids = [
+            i for i in sentence_indices if i < len(sep_positions)
+        ]
+        sentence_labels_in_ids = [
+            label
+            for i, label in zip(sentence_indices, sentence_labels_list)
+            if i < len(sep_positions)
+        ]
+
+        if len(sentence_indices_in_ids) > 0:
+            sentence_labels[
+                sep_positions[sentence_indices_in_ids]
+            ] = sentence_labels_in_ids
+        sentence_labels_mask[sep_positions] = 1
+    else:
+        sentence_labels = sentence_labels_mask = None
+
+    out = {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
-        "token_labels": token_labels,
-        "token_labels_mask": token_labels_mask,
-        "sentence_labels": sentence_labels,
-        "sentence_labels_mask": sentence_labels_mask,
         "offset_mapping": offset_mapping,
     }
+
+    if has_labels:
+        out.update(
+            {
+                "token_labels": token_labels,
+                "token_labels_mask": token_labels_mask,
+                "sentence_labels": sentence_labels,
+                "sentence_labels_mask": sentence_labels_mask,
+            }
+        )
+
+    return out
+
+
+def get_highlights(
+    text,
+    offset_mapping,
+    probs,
+    thresholds=(0.25, 0.5, 0.75),
+    highlight_colors=(
+        "$highlight_color_low",
+        "$highlight_color_medium",
+        "$highlight_color_high",
+    ),
+    text_colors=(
+        "$text_color_low",
+        "$text_color_medium",
+        "$text_color_high",
+    ),
+):
+    html = "<p>"
+
+    prev_end = 0
+    in_span = False
+
+    for i, ((start, end), prob) in enumerate(zip(offset_mapping, probs)):
+        if start == end:
+            continue
+
+        # include preceding whitespace
+        while start > 0 and text[start - 1].isspace():
+            start -= 1
+
+        html += text[prev_end:start]
+        if prob > thresholds[0] and (
+            in_span or i == len(probs) - 1 or probs[i + 1] > thresholds[0]
+        ):
+            in_span = True
+            class_idx = sum(prob > x for x in thresholds) - 1
+
+            html += f'<span data-prob="{prob}" style="background-color:{highlight_colors[class_idx]}; color:{text_colors[class_idx]};">{text[start:end]}</span>'
+        else:
+            in_span = False
+            html += text[start:end]
+
+        prev_end = end
+
+    html += "/<p>"
+    html = html.replace("\n", "<br>")
+
+    return html
 
 
 class Metrics:
@@ -247,6 +323,8 @@ class Metrics:
     def get_metrics_for_label(
         self, results, label_index, threshold, max_n_visualize, visualize_out
     ):
+        visualize_out = Path(visualize_out)
+
         true_texts = [" ".join(sentences) for sentences in self.dataset["raw_excerpts"]]
         scores = {}
 
@@ -394,7 +472,8 @@ class Metrics:
         scores["token_recall"] = recall_score(flat_labels, flat_predictions)
         scores["token_precision"] = precision_score(flat_labels, flat_predictions)
 
-        html = ""
+        sample_htmls = {}
+        sample_blank_texts = {}
 
         for i, (id, text, predictions, offset_mapping) in enumerate(
             zip(
@@ -410,36 +489,31 @@ class Metrics:
 
             probs = predictions[..., label_index]
 
-            html += f"<h2>Text #{i} - ID {id}</h2>"
-            html += "<p>"
+            id = ", ".join([str(x) for x in id])
+            sample_htmls[id] = get_highlights(text, offset_mapping, probs)
+            sample_blank_texts[id] = text
 
-            prev_end = 0
+        full_html = ""
 
-            for (start, end), prob in zip(offset_mapping, probs):
-                if start == end:
-                    continue
+        for i, (id, html) in enumerate(sample_htmls.items()):
+            full_html += f"<h2>Text #{i} - ID {id}</h2>"
+            full_html += html
 
-                # include preceding whitespace
-                while start > 0 and text[start - 1].isspace():
-                    start -= 1
-
-                html += text[prev_end:start]
-                if prob > 0.1:
-                    html += f'<span data-prob="{prob}" style="background-color:rgba(255, 0, 0, {prob}); color:#333;">{text[start:end]}</span>'
-                else:
-                    html += text[start:end]
-
-                prev_end = end
-
-            html += "/<p>"
-
-        html = html.replace("\n", "<br>")
         if self.training_args is not None and "wandb" in self.training_args.report_to:
             wandb.log(
-                {f"highlighted_texts_{label_names[label_index]}": wandb.Html(html)}
+                {f"highlighted_texts_{label_names[label_index]}": wandb.Html(full_html)}
             )
+
         if visualize_out is not None:
-            open(visualize_out, "w").write(html)
+            if visualize_out.name.endswith(".html"):
+                open(visualize_out, "w").write(full_html)
+            elif visualize_out.name.endswith(".json"):
+                open(visualize_out, "w").write(json.dumps(sample_htmls, indent=4))
+                open(visualize_out.with_stem(f"{visualize_out.stem}_blank"), "w").write(
+                    json.dumps(sample_blank_texts, indent=4)
+                )
+            else:
+                raise NotImplementedError("Visualize out must be a html or json file.")
 
         print("METRICS:", scores)
 
@@ -493,6 +567,57 @@ class Metrics:
         return all_scores
 
 
+def create_excerpts_dict(excerpts_df):
+    possible_sectors = set(
+        s for sectors in excerpts_df["sectors"].values for s in eval(sectors)
+    )
+
+    has_sectors = np.zeros(len(excerpts_df), dtype=bool)
+    sectors_value_dict = {s: np.zeros_like(has_sectors) for s in possible_sectors}
+
+    for i, row in excerpts_df.iterrows():
+        for sector in eval(row["sectors"]):
+            sectors_value_dict[sector][i] = 1
+            has_sectors[i] = True
+
+    excerpts_df["has_sectors"] = has_sectors
+
+    for key, value in sectors_value_dict.items():
+        excerpts_df[f"has_sector_{key}"] = value
+
+    excerpts_df["has_subpillars_1d"] = (
+        excerpts_df["subpillars_1d"].apply(eval).apply(len) > 0
+        if "subpillars_1d" in excerpts_df
+        else False
+    )
+    excerpts_df["has_subpillars_2d"] = (
+        excerpts_df["subpillars_2d"].apply(eval).apply(len) > 0
+        if "subpillars_2d" in excerpts_df
+        else False
+    )
+    excerpts_df["is_relevant"] = 1
+    excerpts_df["has_other"] = ~(
+        excerpts_df["has_sectors"]
+        | excerpts_df["has_subpillars_1d"]
+        | excerpts_df["has_subpillars_2d"]
+    )
+
+    for key in label_names:
+        if key not in excerpts_df.columns:
+            print(
+                f"Warning: {key} not present in excerpts dataframe. Filling with 'false'."
+            )
+            excerpts_df[key] = False
+
+    excerpts_dict = {}
+    for _, row in excerpts_df.iterrows():
+        excerpts_dict[row["entry_id"]] = {
+            k: v for k, v in row.iteritems() if k in label_names
+        }
+
+    return excerpts_dict
+
+
 def train(args, training_args):
     data = load_dataset(
         "json",
@@ -501,49 +626,8 @@ def train(args, training_args):
     )
     data = data.filter(lambda x: len(x["excerpts"]) > 0)
 
-    if os.path.exists("excerpts_dict.pkl"):
-        with open("excerpts_dict.pkl", "rb") as f:
-            excerpts_dict = pickle.load(f)
-    else:
-        excerpts_df = pd.read_csv(args.excerpts_csv_path)
-
-        possible_sectors = set(
-            s for sectors in excerpts_df["sectors"].values for s in eval(sectors)
-        )
-
-        has_sectors = np.zeros(len(excerpts_df), dtype=bool)
-        sectors_value_dict = {s: np.zeros_like(has_sectors) for s in possible_sectors}
-
-        for i, row in excerpts_df.iterrows():
-            for sector in eval(row["sectors"]):
-                sectors_value_dict[sector][i] = 1
-                has_sectors[i] = True
-
-        excerpts_df["has_sectors"] = has_sectors
-
-        for key, value in sectors_value_dict.items():
-            excerpts_df[f"has_sector_{key}"] = value
-
-        excerpts_df["has_sectors"] = excerpts_df["sectors"].apply(eval).apply(len) > 0
-        excerpts_df["has_subpillars_1d"] = (
-            excerpts_df["subpillars_1d"].apply(eval).apply(len) > 0
-        )
-        excerpts_df["has_subpillars_2d"] = (
-            excerpts_df["subpillars_2d"].apply(eval).apply(len) > 0
-        )
-        excerpts_df["is_relevant"] = 1
-        excerpts_df["has_other"] = ~(
-            excerpts_df["has_sectors"]
-            | excerpts_df["has_subpillars_1d"]
-            | excerpts_df["has_subpillars_2d"]
-        )
-
-        excerpts_dict = {}
-        for _, row in excerpts_df.iterrows():
-            excerpts_dict[row["entry_id"]] = {
-                k: v for k, v in row.to_dict().items() if k in label_names
-            }
-        pickle.dump(excerpts_dict, open("excerpts_dict.pkl", "wb"))
+    excerpts_df = pd.read_csv(args.excerpts_csv_path)
+    excerpts_dict = create_excerpts_dict(excerpts_df)
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
@@ -566,6 +650,8 @@ def train(args, training_args):
             separate_layer_groups.append(
                 [label_names.index(label_name) for label_name in group]
             )
+    else:
+        separate_layer_groups = args.separate_layer_groups
 
     model = BasicModel(
         args.model_name_or_path,
@@ -612,4 +698,3 @@ if __name__ == "__main__":
 
     (args, training_args) = parser.parse_json_file(sys.argv[1])
     train(args, training_args)
-t

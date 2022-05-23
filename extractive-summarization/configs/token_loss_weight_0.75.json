@@ -1,5 +1,5 @@
 {
-    "data_path": "new_new_with_websites.json",
+    "data_path": "data.json",
     "output_dir": "output",
     "excerpts_csv_path": "../data/frameworks_data/data_v0.7.1/train_v0.7.1.csv",
     "model_name_or_path": "microsoft/xtremedistil-l6-h384-uncased",

@@ -1,5 +1,5 @@
 {
-    "data_path": "new_matching.json",
+    "data_path": "data.json",
     "output_dir": "output",
     "model_name_or_path": "allenai/longformer-base-4096",
     "do_train": true,
