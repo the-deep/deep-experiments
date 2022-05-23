@@ -46,7 +46,7 @@ cd utils
 maturin develop --release
 ```
 
-Also, some Spacy models are required:
+Also, some spaCy models are required:
 
 ```bash
 spacy download en_core_web_sm fr_core_news_sm es_core_news_sm
