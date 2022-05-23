@@ -71,9 +71,7 @@ python train.py configs/best.json
 By default, this will report progress to Weights and Biases (will require having logged in to `wandb` with `wandb login`). To disable this, add 
 
 ```json
-[...]
 "report_to": "none"
-[...]
 ```
 
 to the config file.
