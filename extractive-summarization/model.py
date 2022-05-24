@@ -1,11 +1,10 @@
 from torch import nn
 import torch
-from transformers import BertModel, BertConfig, AutoModel
+from transformers import BertModel, BertConfig
 from transformers.models.bert.modeling_bert import BertEncoder
-import math
 
 
-class BasicModel(nn.Module):
+class Model(nn.Module):
     def __init__(
         self,
         backbone,
@@ -18,10 +17,23 @@ class BasicModel(nn.Module):
         n_separate_layers=None,
         separate_layer_groups=None,
     ):
+        """
+        Args:
+            backbone: a string indicating the backbone model to use
+            tokenizer: the used tokenizer
+            num_labels: number of labels
+            token_loss_weight: weight of the token-level loss e.g. 0.5 will result in even weighting of token-level and sentence-level loss
+            loss_weights: contribution of the individual labels to the loss
+            slice_length: length of the context that is fed into the model at once
+            extra_context_length: length of prefix that will be fed to the model as additional context (without generating predictions)
+            n_separate_layers: number of separate layers to use for different `separate_layer_groups`
+            separate_layer_groups: list of lists of label indices indicating how to group labels into separate final layers
+        """
         super().__init__()
 
         self.backbone = BertModel.from_pretrained(backbone)
 
+        # split the backbone into separate layers
         if n_separate_layers is not None and n_separate_layers > 0:
             separate_layers_config = BertConfig.from_pretrained(backbone)
             separate_layers_config.num_hidden_layers = n_separate_layers
@@ -71,6 +83,8 @@ class BasicModel(nn.Module):
         token_labels=None,
         token_labels_mask=None,
     ):
+        # notably, in the forward pass, a full sample (e.g. 4096 tokens) is passed
+        # then split up into chunks of `slice_length` inside the forward pass
         out_dict = {}
 
         n_steps = int(input_ids.shape[1] / self.slice_length)
@@ -142,6 +156,9 @@ class BasicModel(nn.Module):
             for i in range(self.num_labels):
                 logits[:, :, i] = self.out_projs[i](hidden_state)[..., 0]
         else:
+            # the attention mask passed to `BertEncoder.forward` is an "extended" attention mask
+            # (not the same as passed to `BertModel`) so we have to manually create it here
+            # to call `BertEncoder.forward` directly.
             extended_attention_mask: torch.Tensor = (
                 self.backbone.get_extended_attention_mask(
                     attention_mask, hidden_state.size()[:-1], self.backbone.device
@@ -207,62 +224,3 @@ class BasicModel(nn.Module):
             (batch_size, length, self.num_labels)
         )
         return out_dict
-
-
-class RecurrentModel(nn.Module):
-    def __init__(self, backbone, num_labels, slice_length):
-        super().__init__()
-
-        self.backbone = AutoModel.from_pretrained(backbone)
-        self.slice_length = slice_length
-        self.out_proj = nn.Linear(self.backbone.config.hidden_size, num_labels)
-        self.num_labels = num_labels
-
-    def forward(self, input_ids, attention_mask=None, labels=None):
-        out_dict = {}
-
-        logits = []
-
-        cls_token = self.backbone.get_input_embeddings()(input_ids[:, 0])
-
-        for i in range(math.ceil(input_ids.shape[1] / self.slice_length)):
-            start, end = i * self.slice_length, (i + 1) * self.slice_length
-
-            inputs_embeds = self.backbone.get_input_embeddings()(
-                input_ids[:, start:end]
-            )
-            inputs_embeds[:, 0] = cls_token
-
-            hidden_state = self.backbone(
-                inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask[:, start:end],
-            ).last_hidden_state
-            cls_token = hidden_state[:, 0]
-
-            logits.append(self.out_proj(hidden_state))
-
-        logits = torch.cat(logits, 1)
-        out_dict["logits"] = logits
-
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            active_loss = attention_mask.view(-1) == 1
-            active_logits = logits.view(-1, self.num_labels)
-            active_labels = torch.where(
-                active_loss,
-                labels.view(-1),
-                torch.tensor(loss_fct.ignore_index).type_as(labels),
-            )
-
-            out_dict["loss"] = loss_fct(active_logits, active_labels)
-
-        return out_dict
-
-
-if __name__ == "__main__":
-    input_ids = torch.zeros((1, 1024), dtype=torch.long)
-    attention_mask = torch.ones((1, 1024), dtype=torch.long)
-    labels = torch.ones((1, 1024), dtype=torch.long)
-
-    model = RecurrentModel("microsoft/xtremedistil-l6-h256-uncased", 2)
-    model(input_ids, attention_mask, labels)

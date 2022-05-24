@@ -18,7 +18,10 @@ pip install git+https://github.com/the-deep/deepex
 
 ## Data preparation
 
-The prepared data is available on an S3 Bucket: TODO
+The prepared data is available on an S3 Bucket: 
+
+- `s3://extractive-summarization/data.json` contains the data used for training.
+- `s3://extractive-summarization/ukraine.json` contains the data from the Ukraine project.
 
 Alternatively, you can acquire & prepare the data yourself:
 
@@ -76,6 +79,14 @@ By default, this will report progress to Weights and Biases (will require having
 
 to the config file.
 
+A model trained with this config is available on S3 at `s3://extractive-summarization/output/checkpoint-12410`.
+
 # Evaluation
 
-TODO
+To evaluate a model, run e.g.
+
+```bash
+python evaluate.py --model_path=output/checkpoint-12410/pytorch_model.bin --model_config_path=configs/best.json --data_path=ukraine.json
+```
+
+By default, this will evaluate only a subset of the samples, and will save the output to `predictions.html` and `labels.html`.
