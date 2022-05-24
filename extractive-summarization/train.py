@@ -568,10 +568,9 @@ class Metrics:
         used_label_names = (
             label_names_to_evaluate
             if label_names_to_evaluate is not None
-            else LABEL_NAMES
+            else [l for i, l in enumerate(LABEL_NAMES) if self.args.loss_weights[i] > 0]
         )
 
-        # only compute metrics for relevancy since it takes quite some time
         for label_name in used_label_names:
             idx = LABEL_NAMES.index(label_name)
 
@@ -682,16 +681,15 @@ def train(args, training_args):
     else:
         separate_layer_groups = args.separate_layer_groups
 
-    loss_weights = args.loss_weights
-    while len(loss_weights) < len(LABEL_NAMES):
-        loss_weights.append(0.0)
+    while len(args.loss_weights) < len(LABEL_NAMES):
+        args.loss_weights.append(0.0)
 
     model = Model(
         args.model_name_or_path,
         tokenizer,
         num_labels=len(LABEL_NAMES),
         token_loss_weight=args.token_loss_weight,
-        loss_weights=loss_weights,
+        loss_weights=args.loss_weights,
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
         n_separate_layers=args.n_separate_layers,
