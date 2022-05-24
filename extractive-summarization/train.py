@@ -13,7 +13,6 @@ from transformers import (
     TrainingArguments,
 )
 import torch
-from torch.utils.data import DataLoader, Subset, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import (
     accuracy_score,
@@ -25,13 +24,13 @@ from sklearn.metrics import (
 from tqdm.auto import tqdm
 from datasets import load_dataset
 from functools import partial
-from model import BasicModel, RecurrentModel
+from model import Model
 from rouge import Rouge
 from typing import List
 from pathlib import Path
 import json
 
-label_names = [
+LABEL_NAMES = [
     "is_relevant",
     "has_sectors",
     "has_subpillars_1d",
@@ -67,15 +66,18 @@ class Args:
     n_subsample: int = None
     compute_relevant_with_or: bool = False
     loss_weights: List[float] = field(
-        default_factory=lambda: [1.0] + [0.0] * (len(label_names) - 1)
+        default_factory=lambda: [1.0] + [0.0] * (len(LABEL_NAMES) - 1)
     )
 
 
-def get_label_vector(entry_id, excerpts_dict):
-    label = np.zeros(len(label_names))
+def get_label_vector(entry_id, excerpts_dict=None):
+    label = np.zeros(len(LABEL_NAMES))
+    # every excerpt is relevant
+    label[LABEL_NAMES.index("is_relevant")] = 1
 
-    for i, l in enumerate(label_names):
-        label[i] = float(excerpts_dict[entry_id][l])
+    if excerpts_dict is not None:
+        for i, l in enumerate(LABEL_NAMES):
+            label[i] = float(excerpts_dict[entry_id][l])
 
     return label
 
@@ -128,7 +130,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
 
     # token labels
     if has_labels:
-        token_labels = np.zeros((args.max_full_length, len(label_names)))
+        token_labels = np.zeros((args.max_full_length, len(LABEL_NAMES)))
 
         for excerpt in sample["excerpts"]:
             e = excerpt["text"]
@@ -184,7 +186,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
             else None
         )
 
-        sentence_labels = np.zeros((args.max_full_length, len(label_names)))
+        sentence_labels = np.zeros((args.max_full_length, len(LABEL_NAMES)))
         sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
 
         sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
@@ -228,18 +230,43 @@ def get_highlights(
     text,
     offset_mapping,
     probs,
-    thresholds=(0.25, 0.5, 0.75),
-    highlight_colors=(
-        "$highlight_color_low",
-        "$highlight_color_medium",
-        "$highlight_color_high",
-    ),
-    text_colors=(
-        "$text_color_low",
-        "$text_color_medium",
-        "$text_color_high",
-    ),
+    use_categories=False,
 ):
+    if use_categories:
+        min_prob = 0.25
+        thresholds = (0.25, 0.5, 0.75)
+        highlight_colors = (
+            (
+                "$highlight_color_low",
+                "$highlight_color_medium",
+                "$highlight_color_high",
+            ),
+        )
+        text_colors = (
+            (
+                "$text_color_low",
+                "$text_color_medium",
+                "$text_color_high",
+            ),
+        )
+
+        def get_highlight_color(p):
+            class_idx = sum(p > x for x in thresholds) - 1
+            return highlight_colors[class_idx]
+
+        def get_text_color(p):
+            class_idx = sum(p > x for x in thresholds) - 1
+            return text_colors[class_idx]
+
+    else:
+        min_prob = 0.25
+
+        def get_highlight_color(p):
+            return f"rgba(255, 0, 0, {p})"
+
+        def get_text_color(p):
+            return "#333"
+
     html = "<p>"
 
     prev_end = 0
@@ -254,13 +281,12 @@ def get_highlights(
             start -= 1
 
         html += text[prev_end:start]
-        if prob > thresholds[0] and (
-            in_span or i == len(probs) - 1 or probs[i + 1] > thresholds[0]
+        if prob > min_prob and (
+            in_span or i == len(probs) - 1 or probs[i + 1] > min_prob
         ):
             in_span = True
-            class_idx = sum(prob > x for x in thresholds) - 1
 
-            html += f'<span data-prob="{prob}" style="background-color:{highlight_colors[class_idx]}; color:{text_colors[class_idx]};">{text[start:end]}</span>'
+            html += f'<span data-prob="{prob}" style="background-color:{get_highlight_color(prob)}; color:{get_text_color(prob)};">{text[start:end]}</span>'
         else:
             in_span = False
             html += text[start:end]
@@ -321,7 +347,13 @@ class Metrics:
         return scores
 
     def get_metrics_for_label(
-        self, results, label_index, threshold, max_n_visualize, visualize_out
+        self,
+        results,
+        label_index,
+        threshold,
+        max_n_visualize,
+        visualize_out,
+        use_categories,
     ):
         visualize_out = Path(visualize_out)
 
@@ -501,7 +533,7 @@ class Metrics:
 
         if self.training_args is not None and "wandb" in self.training_args.report_to:
             wandb.log(
-                {f"highlighted_texts_{label_names[label_index]}": wandb.Html(full_html)}
+                {f"highlighted_texts_{LABEL_NAMES[label_index]}": wandb.Html(full_html)}
             )
 
         if visualize_out is not None:
@@ -526,6 +558,7 @@ class Metrics:
         label_names_to_evaluate=None,
         max_n_visualize=10,
         visualize_out=None,
+        use_categories=False,
     ):
         all_scores = {}
 
@@ -535,29 +568,25 @@ class Metrics:
         used_label_names = (
             label_names_to_evaluate
             if label_names_to_evaluate is not None
-            else label_names
+            else LABEL_NAMES
         )
 
         # only compute metrics for relevancy since it takes quite some time
         for label_name in used_label_names:
-            idx = label_names.index(label_name)
+            idx = LABEL_NAMES.index(label_name)
 
             if (
                 label_name == "is_relevant"
                 and self.args is not None
                 and self.args.compute_relevant_with_or
             ):
-                other_idx = sorted(set(np.arange(len(label_names))) - {idx})
+                other_idx = sorted(set(np.arange(len(LABEL_NAMES))) - {idx})
                 results.predictions[..., idx] = results.predictions[..., other_idx].max(
                     axis=-1
                 )
 
             scores = self.get_metrics_for_label(
-                results,
-                idx,
-                threshold,
-                max_n_visualize,
-                visualize_out,
+                results, idx, threshold, max_n_visualize, visualize_out, use_categories
             )
 
             all_scores.update({f"{label_name}/{k}": v for k, v in scores.items()})
@@ -602,7 +631,7 @@ def create_excerpts_dict(excerpts_df):
         | excerpts_df["has_subpillars_2d"]
     )
 
-    for key in label_names:
+    for key in LABEL_NAMES:
         if key not in excerpts_df.columns:
             print(
                 f"Warning: {key} not present in excerpts dataframe. Filling with 'false'."
@@ -612,7 +641,7 @@ def create_excerpts_dict(excerpts_df):
     excerpts_dict = {}
     for _, row in excerpts_df.iterrows():
         excerpts_dict[row["entry_id"]] = {
-            k: v for k, v in row.iteritems() if k in label_names
+            k: v for k, v in row.iteritems() if k in LABEL_NAMES
         }
 
     return excerpts_dict
@@ -648,17 +677,21 @@ def train(args, training_args):
 
         for group in args.separate_layer_groups:
             separate_layer_groups.append(
-                [label_names.index(label_name) for label_name in group]
+                [LABEL_NAMES.index(label_name) for label_name in group]
             )
     else:
         separate_layer_groups = args.separate_layer_groups
 
-    model = BasicModel(
+    loss_weights = args.loss_weights
+    while len(loss_weights) < len(LABEL_NAMES):
+        loss_weights.append(0.0)
+
+    model = Model(
         args.model_name_or_path,
         tokenizer,
-        num_labels=len(label_names),
+        num_labels=len(LABEL_NAMES),
         token_loss_weight=args.token_loss_weight,
-        loss_weights=args.loss_weights,
+        loss_weights=loss_weights,
         slice_length=args.max_length,
         extra_context_length=args.extra_context_length,
         n_separate_layers=args.n_separate_layers,
