@@ -355,8 +355,6 @@ class Metrics:
         visualize_out,
         use_categories,
     ):
-        visualize_out = Path(visualize_out)
-
         true_texts = [" ".join(sentences) for sentences in self.dataset["raw_excerpts"]]
         scores = {}
 
@@ -522,7 +520,7 @@ class Metrics:
             probs = predictions[..., label_index]
 
             id = ", ".join([str(x) for x in id])
-            sample_htmls[id] = get_highlights(text, offset_mapping, probs)
+            sample_htmls[id] = get_highlights(text, offset_mapping, probs, use_categories=use_categories)
             sample_blank_texts[id] = text
 
         full_html = ""
@@ -537,6 +535,8 @@ class Metrics:
             )
 
         if visualize_out is not None:
+            visualize_out = Path(visualize_out)
+
             if visualize_out.name.endswith(".html"):
                 open(visualize_out, "w").write(full_html)
             elif visualize_out.name.endswith(".json"):
