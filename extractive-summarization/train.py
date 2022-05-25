@@ -2,7 +2,6 @@ import sys
 import wandb
 import math
 import os
-import pickle
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
@@ -520,7 +519,9 @@ class Metrics:
             probs = predictions[..., label_index]
 
             id = ", ".join([str(x) for x in id])
-            sample_htmls[id] = get_highlights(text, offset_mapping, probs, use_categories=use_categories)
+            sample_htmls[id] = get_highlights(
+                text, offset_mapping, probs, use_categories=use_categories
+            )
             sample_blank_texts[id] = text
 
         full_html = ""
@@ -697,7 +698,7 @@ def train(args, training_args):
     )
 
     if "wandb" in training_args.report_to and training_args.do_train:
-        wandb.init(project="deep")
+        wandb.init(project="deep", name=os.path.splitext(os.path.basename(sys.argv[1]))[0])
         wandb.config.update(training_args)
         wandb.config.update(args)
         wandb.save(__file__, policy="now")
