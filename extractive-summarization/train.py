@@ -685,6 +685,9 @@ def train(args, training_args):
     while len(args.loss_weights) < len(LABEL_NAMES):
         args.loss_weights.append(0.0)
 
+    # normalize to sum to 1
+    args.loss_weights = [weight / sum(args.loss_weights) for weight in args.loss_weights]
+
     model = Model(
         args.model_name_or_path,
         tokenizer,
