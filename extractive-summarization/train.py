@@ -20,7 +20,6 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from tqdm.auto import tqdm
 from datasets import load_dataset
 from functools import partial
 from model import Model
@@ -87,9 +86,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
 
     has_labels = "excerpts" in sample
 
-    encoding = tokenizer(
-        sentences, add_special_tokens=False, return_offsets_mapping=True
-    )
+    encoding = tokenizer(sentences, add_special_tokens=False, return_offsets_mapping=True)
 
     input_ids = [tokenizer.cls_token_id]
     offset_mapping = [(0, 0)]
@@ -103,10 +100,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
         input_ids.append(tokenizer.sep_token_id)
 
         offset_mapping.extend(
-            [
-                (prev_offset + start, prev_offset + end)
-                for start, end in sentence_offsets
-            ]
+            [(prev_offset + start, prev_offset + end) for start, end in sentence_offsets]
         )
         offset_mapping.append((0, 0))
 
@@ -140,9 +134,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
 
             def is_in_excerpt(offset):
                 return (
-                    offset[0] != offset[1]
-                    and offset[0] >= start_index
-                    and offset[1] <= end_index
+                    offset[0] != offset[1] and offset[0] >= start_index and offset[1] <= end_index
                 )
 
             for i, offset in enumerate(offset_mapping):
@@ -189,9 +181,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
         sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
 
         sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
-        sentence_indices_in_ids = [
-            i for i in sentence_indices if i < len(sep_positions)
-        ]
+        sentence_indices_in_ids = [i for i in sentence_indices if i < len(sep_positions)]
         sentence_labels_in_ids = [
             label
             for i, label in zip(sentence_indices, sentence_labels_list)
@@ -199,9 +189,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
         ]
 
         if len(sentence_indices_in_ids) > 0:
-            sentence_labels[
-                sep_positions[sentence_indices_in_ids]
-            ] = sentence_labels_in_ids
+            sentence_labels[sep_positions[sentence_indices_in_ids]] = sentence_labels_in_ids
         sentence_labels_mask[sep_positions] = 1
     else:
         sentence_labels = sentence_labels_mask = None
@@ -280,12 +268,14 @@ def get_highlights(
             start -= 1
 
         html += text[prev_end:start]
-        if prob > min_prob and (
-            in_span or i == len(probs) - 1 or probs[i + 1] > min_prob
-        ):
+        if prob > min_prob and (in_span or i == len(probs) - 1 or probs[i + 1] > min_prob):
             in_span = True
 
-            html += f'<span data-prob="{prob}" style="background-color:{get_highlight_color(prob)}; color:{get_text_color(prob)};">{text[start:end]}</span>'
+            html += (
+                f'<span data-prob="{prob}"'
+                f'style="background-color:{get_highlight_color(prob)}; '
+                f'color:{get_text_color(prob)};">{text[start:end]}</span>'
+            )
         else:
             in_span = False
             html += text[start:end]
@@ -325,10 +315,8 @@ class Metrics:
         if len(evaluatable_pairs) == 0:
             scores = {}
         else:
-            hyps, refs = list(zip(*evaluatable_pairs))
-            all_scores = self.scorer.get_scores(
-                hyps, refs, ignore_empty=True, avg=False
-            )
+            hyps, refs = zip(*evaluatable_pairs)
+            all_scores = self.scorer.get_scores(hyps, refs, ignore_empty=True, avg=False)
             # flattens the dicts
             all_scores = [
                 pd.json_normalize(score, sep="/").to_dict(orient="records")[0]
@@ -357,19 +345,15 @@ class Metrics:
         true_texts = [" ".join(sentences) for sentences in self.dataset["raw_excerpts"]]
         scores = {}
 
-        ## sentence metrics
+        # sentence metrics
         predicted_indices = [
-            np.where(
-                (predictions[..., label_index] >= threshold)[np.array(labels_mask) == 1]
-            )[0]
+            np.where((predictions[..., label_index] >= threshold)[np.array(labels_mask) == 1])[0]
             for predictions, labels_mask in zip(
                 results.predictions, self.dataset["sentence_labels_mask"]
             )
         ]
         true_indices = [
-            np.where(
-                (np.array(labels)[..., label_index] == 1)[np.array(labels_mask) == 1]
-            )[0]
+            np.where((np.array(labels)[..., label_index] == 1)[np.array(labels_mask) == 1])[0]
             for labels, labels_mask in zip(
                 self.dataset["sentence_labels"], self.dataset["sentence_labels_mask"]
             )
@@ -385,8 +369,7 @@ class Metrics:
 
         flat_sentence_predictions = np.concatenate(
             [
-                predictions[np.array(labels_mask).astype(bool), label_index]
-                >= threshold
+                predictions[np.array(labels_mask).astype(bool), label_index] >= threshold
                 for predictions, labels_mask in zip(
                     results.predictions, self.dataset["sentence_labels_mask"]
                 )
@@ -413,30 +396,19 @@ class Metrics:
         scores["sentence_balanced_accuracy"] = balanced_accuracy_score(
             flat_sentence_labels, flat_sentence_predictions
         )
-        scores["sentence_f1_score"] = f1_score(
-            flat_sentence_labels, flat_sentence_predictions
-        )
-        scores["sentence_recall"] = recall_score(
-            flat_sentence_labels, flat_sentence_predictions
-        )
+        scores["sentence_f1_score"] = f1_score(flat_sentence_labels, flat_sentence_predictions)
+        scores["sentence_recall"] = recall_score(flat_sentence_labels, flat_sentence_predictions)
         scores["sentence_precision"] = precision_score(
             flat_sentence_labels, flat_sentence_predictions
         )
 
-        ## token predictions
+        # token predictions
         token_predictions = results.predictions
 
         predicted_texts = []
         best_possible_predicted_texts = []
 
-        for (
-            text,
-            input_ids,
-            attention_mask,
-            offset_mapping,
-            predictions,
-            labels,
-        ) in zip(
+        for (text, input_ids, attention_mask, offset_mapping, predictions, labels,) in zip(
             self.dataset["text"],
             self.dataset["input_ids"],
             self.dataset["attention_mask"],
@@ -452,17 +424,14 @@ class Metrics:
             mask = attention_mask & ((predictions[..., label_index] >= threshold))
             best_mask = attention_mask & ((labels[..., label_index] == 1))
 
-            predicted_texts.append(
-                self.tokenizer.decode(input_ids[mask], skip_special_tokens=True)
-            )
+            predicted_texts.append(self.tokenizer.decode(input_ids[mask], skip_special_tokens=True))
             best_possible_predicted_texts.append(
                 self.tokenizer.decode(input_ids[best_mask], skip_special_tokens=True)
             )
 
         flat_predictions = np.concatenate(
             [
-                predictions[np.array(labels_mask).astype(bool), label_index]
-                >= threshold
+                predictions[np.array(labels_mask).astype(bool), label_index] >= threshold
                 for predictions, labels_mask in zip(
                     token_predictions, self.dataset["token_labels_mask"]
                 )
@@ -494,9 +463,7 @@ class Metrics:
             )
 
         scores["token_accuracy"] = accuracy_score(flat_labels, flat_predictions)
-        scores["token_balanced_accuracy"] = balanced_accuracy_score(
-            flat_labels, flat_predictions
-        )
+        scores["token_balanced_accuracy"] = balanced_accuracy_score(flat_labels, flat_predictions)
         scores["token_f1_score"] = f1_score(flat_labels, flat_predictions)
         scores["token_recall"] = recall_score(flat_labels, flat_predictions)
         scores["token_precision"] = precision_score(flat_labels, flat_predictions)
@@ -531,9 +498,7 @@ class Metrics:
             full_html += html
 
         if self.training_args is not None and "wandb" in self.training_args.report_to:
-            wandb.log(
-                {f"highlighted_texts_{LABEL_NAMES[label_index]}": wandb.Html(full_html)}
-            )
+            wandb.log({f"highlighted_texts_{LABEL_NAMES[label_index]}": wandb.Html(full_html)})
 
         if visualize_out is not None:
             visualize_out = Path(visualize_out)
@@ -581,9 +546,7 @@ class Metrics:
                 and self.args.compute_relevant_with_or
             ):
                 other_idx = sorted(set(np.arange(len(LABEL_NAMES))) - {idx})
-                results.predictions[..., idx] = results.predictions[..., other_idx].max(
-                    axis=-1
-                )
+                results.predictions[..., idx] = results.predictions[..., other_idx].max(axis=-1)
 
             scores = self.get_metrics_for_label(
                 results, idx, threshold, max_n_visualize, visualize_out, use_categories
@@ -597,9 +560,7 @@ class Metrics:
 
 
 def create_excerpts_dict(excerpts_df):
-    possible_sectors = set(
-        s for sectors in excerpts_df["sectors"].values for s in eval(sectors)
-    )
+    possible_sectors = set(s for sectors in excerpts_df["sectors"].values for s in eval(sectors))
 
     has_sectors = np.zeros(len(excerpts_df), dtype=bool)
     sectors_value_dict = {s: np.zeros_like(has_sectors) for s in possible_sectors}
@@ -633,21 +594,17 @@ def create_excerpts_dict(excerpts_df):
 
     for key in LABEL_NAMES:
         if key not in excerpts_df.columns:
-            print(
-                f"Warning: {key} not present in excerpts dataframe. Filling with 'false'."
-            )
+            print(f"Warning: {key} not present in excerpts dataframe. Filling with 'false'.")
             excerpts_df[key] = False
 
     excerpts_dict = {}
     for _, row in excerpts_df.iterrows():
-        excerpts_dict[row["entry_id"]] = {
-            k: v for k, v in row.iteritems() if k in LABEL_NAMES
-        }
+        excerpts_dict[row["entry_id"]] = {k: v for k, v in row.iteritems() if k in LABEL_NAMES}
 
     return excerpts_dict
 
 
-def train(args, training_args):
+def get_test_train_data(args):
     data = load_dataset(
         "json",
         data_files=args.data_path,
@@ -665,22 +622,31 @@ def train(args, training_args):
         num_proc=training_args.dataloader_num_workers,
     )
 
-    datasets = {}
     train_indices, eval_indices = train_test_split(
         np.arange(len(data)), test_size=0.01, shuffle=True, random_state=1234
     )
-    datasets["train"] = data.select(train_indices)
-    datasets["test"] = data.select(eval_indices)
+    train = data.select(train_indices)
+    test = data.select(eval_indices)
+    return train, test
 
+
+def get_separate_layer_groups(args):
     if args.separate_layer_groups is not None:
         separate_layer_groups = []
 
         for group in args.separate_layer_groups:
-            separate_layer_groups.append(
-                [LABEL_NAMES.index(label_name) for label_name in group]
-            )
+            separate_layer_groups.append([LABEL_NAMES.index(label_name) for label_name in group])
     else:
         separate_layer_groups = args.separate_layer_groups
+    return separate_layer_groups
+
+
+def train(args, training_args):
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
+    datasets = {}
+    datasets["train"], datasets["test"] = get_test_train_data(args)
+
+    separate_layer_groups = get_separate_layer_groups(args)
 
     while len(args.loss_weights) < len(LABEL_NAMES):
         args.loss_weights.append(0.0)
@@ -710,9 +676,7 @@ def train(args, training_args):
 
     training_args.label_names = ["token_labels", "sentence_labels"]
 
-    metrics = Metrics(
-        datasets["test"], tokenizer=tokenizer, training_args=training_args, args=args
-    )
+    metrics = Metrics(datasets["test"], tokenizer=tokenizer, training_args=training_args, args=args)
 
     trainer = Trainer(
         model,
@@ -728,8 +692,13 @@ def train(args, training_args):
         trainer.evaluate()
 
 
-if __name__ == "__main__":
+def get_args():
     parser = HfArgumentParser([Args, TrainingArguments])
 
     (args, training_args) = parser.parse_json_file(sys.argv[1])
+    return args, training_args
+
+
+if __name__ == "__main__":
+    (args, training_args) = get_args()
     train(args, training_args)
