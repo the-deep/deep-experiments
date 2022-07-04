@@ -57,7 +57,7 @@ class Transformer(pl.LightningModule):
         train_batch_size: int = 32,
         eval_batch_size: int = 32,
         dropout_rate: float = 0.3,
-        max_len: int = 512,
+        max_len: int = 128,
         output_length: int = 384,
         training_device: str = "cuda",
         keep_neg_examples: bool = False,
@@ -309,20 +309,23 @@ class Transformer(pl.LightningModule):
             data_for_threshold_tuning, hypertuning_threshold=True
         )
 
-        thresholds_list = np.linspace(0.0, 1.0, 1001)[::-1]
         optimal_thresholds_dict = {}
-        optimal_scores = []
+        optimal_scores = {}
 
         for j in range(logit_predictions.shape[1]):
-            scores = []
-            for thresh_tmp in thresholds_list:
-                metric = self.get_metric(
-                    logit_predictions[:, j],
+            preds_one_column = logit_predictions[:, j]
+            min_proba = np.round(min(preds_one_column), 3)
+            max_proba = np.round(max(preds_one_column), 3)
+            thresholds_list = np.round(np.linspace(max_proba, min_proba, 101), 3)
+            scores = [
+                self.get_metric(
+                    preds_one_column,
                     y_true[:, j],
                     beta_f1,
                     thresh_tmp,
                 )
-                scores.append(metric)
+                for thresh_tmp in thresholds_list
+            ]
 
             max_threshold = 0
             max_score = 0
@@ -385,6 +388,7 @@ def train_model(
     val_params,
     gpu_nb: int,
     MAX_EPOCHS: int,
+    max_len: int,
     weight_decay=0.02,
     warmup_steps=500,
     output_length=384,
@@ -455,6 +459,7 @@ def train_model(
         training_device=training_device,
         keep_neg_examples=keep_neg_examples_bool,
         only_backpropagate_pos=only_backpropagate_pos,
+        max_len=max_len,
     )
 
     """lr_finder = trainer.tuner.lr_find(model)

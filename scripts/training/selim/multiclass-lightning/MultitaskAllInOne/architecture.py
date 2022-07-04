@@ -23,14 +23,14 @@ class Model(torch.nn.Module):
             model_name_or_path, output_hidden_states=True
         )
 
-        # freeze embeddings
+        """# freeze embeddings
         for param in self.common_backbone.embeddings.parameters():
             param.requires_grad = False
 
         # freeze two first layers
         for layer in self.common_backbone.encoder.layer[:2]:
             for param in layer.parameters():
-                param.requires_grad = False
+                param.requires_grad = False"""
 
         self.pool = Pooling(
             word_embedding_dimension=output_length,

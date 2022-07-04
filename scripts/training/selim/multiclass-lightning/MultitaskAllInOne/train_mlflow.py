@@ -128,10 +128,11 @@ if __name__ == "__main__":
             "learning_rate": args.learning_rate,
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
-            "beta f1": args.beta_f1,
+            "f_beta": args.beta_f1,
             "instance_type": args.instance_type,
             "n_gpu": gpu_nb,
             "only_backpropagate_pos": only_backpropagate_pos,
+            "max_len": args.max_len,
         }
 
         mlflow.log_params(params)
@@ -164,6 +165,7 @@ if __name__ == "__main__":
             training_device=training_device,
             beta_f1=args.beta_f1,
             only_backpropagate_pos=only_backpropagate_pos,
+            max_len=args.max_len,
         )
 
         try:
@@ -173,7 +175,9 @@ if __name__ == "__main__":
         except Exception as e:
             logging.info("model_state_dict_error", e)
 
-        mlflow.log_metrics(clean_name_for_logging(model.train_f1_score, context="f"))
+        mlflow.log_metrics(
+            clean_name_for_logging(model.train_f1_score, context="f_score")
+        )
         mlflow.log_metrics(
             clean_name_for_logging(model.optimal_thresholds, context="thresholds")
         )

@@ -14,7 +14,7 @@ import pandas as pd
 
 
 class CustomDataset(Dataset):
-    def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 250):
+    def __init__(self, dataframe, tagname_to_tagid, tokenizer, max_len: int = 128):
         self.tokenizer = tokenizer
         self.data = dataframe
 
