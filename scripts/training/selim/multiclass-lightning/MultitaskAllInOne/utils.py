@@ -12,6 +12,21 @@ warnings.filterwarnings("ignore")
 # GENERAL UTIL FUNCTIONS
 
 
+def map_id_layer_to_level(ids_each_level):
+    dict_layers = {}
+    lengthes = [len(id_one_level) for id_one_level in ids_each_level]
+    tag_id = 0
+    for i, length_tmp in enumerate(lengthes):
+        for j in range(length_tmp):
+            dict_layers[tag_id] = i
+            tag_id += 1
+    return dict_layers
+
+
+def beta_score(precision, recall, f_beta):
+    return (1 + f_beta ** 2) * precision * recall / ((f_beta ** 2) * precision + recall)
+
+
 def get_new_name(name, context):
     # clean regex
     claned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
@@ -170,10 +185,8 @@ def compute_weights(number_data_classes, n_tot):
     OUTPUT:
     list of weights used for training
     """
-    number_classes = 2
     return [
-        n_tot / (number_classes * number_data_class)
-        for number_data_class in number_data_classes
+        1 - (number_data_class / n_tot) for number_data_class in number_data_classes
     ]
 
 

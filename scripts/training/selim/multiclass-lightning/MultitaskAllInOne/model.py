@@ -10,8 +10,6 @@ from sklearn import metrics
 
 dill.extend(True)
 
-
-from typing import Optional
 from tqdm.auto import tqdm
 
 import pytorch_lightning as pl
@@ -20,7 +18,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch.nn.functional as F
-
 
 import numpy as np
 from sklearn import metrics
@@ -32,7 +29,7 @@ from transformers import AdamW, AutoTokenizer
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from data import CustomDataset
-from utils import flatten, tagname_to_id, compute_weights
+from utils import flatten, tagname_to_id, compute_weights, beta_score
 from architecture import Model
 from loss import FocalLoss
 
@@ -297,7 +294,7 @@ class Transformer(pl.LightningModule):
         else:
             return probabilities_dict
 
-    def hypertune_threshold(self, beta_f1: float = 0.8):
+    def hypertune_threshold(self, f_beta: float = 0.8):
         """
         having the probabilities, loop over a list of thresholds to see which one:
         1) yields the best results
@@ -310,70 +307,103 @@ class Transformer(pl.LightningModule):
         )
 
         optimal_thresholds_dict = {}
-        optimal_scores = {}
+        optimal_f_beta_scores = {}
+        optimal_precision_scores = {}
+        optimal_recall_scores = {}
 
         for j in range(logit_predictions.shape[1]):
             preds_one_column = logit_predictions[:, j]
             min_proba = np.round(min(preds_one_column), 3)
             max_proba = np.round(max(preds_one_column), 3)
+
             thresholds_list = np.round(np.linspace(max_proba, min_proba, 101), 3)
-            scores = [
-                self.get_metric(
+
+            f_beta_scores = []
+            precision_scores = []
+            recall_scoress = []
+            for thresh_tmp in thresholds_list:
+                score = self.get_metric(
                     preds_one_column,
                     y_true[:, j],
-                    beta_f1,
+                    f_beta,
                     thresh_tmp,
                 )
-                for thresh_tmp in thresholds_list
-            ]
+                f_beta_scores.append(score["f_beta_score"])
+                precision_scores.append(score["precision"])
+                recall_scoress.append(score["recall"])
 
             max_threshold = 0
-            max_score = 0
-            for i in range(2, len(scores) - 2):
-                score = np.mean(scores[i - 2 : i + 2])
-                if score >= max_score:
-                    max_score = score
+            best_f_beta_score = 0
+
+            for i in range(2, len(f_beta_scores) - 2):
+
+                f_beta_score_mean = np.mean(f_beta_scores[i - 2 : i + 2])
+                precision_score_mean = np.mean(precision_scores[i - 2 : i + 2])
+                recall_score_mean = np.mean(recall_scoress[i - 2 : i + 2])
+
+                if f_beta_score_mean >= best_f_beta_score:
+
+                    best_f_beta_score = f_beta_score_mean
+                    best_recall = recall_score_mean
+                    best_precision = precision_score_mean
+
                     max_threshold = thresholds_list[i]
 
             tag_name = list(self.tagname_to_tagid.keys())[j]
 
-            optimal_scores[tag_name] = max_score
+            optimal_f_beta_scores[tag_name] = best_f_beta_score
+            optimal_precision_scores[tag_name] = best_precision
+            optimal_recall_scores[tag_name] = best_recall
+
             optimal_thresholds_dict[tag_name] = max_threshold
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-        return optimal_scores
+        return {
+            "precision": optimal_precision_scores,
+            "recall": optimal_recall_scores,
+            "f_beta_scores": optimal_f_beta_scores,
+        }
 
-    def get_metric(self, preds, groundtruth, beta_f1, threshold_tmp):
+    def get_metric(self, preds, groundtruth, f_beta, threshold_tmp):
         columns_logits = np.array(preds)
         column_pred = np.array(columns_logits > threshold_tmp).astype(int)
 
-        metric = metrics.fbeta_score(
+        precision = metrics.precision_score(
             groundtruth,
             column_pred,
-            beta_f1,
             average="binary",
         )
-        return np.round(metric, 3)
+        recall = metrics.recall_score(
+            groundtruth,
+            column_pred,
+            average="binary",
+        )
+        f_beta_score = beta_score(precision, recall, f_beta)
+        return {
+            "precision": np.round(precision, 3),
+            "recall": np.round(recall, 3),
+            "f_beta_score": np.round(f_beta_score, 3),
+        }
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alphas, gamma=0.5):
+    def __init__(self, alphas, gamma=0.2):
         super(FocalLoss, self).__init__()
         self.alphas = alphas
-
         self.gamma = gamma
 
     def forward(self, outputs, targets):
-        # self.alphas.to("cuda:0")
-        BCE_loss = F.binary_cross_entropy_with_logits(outputs, targets, reduce=False)
-        pt = torch.exp(-BCE_loss)
+        BCE_loss = F.binary_cross_entropy_with_logits(
+            outputs, targets, reduction="sum", pos_weight=self.alphas
+        )
+        """pt = torch.exp(-BCE_loss)
         row_loss = ((1 - pt) ** self.gamma) * BCE_loss
         row_mean = torch.mean(row_loss, 0)
 
-        F_loss = torch.dot(row_mean, self.alphas)
+        F_loss = torch.dot(row_mean, self.alphas)"""
 
-        return torch.mean(F_loss)
+        return BCE_loss
 
 
 def train_model(
@@ -396,7 +426,7 @@ def train_model(
     keep_neg_examples_bool=False,
     learning_rate=3e-5,
     training_device: str = "cuda",
-    beta_f1: float = 0.8,
+    f_beta: float = 0.8,
     only_backpropagate_pos=False,
 ):
     PATH_NAME = MODEL_DIR
@@ -467,7 +497,7 @@ def train_model(
     model.hparams.learning_rate = new_lr"""
     trainer.fit(model)
 
-    model.train_f1_score = model.hypertune_threshold(beta_f1)
+    model.optimal_scores = model.hypertune_threshold(f_beta)
 
     del model.training_loader
     del model.val_loader

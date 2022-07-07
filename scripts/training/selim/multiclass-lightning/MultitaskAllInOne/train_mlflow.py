@@ -27,6 +27,8 @@ from inference import TransformersPredictionsWrapper
 
 import torch
 
+import numpy as np
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -40,11 +42,12 @@ if __name__ == "__main__":
     # hyperparameters sent by the client are passed as command-line arguments to the script.
     parser.add_argument("--epochs", type=int, default=3)
     parser.add_argument("--train_batch_size", type=int, default=32)
-    parser.add_argument("--val_batch_size", type=int, default=32)
+    parser.add_argument("--val_batch_size", type=int, default=64)
 
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--warmup_steps", type=int, default=10)
     parser.add_argument("--learning_rate", type=float, default=5e-5)
+    parser.add_argument("--weight_decay", type=float, default=5e-2)
     parser.add_argument("--output_length", type=int, default=384)
     parser.add_argument("--nb_repetitions", type=int, default=1)
     parser.add_argument(
@@ -56,7 +59,8 @@ if __name__ == "__main__":
     # parser.add_argument("--log_every_n_steps", type=int, default=10)
     # parser.add_argument("--n_classes", type=int, default=6)
     parser.add_argument("--training_names", type=str)
-    parser.add_argument("--beta_f1", type=float, default=0.5)
+    parser.add_argument("--f_beta", type=float, default=0.5)
+    parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--min_results", type=str)
     parser.add_argument("--run_name", type=str, default="models")
     parser.add_argument("--instance_type", type=str, default="-")
@@ -99,7 +103,7 @@ if __name__ == "__main__":
     mlflow.set_experiment(args.experiment_name)
     # pytorch autolog automatically logs relevant data. DO NOT log the model, since
     # for NLP tasks we need a custom inference logic
-    mlflow.pytorch.autolog(log_models=True)
+    mlflow.pytorch.autolog(log_models=False)
 
     with mlflow.start_run():
         train_params = {
@@ -128,11 +132,13 @@ if __name__ == "__main__":
             "learning_rate": args.learning_rate,
             "model_name": args.model_name,
             "tokenizer_name": args.tokenizer_name,
-            "f_beta": args.beta_f1,
+            "f_beta": args.f_beta,
             "instance_type": args.instance_type,
             "n_gpu": gpu_nb,
             "only_backpropagate_pos": only_backpropagate_pos,
             "max_len": args.max_len,
+            "dropout": args.dropout,
+            "weight_decay": args.weight_decay
         }
 
         mlflow.log_params(params)
@@ -140,8 +146,6 @@ if __name__ == "__main__":
 
         train_df, val_df = preprocess_df(whole_df)
 
-        dropout_column = 0.2
-        weight_decay_col = 1e-3
 
         MODEL_NAME = "classification_model"
 
@@ -156,14 +160,14 @@ if __name__ == "__main__":
             train_params=train_params,
             val_params=val_params,
             MAX_EPOCHS=args.epochs,
-            dropout_rate=dropout_column,
-            weight_decay=weight_decay_col,
+            dropout_rate=args.dropout,
+            weight_decay=args.weight_decay,
             learning_rate=args.learning_rate,
             warmup_steps=args.warmup_steps,
             output_length=args.output_length,
             multiclass_bool=True,
             training_device=training_device,
-            beta_f1=args.beta_f1,
+            f_beta=args.f_beta,
             only_backpropagate_pos=only_backpropagate_pos,
             max_len=args.max_len,
         )
@@ -175,9 +179,10 @@ if __name__ == "__main__":
         except Exception as e:
             logging.info("model_state_dict_error", e)
 
-        mlflow.log_metrics(
-            clean_name_for_logging(model.train_f1_score, context="f_score")
-        )
+        for metric, scores in model.optimal_scores.items():
+            mlflow.log_metrics(clean_name_for_logging(scores, context=metric))
+            mlflow.log_metric(f"aa_mean_{metric}", np.mean(list(scores.values())))
+
         mlflow.log_metrics(
             clean_name_for_logging(model.optimal_thresholds, context="thresholds")
         )
@@ -204,7 +209,7 @@ if __name__ == "__main__":
             logging.info("pyfunc", e)
 
     # testing
-    test_excerpts = test_df["excerpt"]
+    """test_excerpts = test_df["excerpt"]
 
     predictions_test_set = model.custom_predict(test_excerpts, testing=True)
 
@@ -214,4 +219,4 @@ if __name__ == "__main__":
     }
 
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
-        dill.dump(outputs, f)
+        dill.dump(outputs, f)"""

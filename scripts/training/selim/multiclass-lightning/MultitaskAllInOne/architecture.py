@@ -22,11 +22,11 @@ class Model(torch.nn.Module):
         self.common_backbone = AutoModel.from_pretrained(
             model_name_or_path, output_hidden_states=True
         )
+        self.common_backbone.encoder.layer = self.common_backbone.encoder.layer[:-1]
 
         """# freeze embeddings
         for param in self.common_backbone.embeddings.parameters():
             param.requires_grad = False
-
         # freeze two first layers
         for layer in self.common_backbone.encoder.layer[:2]:
             for param in layer.parameters():
@@ -38,16 +38,18 @@ class Model(torch.nn.Module):
             pooling_mode_cls_token=True,
         )
 
-        self.last_layer = torch.nn.ModuleList(
+        self.LayerNorm_specific_hidden = torch.nn.ModuleList(
+            [torch.nn.LayerNorm(output_length * 2) for _ in range(self.n_heads)]
+        )
+
+        self.dropout = torch.nn.Dropout(dropout_rate)
+
+        self.specific_layer = torch.nn.ModuleList(
             [
                 AutoModel.from_pretrained(model_name_or_path).encoder.layer[-1]
                 for _ in range(self.n_heads)
             ]
         )
-
-        self.LayerNorm_specific_hidden = torch.nn.LayerNorm(output_length)
-
-        self.dropout = torch.nn.Dropout(dropout_rate)
 
         self.output_layer = torch.nn.ModuleList(
             [
@@ -61,20 +63,22 @@ class Model(torch.nn.Module):
         common_output = self.common_backbone(
             inputs["ids"],
             attention_mask=inputs["mask"],
-        )["hidden_states"][-2]
-
-        output_one_model = torch.tanh(common_output)
-        output_one_model = self.dropout(common_output)
-        output_one_model = self.LayerNorm_specific_hidden(output_one_model)
+        ).last_hidden_state
 
         heads = [
             self.output_layer[tag_id](
-                self.pool(
-                    {
-                        "token_embeddings": self.last_layer[tag_id](common_output)[0],
-                        "attention_mask": inputs["mask"],
-                    }
-                )["sentence_embedding"]
+                self.LayerNorm_specific_hidden[tag_id](
+                    self.dropout(
+                        self.pool(
+                            {
+                                "token_embeddings": self.specific_layer[tag_id](
+                                    common_output
+                                )[0],
+                                "attention_mask": inputs["mask"],
+                            }
+                        )["sentence_embedding"]
+                    )
+                )
             )
             for tag_id in range(self.n_heads)
         ]
