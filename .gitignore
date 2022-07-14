@@ -158,6 +158,7 @@ artifacts/
 *.pickle
 *.tar.gz
 *.tar
+*.csv
 lightning_logs/
 runs/
 *.xlsx
