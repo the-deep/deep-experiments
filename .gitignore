@@ -159,6 +159,7 @@ artifacts/
 *.tar.gz
 *.tar
 *.csv
+*.pyc
 lightning_logs/
 runs/
 *.xlsx
