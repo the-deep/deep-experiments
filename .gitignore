@@ -144,7 +144,6 @@ dmypy.json
 .DS_Store
 
 # data for local development
-#data/
 test_data/
 dataset/
 artifacts/
@@ -159,7 +158,6 @@ artifacts/
 *.pickle
 *.tar.gz
 *.tar
-/data
 lightning_logs/
 runs/
 *.xlsx
