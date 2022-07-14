@@ -144,7 +144,7 @@ dmypy.json
 .DS_Store
 
 # data for local development
-data/
+#data/
 test_data/
 dataset/
 artifacts/
