@@ -1,113 +1,126 @@
-import networkx as nx
+import re
 from ast import literal_eval
-from typing import List
 import pandas as pd
-from sklearn.metrics.pairwise import cosine_similarity
-from transformers import T5Tokenizer, T5ForConditionalGeneration
-from sentence_transformers import SentenceTransformer, util
 
-def custom_eval(x):
-    if str(x)=='nan':
-        return []
-    if str(x)=='[None]':
-        return []
-    if type(x)==list:
-        return x
+
+def order_dict(x):
+    cleaned_x = {k: v for k, v in x.items() if str(k) != "[]" and str(v) != "{}"}
+
+    if "General Overview" in list(cleaned_x.keys()):
+        first_dict = {"General Overview": cleaned_x["General Overview"]}
+        second_dict = {k: v for k, v in cleaned_x.items() if k != "General Overview"}
+        y = {**first_dict, **second_dict}
+        return y
+
+    elif "['General Overview']" in list(cleaned_x.keys()):
+        first_dict = {"[General Overview]": cleaned_x["['General Overview']"]}
+        second_dict = {
+            str(k): v for k, v in cleaned_x.items() if k != "['General Overview']"
+        }
+        y = {**first_dict, **second_dict}
+        return y
+
     else:
-        return literal_eval(x)
+        return cleaned_x
 
 
-def build_graph(cosine_similarity_matrix):
-    """
-    function to build graoh from similarity matrix
-    """
-    graph_one_lang = nx.Graph()
-    matrix_shape = cosine_similarity_matrix.shape
-    for i in range (matrix_shape[0]):
-        for j in range (matrix_shape[1]):
-            #do only once
-            if i < j:
-                sim = cosine_similarity_matrix[i, j]
-                graph_one_lang.add_edge(i, j, weight=sim)
-                graph_one_lang.add_edge(j, i, weight=sim)
+def omit_punctuation(text):
+    # layout clean
+    clean_key = text.replace("'", "").replace("[", "").replace("]", "")
 
-    return graph_one_lang
+    # omit pillar of any
+    if "->" in clean_key:
+        clean_key = clean_key.split("->")[1]
 
-def get_number_of_clusters(n_entries: int):
-    if n_entries < 5:
-        return 1
+    return clean_key
+
+
+def clean_characters(text):
+    # clean for latex characters
+    latex_text = text.replace("%", "\%").replace("$", "\$")
+
+    # strip punctuation
+    latex_text = re.sub(r'\s([?.!"](?:\s|$))', r"\1", latex_text)
+
+    return latex_text
+
+
+def update_df(new_data):
+    if type(new_data) is str:
+        new_data = literal_eval(new_data)
+
+    returned_df = pd.DataFrame()
+    for one_paragraph in new_data:
+        raw_entries = one_paragraph["raw_outputs"]
+        one_paragraph_df = pd.DataFrame(
+            list(zip(raw_entries["entry_id"], raw_entries["excerpt"])),
+            columns=["entry_id", "excerpt"],
+        )
+        returned_df = returned_df.append(one_paragraph_df)
+    return returned_df
+
+
+def print_df(ranked_sentence):
+    return ("\n  \hrule \n").join(ranked_sentence)
+
+
+def update_outputs_list(final_report, final_raw_outputs, new_data):
+    if type(new_data) is str:
+        final_report += new_data
+        final_raw_outputs += new_data
     else:
-        return n_entries // 5
 
-def process_df(df: pd.DataFrame, col_name: str):
+        for one_paragraph in new_data:
+            raw_entries = one_paragraph["raw_outputs"]
 
-    df_copy = df.copy()
-    df_copy['tmp_tag_str'] = df_copy[col_name].apply(str)
+            final_raw_outputs += print_df(raw_entries["excerpt"])
+            final_report += one_paragraph["generated_summary"]
 
-    grouped_df = df_copy.groupby('tmp_tag_str', as_index=False)[['entry_id', 'excerpt', 'severity_score']].agg(lambda x: list(x))
-
-    grouped_df['len'] = grouped_df['entry_id'].apply(lambda x: len(x))
-    grouped_df = grouped_df[grouped_df.len>=3]
-    grouped_df['severity_score'] = grouped_df.severity.apply(get_severity_score)
-
-    """grouped_df['sorted_severity_scores'] = grouped_df.severity_score.apply(
-        lambda x: np.argsort(x)[::-1]
-    )
-
-    for col_tmp in ['entry_id', 'excerpt', 'severity_score']:
-        grouped_df[col_tmp] = grouped_df.apply(
-            lambda x: [x[col_tmp][x['sorted_severity_scores'][i]] for i in range (x.len)], axis=1
-        )"""
-
-    grouped_df.sort_values(by='len', ascending=False, inplace=False).drop(columns='tmp_tag_str', inplace=False)
-
-    return grouped_df#[['excerpt', 'n_clusters']]
+    return final_report, final_raw_outputs
 
 
-def get_severity_score(item: List[str]):
-    severity_mapper = {
-        'Critical': 1,
-        'Major': 0.75,
-        'Of Concern': 0.5
-    }
-    if len(item) == 0:
-        return 0.5
-    severity_name = item[0]
-    if severity_name in severity_mapper.keys():
-        return severity_mapper[severity_name]
-    else:
-        return 0.5
+def get_dict_items(items, final_report, final_raw_outputs):
 
-def get_similarity_matrix(texts):
+    returned_df = pd.DataFrame()
 
-    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    embeddings_all_sentences = model.encode(texts)
+    first_key, first_value = items
+    dict_treated = order_dict(first_value)
 
-    similarity = cosine_similarity(embeddings_all_sentences, embeddings_all_sentences)
-    return similarity
+    if len(dict_treated) > 1:
 
+        for key, value in dict_treated.items():
 
-def t2t_generation(entries):
-    tokenizer = T5Tokenizer.from_pretrained("t5-large")
-    model = T5ForConditionalGeneration.from_pretrained("t5-large")
+            final_report, final_raw_outputs = update_outputs_list(
+                final_report,
+                final_raw_outputs,
+                str("\paragraph{" + omit_punctuation(key) + "}\n"),
+            )
 
-    changed_text  = f'summarize: {entries}'
-    input_ids = tokenizer(changed_text, return_tensors="pt", truncation=False).input_ids
-    outputs = model.generate(input_ids, max_length=256)
-    summarized_entries = tokenizer.decode(outputs[0], skip_special_tokens=True)
+            final_report, final_raw_outputs = update_outputs_list(
+                final_report, final_raw_outputs, value
+            )
 
-    return summarized_entries
+            final_report, final_raw_outputs = update_outputs_list(
+                final_report, final_raw_outputs, "\n \n"
+            )
 
-"""def get_sentences_to_omit(original_tweets: List[str]):
-    
-    cosine_similarity_matrix = get_similarity_matrix(original_tweets)
-    
-    #cosine_similarity_matrix
-    too_similar_ids = np.argwhere(cosine_similarity_matrix > 0.993)
+            df_one_paragraph = update_df(value)
+            df_one_paragraph["paragraph"] = f"{first_key}->{key}"
+            returned_df = returned_df.append(df_one_paragraph)
 
-    sentences_to_omit = []
-    for pair_ids in too_similar_ids:
-        if pair_ids[0]<pair_ids[1]:
-            sentences_to_omit.append(pair_ids[1])
+    elif len(dict_treated) == 1:
+        value = list(dict_treated.values())[0]
+        key = list(dict_treated.keys())[0]
 
-    return sentences_to_omit"""
+        final_report, final_raw_outputs = update_outputs_list(
+            final_report, final_raw_outputs, value
+        )
+        final_report, final_raw_outputs = update_outputs_list(
+            final_report, final_raw_outputs, "\n \n"
+        )
+
+        df_one_paragraph = update_df(value)
+        df_one_paragraph["paragraph"] = f"{first_key}->{key}"
+        returned_df = returned_df.append(df_one_paragraph)
+
+    return final_report, final_raw_outputs, returned_df
