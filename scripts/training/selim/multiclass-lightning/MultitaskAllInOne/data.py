@@ -1,5 +1,3 @@
-import os
-
 # setting tokenizers parallelism to false adds robustness when dploying the model
 # os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # dill import needs to be kept for more robustness in multimodel serialization

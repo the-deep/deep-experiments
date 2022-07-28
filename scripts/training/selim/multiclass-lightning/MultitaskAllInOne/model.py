@@ -3,35 +3,31 @@ import os
 # setting tokenizers parallelism to false adds robustness when dploying the model
 # os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # dill import needs to be kept for more robustness in multimodel serialization
-import dill
+# import dill
+# dill.extend(True)
+
 from collections import Counter
 
-from sklearn import metrics
-
-dill.extend(True)
 
 from tqdm.auto import tqdm
 
 import pytorch_lightning as pl
 
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader
 from torch import nn
 import torch.nn.functional as F
 
 import numpy as np
 from sklearn import metrics
 
-# from sklearn.metrics import precision_recall_curve, roc_curve
-
 from transformers import AdamW, AutoTokenizer
 
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 
 from data import CustomDataset
 from utils import flatten, tagname_to_id, compute_weights, beta_score
 from architecture import Model
-from loss import FocalLoss
 
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
@@ -45,8 +41,8 @@ class Transformer(pl.LightningModule):
         train_params,
         val_params,
         tokenizer,
-        multiclass,
         gpus: int,
+        n_freezed_layers: int,
         learning_rate: float = 1e-5,
         adam_epsilon: float = 1e-7,
         warmup_steps: int = 500,
@@ -63,7 +59,6 @@ class Transformer(pl.LightningModule):
     ):
 
         super().__init__()
-        self.output_length = output_length
         self.save_hyperparameters()
         targets_list = train_dataset["target"].tolist()
         self.tagname_to_tagid = tagname_to_id(targets_list)
@@ -74,14 +69,14 @@ class Transformer(pl.LightningModule):
             model_name_or_path,
             self.ids_each_level,
             dropout_rate,
-            self.output_length,
+            output_length,
+            n_freezed_layers=n_freezed_layers,
         )
         self.tokenizer = tokenizer
         self.val_params = val_params
 
         self.training_device = training_device
 
-        # self.multiclass = multiclass
         self.keep_neg_examples = keep_neg_examples
 
         self.training_loader = self.get_loaders(
@@ -107,16 +102,21 @@ class Transformer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        train_loss = self.get_loss(outputs, batch["targets"])
+        train_loss = self.Focal_loss(outputs, batch["targets"], weighted=True)
 
         self.log(
-            "train_loss", train_loss.item(), prog_bar=True, on_step=False, on_epoch=True
+            "train_loss",
+            train_loss.item(),
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+            logger=False,
         )
         return train_loss
 
     def validation_step(self, batch, batch_idx):
         outputs = self(batch)
-        val_loss = self.get_loss(outputs, batch["targets"])
+        val_loss = self.Focal_loss(outputs, batch["targets"], weighted=False)
         self.log(
             "val_loss",
             val_loss,
@@ -138,7 +138,10 @@ class Transformer(pl.LightningModule):
             eps=self.hparams.adam_epsilon,
         )
 
-        scheduler = ReduceLROnPlateau(optimizer, "min", 0.3, patience=1, threshold=1e-3)
+        scheduler = StepLR(optimizer, step_size=1, gamma=0.6)
+        """scheduler = ReduceLROnPlateau(
+            optimizer, "min", 0.25, patience=1, threshold=1e-3
+        )"""
         scheduler = {
             "scheduler": scheduler,
             "interval": "epoch",
@@ -158,11 +161,8 @@ class Transformer(pl.LightningModule):
     ):
 
         set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
-        loader = DataLoader(set, **params, pin_memory=True)
+        loader = DataLoader(set, **params, pin_memory=False)
         return loader
-
-    def get_loss(self, outputs, targets, only_pos: bool = False):
-        return self.Focal_loss(outputs, targets)
 
     def get_loss_alphas(self, targets_list):
         counts = dict(Counter(flatten(targets_list)))
@@ -334,6 +334,8 @@ class Transformer(pl.LightningModule):
 
             max_threshold = 0
             best_f_beta_score = 0
+            best_recall = 0
+            best_precision = 0
 
             for i in range(2, len(f_beta_scores) - 2):
 
@@ -393,10 +395,15 @@ class FocalLoss(nn.Module):
         self.alphas = alphas
         self.gamma = gamma
 
-    def forward(self, outputs, targets):
-        BCE_loss = F.binary_cross_entropy_with_logits(
-            outputs, targets, reduction="sum", pos_weight=self.alphas
-        )
+    def forward(self, outputs, targets, weighted: bool):
+        if weighted:
+            BCE_loss = F.binary_cross_entropy_with_logits(
+                outputs, targets, reduction="mean", pos_weight=self.alphas
+            )
+        else:
+            BCE_loss = F.binary_cross_entropy_with_logits(
+                outputs, targets, reduction="mean"
+            )
         """pt = torch.exp(-BCE_loss)
         row_loss = ((1 - pt) ** self.gamma) * BCE_loss
         row_mean = torch.mean(row_loss, 0)
@@ -419,10 +426,10 @@ def train_model(
     gpu_nb: int,
     MAX_EPOCHS: int,
     max_len: int,
+    n_freezed_layers: int,
     weight_decay=0.02,
     warmup_steps=500,
     output_length=384,
-    multiclass_bool=True,
     keep_neg_examples_bool=False,
     learning_rate=3e-5,
     training_device: str = "cuda",
@@ -485,11 +492,11 @@ def train_model(
         warmup_steps=warmup_steps,
         output_length=output_length,
         learning_rate=learning_rate,
-        multiclass=multiclass_bool,
         training_device=training_device,
         keep_neg_examples=keep_neg_examples_bool,
         only_backpropagate_pos=only_backpropagate_pos,
         max_len=max_len,
+        n_freezed_layers=n_freezed_layers,
     )
 
     """lr_finder = trainer.tuner.lr_find(model)

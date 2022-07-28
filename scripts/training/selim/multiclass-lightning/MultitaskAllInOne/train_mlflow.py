@@ -3,17 +3,20 @@ import os
 # setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # dill import needs to be kept for more robustness in multimodel serialization
-import dill
+# import dill
+# dill.extend(True)
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
-dill.extend(True)
 
 import multiprocessing
 
 import argparse
+
 import logging
-from ast import literal_eval
+
+logging.basicConfig()
+logging.getLogger().setLevel(logging.DEBUG)
 
 from pathlib import Path
 
@@ -65,6 +68,8 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default="models")
     parser.add_argument("--instance_type", type=str, default="-")
     parser.add_argument("--only_backpropagate_pos", type=str, default="false")
+    parser.add_argument("--n_freezed_layers", type=int, default=1)
+    parser.add_argument("--relabeled_columns", type=str, default="none")
 
     # Data, model, and output directories
     parser.add_argument(
@@ -138,14 +143,15 @@ if __name__ == "__main__":
             "only_backpropagate_pos": only_backpropagate_pos,
             "max_len": args.max_len,
             "dropout": args.dropout,
-            "weight_decay": args.weight_decay
+            "weight_decay": args.weight_decay,
+            "n_freezed_layers": args.n_freezed_layers,
+            "relabeled_columns": args.relabeled_columns,
         }
 
         mlflow.log_params(params)
         mlflow.log_param("train_batch_size", args.train_batch_size)
 
-        train_df, val_df = preprocess_df(whole_df)
-
+        train_df, val_df = preprocess_df(whole_df, args.relabeled_columns)
 
         MODEL_NAME = "classification_model"
 
@@ -165,11 +171,11 @@ if __name__ == "__main__":
             learning_rate=args.learning_rate,
             warmup_steps=args.warmup_steps,
             output_length=args.output_length,
-            multiclass_bool=True,
             training_device=training_device,
             f_beta=args.f_beta,
             only_backpropagate_pos=only_backpropagate_pos,
             max_len=args.max_len,
+            n_freezed_layers=args.n_freezed_layers,
         )
 
         try:
@@ -181,7 +187,17 @@ if __name__ == "__main__":
 
         for metric, scores in model.optimal_scores.items():
             mlflow.log_metrics(clean_name_for_logging(scores, context=metric))
-            mlflow.log_metric(f"aa_mean_{metric}", np.mean(list(scores.values())))
+            mlflow.log_metric(
+                f"a_mean_{metric}_overall", np.mean(list(scores.values()))
+            )
+            if args.relabeled_columns == "none":
+                for task_name in ["first_level_tags", "secondary_tags", "subpillars"]:
+                    vals = [
+                        one_score
+                        for one_name, one_score in scores.items()
+                        if task_name in one_name
+                    ]
+                    mlflow.log_metric(f"aa_mean_{metric}_{task_name}", np.mean(vals))
 
         mlflow.log_metrics(
             clean_name_for_logging(model.optimal_thresholds, context="thresholds")
@@ -208,8 +224,8 @@ if __name__ == "__main__":
         except Exception as e:
             logging.info("pyfunc", e)
 
-    # testing
-    """test_excerpts = test_df["excerpt"]
+    """# testing
+    test_excerpts = test_df["excerpt"]
 
     predictions_test_set = model.custom_predict(test_excerpts, testing=True)
 
@@ -219,4 +235,5 @@ if __name__ == "__main__":
     }
 
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
-        dill.dump(outputs, f)"""
+        dill.dump(outputs, f)
+"""

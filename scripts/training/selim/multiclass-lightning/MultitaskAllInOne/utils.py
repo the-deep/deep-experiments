@@ -1,9 +1,7 @@
 from ast import literal_eval
 import random
-from matplotlib.style import context
 import numpy as np
 import pandas as pd
-import os
 import re
 import warnings
 
@@ -104,7 +102,7 @@ def custom_stratified_train_test_split(df, ratios):
     return flatten(train_ids), flatten(val_ids)
 
 
-def preprocess_df(df: pd.DataFrame):
+def preprocess_df(df: pd.DataFrame, relabeled_columns: str):
 
     """
     main preprocessing function:
@@ -124,6 +122,27 @@ def preprocess_df(df: pd.DataFrame):
         lambda x: [item for item in x if item != "NOT_MAPPED"]
     )
 
+    # For relabeling data
+    if relabeled_columns != "none":
+
+        if relabeled_columns == "sectors":
+            dataset["target"] = dataset.target.apply(
+                lambda x: [
+                    item for item in x if "sectors" in item and "Cross" not in item
+                ]
+            )
+
+        if relabeled_columns == "secondary_tags":
+            dataset["target"] = dataset.target.apply(
+                lambda x: [
+                    item
+                    for item in x
+                    if "secondary_tags" in item and "severity" not in item
+                ]
+            )
+
+        # TODO: subsectors
+
     ratios = {
         "train": 0.85,
         "val": 0.15,
@@ -134,7 +153,7 @@ def preprocess_df(df: pd.DataFrame):
     )
 
     df_train = dataset[dataset.entry_id.isin(train_pos_entries)]
-    df_train = pd.concat([df_train, dataset[bool_augmented_data]])
+    # df_train = pd.concat([df_train, dataset[bool_augmented_data]])
     df_val = dataset[dataset.entry_id.isin(val_pos_entries)]
 
     return df_train, df_val
@@ -212,3 +231,14 @@ def get_preds_entry(preds_column, return_at_least_one=True, ratio_nb=1):
                 if preds_column[sub_tag] == max(list(preds_column.values()))
             ]
     return preds_entry
+
+def get_tag_id_to_layer_id(ids_each_level):
+    tag_id = 0
+    list_id = 0
+    tag_to_list = {}
+    for id_list in ids_each_level:
+        for i in range(len(id_list)):
+            tag_to_list.update({tag_id + i: list_id})
+        tag_id += len(id_list)
+        list_id += 1
+    return tag_to_list

@@ -8,21 +8,17 @@ import dill
 
 dill.extend(True)
 
-
 import sys
 
 sys.path.append(".")
 
 import mlflow
-import random
-import numpy as np
-from utils import get_preds_entry
 
 
 class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self, model):
-        super().__init__()
         self.model = model
+        super().__init__()
 
     def load_context(self, context):
         pass
@@ -34,10 +30,7 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
 
         if return_type == "custom_postprocessing":
             processing_function = inputs["processing_function"].values[0]
-            minimum_ratio = inputs["processing_function"].values[0]
-            output_columns = inputs["output_columns"].values[0]
-
-            return processing_function(input_sentences, minimum_ratio, output_columns)
+            return processing_function(input_sentences, self.model, **kwargs)
 
         else:
 
@@ -45,6 +38,6 @@ class TransformersPredictionsWrapper(mlflow.pyfunc.PythonModel):
 
             outputs = {
                 "raw_predictions": predictions,
-                "thresholds": self.model.thresholds,
+                "thresholds": self.model.optimal_thresholds,
             }
             return outputs
