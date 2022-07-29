@@ -5,18 +5,20 @@ import pandas as pd
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics.pairwise import cosine_similarity
+
 from transformers import (
-    T5Tokenizer,
-    T5ForConditionalGeneration,
     BartTokenizer,
     BartForConditionalGeneration,
 )
 from sentence_transformers import SentenceTransformer
-from googletrans import Translator
-import json
+from get_clusters import get_clusters_sentences
 
+# from googletrans import Translator
+import json
+import operator
 import re
 from nltk.corpus import stopwords
+import nltk
 
 stop_words = set(stopwords.words())
 
@@ -58,22 +60,22 @@ def get_number_of_clusters(n_entries: int):
     """
     get number of paragraphs we want depending on number of excerpts.
     """
-    return min((n_entries // 20) + 1, 2)
+    return min((n_entries // 30) + 1, 2)
 
 
 def get_severity_score(item: List[str]):
     """
     change severity name to a severity score.
     """
-    severity_mapper = {"Critical": 1, "Major": 0.75, "Of Concern": 0.5}
+    severity_mapper = {"critical": 1, "major": 0.75, "of concern": 0.5}
 
     if len(item) == 0:
         return 0.5
     severity_name = item[0]
-    if severity_name in list(severity_mapper.keys()):
+    if severity_name.lower() in list(severity_mapper.keys()):
         return severity_mapper[severity_name]
     else:
-        return 0.5
+        return 0.25
 
 
 def get_numbers_score(item: List[str]):
@@ -91,33 +93,14 @@ def get_numbers_score(item: List[str]):
         return 0.5
 
 
-def get_reliability_score(item: List[str]):
-    """
-    change reliability name to a reliability score.
-    """
-    reliability_mapper = {
-        "Completely Reliable": 1,
-        "Usually reliable": 0.75,
-        "Fairly Reliable": 0.5,
-        "Not Usually Reliable": 0.25,
-    }
+def clean_characters(text: str):
+    # clean for latex characters
+    latex_text = text.replace("%", "\%").replace("$", "\$")
 
-    if len(item) == 0:
-        return 0.5
-    severity_name = item[0]
-    if severity_name in list(reliability_mapper.keys()):
-        return reliability_mapper[severity_name]
-    else:
-        return 0.5
+    # strip punctuation
+    latex_text = re.sub(r'\s([?.!"](?:\s|$))', r"\1", latex_text)
 
-
-def translate_sentence(excerpt: str):
-    """
-    function to translate excerpt to english.
-    """
-    translator = Translator()
-    result = translator.translate(excerpt, dest="en")
-    return result.text
+    return latex_text
 
 
 def preprocess_excerpt(excerpt):
@@ -133,6 +116,26 @@ def preprocess_excerpt(excerpt):
         [word for word in new_excerpt.split(" ") if word not in stop_words]
     )
     return new_excerpt
+
+
+def get_reliability_score(item: List[str]):
+    """
+    change reliability name to a reliability score.
+    """
+    reliability_mapper = {
+        "completely reliable": 1,
+        "usually reliable": 0.75,
+        "fairly reliable": 0.5,
+        "not usually reliable": 0.25,
+    }
+
+    if len(item) == 0:
+        return 0.5
+    reliability_name = item[0]
+    if reliability_name.lower() in list(reliability_mapper.keys()):
+        return reliability_mapper[reliability_name]
+    else:
+        return 0.5
 
 
 def preprocesss_row(tags: List[str], n_tags: int):
@@ -224,12 +227,10 @@ def get_embeddings(texts):
     return np.array(embeddings_all_sentences)
 
 
-def get_similarity_matrix(texts):
+def get_similarity_matrix(embeddings_all_sentences):
     """
     get similarity matrix between different excerpts
     """
-
-    embeddings_all_sentences = get_embeddings(texts)
 
     similarity = cosine_similarity(embeddings_all_sentences, embeddings_all_sentences)
     return similarity
@@ -239,107 +240,157 @@ def t2t_generation(entries: str, english_returns: bool):
     """
     generate summary for set of entries
     """
-    if english_returns:
-        # en_entries = translate_sentence(entries)
-        MODEL_NAME = "sshleifer/distilbart-cnn-12-6"
-        model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
-        tokenizer = BartTokenizer.from_pretrained(MODEL_NAME)
+    # if english_returns:
 
-        inputs = tokenizer([entries], return_tensors="pt")
+    MODEL_NAME = "sshleifer/distilbart-cnn-12-6"
+    model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
+    tokenizer = BartTokenizer.from_pretrained(MODEL_NAME)
 
-        # Generate Summary
-        summary_ids = model.generate(
-            inputs["input_ids"], num_beams=4, num_beam_groups=2
-        )
-        summarized_entries = tokenizer.batch_decode(
-            summary_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
-        )[0]
+    inputs = tokenizer([entries], max_length=1024, return_tensors="pt", truncation=True)
 
-    else:
-        tokenizer = T5Tokenizer.from_pretrained("t5-large")
-        model = T5ForConditionalGeneration.from_pretrained("t5-large")
-
-        changed_text = f"summarize: {entries}"
-        input_ids = tokenizer(
-            changed_text, return_tensors="pt", truncation=False
-        ).input_ids
-        outputs = model.generate(input_ids)
-        summarized_entries = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    # Generate Summary
+    summary_ids = model.generate(inputs["input_ids"], num_beams=4, num_beam_groups=2)
+    summarized_entries = tokenizer.batch_decode(
+        summary_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
+    )[0]
 
     return summarized_entries
 
 
-def get_summary_one_row(row, en_summary, n_clusters=1):
+def get_top_n_sentence_ids(
+    graph,
+    n_entries,
+    severity_scores=None,
+    reliability_scores=None,
+    present_numbers_score=None,
+):
     """
-    function used for getting summary for one task
+    get sentences scores based on based on reliability score / severity score / pagerank scores
     """
-
-    def get_top_n_sentence_ids(graph):
-        """
-        get top 5 sentences based on based on reliability score / severity score / pagerank scores
-        """
+    try:
         scores_pagerank = nx.pagerank(graph)
         scores = {
             key: value
-            * severity_scores[key]
-            * reliability_scores[key]
-            * present_numbers_score[key]
+            # * severity_scores[key]
+            # * reliability_scores[key]
+            # * present_numbers_score[key]
             for key, value in scores_pagerank.items()
         }
+        return np.array(list(scores.values()))
 
-        top_n_sentence_ids = np.argsort(np.array(list(scores.values())))[-5:]
-        return top_n_sentence_ids
+    except Exception as e:
+        return np.array([1 for _ in range(n_entries)])
 
-    def get_summary_one_cluster(cleaned_text):
-        """
-        get summary for each cluster
-        1 - compute cosine similarity
-        2 - build undirected graph based on similarity matrix between excerpts
-        3 - get top n sentences
-        4 - generate summary
-        """
-        cosine_similarity_matrix = get_similarity_matrix(cleaned_text)
-        graph_one_lang = build_graph(cosine_similarity_matrix)
-        top_n_sentence_ids = get_top_n_sentence_ids(graph_one_lang)
-        ranked_sentence = " ".join(
-            [original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]
-        )
-        summarized_entries = t2t_generation(ranked_sentence, en_summary)
-        return summarized_entries
 
-    if n_clusters < 1:
-        AssertionError("number of clusters must be at least 1.")
-
-    original_excerpts = row.excerpt
-    severity_scores = row.severity_scores
-    reliability_scores = row.reliability_scores
-    present_numbers_score = row.present_numbers_score
-
-    # preprocess, clean excerpts
-    cleaned_excerpts = np.array(
+def get_summary_one_cluster(
+    original_excerpts: List[str],
+    severity_scores=None,
+    reliability_scores=None,
+    present_numbers_score=None,
+):
+    """
+    get summary for each cluster
+    1 - compute cosine similarity
+    2 - build undirected graph based on similarity matrix between excerpts
+    3 - get top n sentences
+    4 - generate summary
+    """
+    cleaned_text = np.array(
         [preprocess_excerpt(one_excerpt) for one_excerpt in original_excerpts]
     )
 
-    if n_clusters == 1:
-        summarized_entries = get_summary_one_cluster(cleaned_excerpts)
-    else:
-        summarized_entries = ""
-        embeddings_all_sentences = get_embeddings(cleaned_excerpts)
-
-        kmeans = KMeans(n_clusters=n_clusters, random_state=0).fit(
-            embeddings_all_sentences
+    try:
+        embeddings_all_sentences = get_embeddings(cleaned_text)
+        cosine_similarity_matrix = get_similarity_matrix(embeddings_all_sentences)
+        graph_one_lang = build_graph(cosine_similarity_matrix)
+        scores = get_top_n_sentence_ids(
+            graph_one_lang,
+            len(cleaned_text),
+            severity_scores,
+            reliability_scores,
+            present_numbers_score,
         )
-        cluster_labels = kmeans.labels_
-        for i in range(n_clusters):
-            sentences_one_cluster = cleaned_excerpts[
-                np.argwhere(cluster_labels == i).flatten()
-            ]
-            if len(sentences_one_cluster) > 3:
-                summarized_entries = (
-                    summarized_entries
-                    + "\n"
-                    + get_summary_one_cluster(sentences_one_cluster)
+
+        n_max_kept_sentences = 10
+
+        top_n_sentence_ids = np.argsort(scores)[::-1][:n_max_kept_sentences]
+        ranked_sentence = [original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]
+
+        """top_n_sentences_token_lengths = [
+            len(nltk.word_tokenize(sent)) for sent in ranked_sentence
+        ]
+        tot_tokens_len = 0
+        final_used_sentences = []
+        for i in range(n_max_kept_sentences):
+            tot_tokens_len += top_n_sentences_token_lengths[i]
+            if tot_tokens_len < 600:
+                final_used_sentences.append(ranked_sentence[i])"""
+
+        summarized_entries = clean_characters(
+            t2t_generation(" ".join(ranked_sentence), english_returns=True)
+        )
+
+        return summarized_entries
+    except IndexError:
+        print("index")
+        print(final_used_sentences)
+        return ""
+
+
+def get_summary_one_row(row, en_summary=True):
+    """
+    function used for getting summary for one task
+    TODO: Embedding + preprocessing are being done twice
+    TODO: reformat this part
+    """
+    original_excerpts = list(set(row.excerpt))
+    # severity_scores = row.severity_scores
+    # reliability_scores = row.reliability_scores
+    # present_numbers_score = row.present_numbers_score
+    entry_ids = row.entry_id
+
+    dict_clustered_excerpts = get_clusters_sentences(original_excerpts)
+
+    n_clusters = len(dict_clustered_excerpts)
+
+    if n_clusters == 1:
+        summarized_entries = get_summary_one_cluster(
+            list(dict_clustered_excerpts.values())[0],
+            severity_scores=None,
+            reliability_scores=None,
+            present_numbers_score=None,
+        )
+
+    else:
+        if n_clusters > 5:
+            # keep only five longest clusters (which are different from -1)
+            cluster_lengths = {
+                k: len(v) for k, v in dict_clustered_excerpts.items() if k != -1
+            }
+
+            cluster_numbers = np.array(list(cluster_lengths.keys()))
+            len_each_cluster = np.array(list(cluster_lengths.values()))
+
+            kept_clusters = cluster_numbers[np.argsort(len_each_cluster)[::-1][:5]]
+
+            # update dict_clustered_excerpts with the most important clusters
+            dict_clustered_excerpts = {
+                cluster: dict_clustered_excerpts[cluster] for cluster in kept_clusters
+            }
+
+        summarized_entries_per_cluster = []
+        for one_cluster_entries in list(dict_clustered_excerpts.values()):
+            if len(one_cluster_entries) > 5:
+                summarized_entries_per_cluster.append(
+                    get_summary_one_cluster(
+                        one_cluster_entries,
+                        severity_scores=None,
+                        reliability_scores=None,
+                        present_numbers_score=None,
+                    )
                 )
+
+        summarized_entries = get_summary_one_cluster(summarized_entries_per_cluster)
 
     return summarized_entries
 
@@ -372,18 +423,24 @@ def process_df_one_part(df: pd.DataFrame, col_name: str):
     df["tmp_tag_str"] = df[col_name].apply(str)
 
     grouped_df = df.groupby("tmp_tag_str", as_index=False)[
-        ["excerpt", "severity_scores", "reliability_scores", "present_numbers_score"]
+        [
+            "excerpt",
+            # "severity_scores",
+            # "reliability_scores",
+            # "present_numbers_score",
+            "entry_id",
+        ]
     ].agg(lambda x: list(x))
 
     grouped_df["len"] = grouped_df["excerpt"].apply(lambda x: len(x))
-    grouped_df = grouped_df[grouped_df.len >= 3]
+    grouped_df = grouped_df[grouped_df.len >= 5]
     grouped_df["n_clusters"] = grouped_df["len"].apply(get_number_of_clusters)
 
     """grouped_df.sort_values(by="len", ascending=False, inplace=True).drop(
         columns="tmp_tag_str", inplace=True
     )"""
 
-    return grouped_df
+    return grouped_df.sort_values(by="tmp_tag_str")
 
 
 def get_summary_one_part(df, col_name: str, en_summary):
@@ -394,7 +451,7 @@ def get_summary_one_part(df, col_name: str, en_summary):
         - we get a paragraph for each different sector using the function 'get_summary_one_row'
     """
     preprocessed_df = df[df[col_name].apply(lambda x: len(x) > 0)].copy()
-    if len(preprocessed_df) < 3:
+    if len(preprocessed_df) < 5:
         return {}
     else:
         preprocessed_df = process_df_one_part(df, col_name)
@@ -402,8 +459,9 @@ def get_summary_one_part(df, col_name: str, en_summary):
         final_returns = {}
         for index, row in preprocessed_df.iterrows():
             tag_tmp = row.tmp_tag_str
-            summarized_text = get_summary_one_row(row, en_summary, row.n_clusters)
-            final_returns[tag_tmp] = summarized_text
+            summarized_text = get_summary_one_row(row, en_summary)
+            if len(summarized_text) > 5:
+                final_returns[tag_tmp] = summarized_text
 
         return order_dict(final_returns)
 

@@ -45,19 +45,22 @@ def clean_characters(text):
     return latex_text
 
 
-def update_df(new_data):
+"""def update_df(new_data):
     if type(new_data) is str:
-        new_data = literal_eval(new_data)
+        try:
+            new_data = literal_eval(new_data)
+        except Exception:
+            new_data = new_data
 
     returned_df = pd.DataFrame()
     for one_paragraph in new_data:
-        raw_entries = one_paragraph["raw_outputs"]
+        raw_entries = one_paragraph
         one_paragraph_df = pd.DataFrame(
             list(zip(raw_entries["entry_id"], raw_entries["excerpt"])),
             columns=["entry_id", "excerpt"],
         )
         returned_df = returned_df.append(one_paragraph_df)
-    return returned_df
+    return returned_df"""
 
 
 def print_df(ranked_sentence):
@@ -67,14 +70,13 @@ def print_df(ranked_sentence):
 def update_outputs_list(final_report, final_raw_outputs, new_data):
     if type(new_data) is str:
         final_report += new_data
-        final_raw_outputs += new_data
+        # final_raw_outputs += new_data
     else:
 
         for one_paragraph in new_data:
-            raw_entries = one_paragraph["raw_outputs"]
-
-            final_raw_outputs += print_df(raw_entries["excerpt"])
-            final_report += one_paragraph["generated_summary"]
+            # raw_entries = one_paragraph["raw_outputs"]
+            # final_raw_outputs += print_df(raw_entries["excerpt"])
+            final_report += one_paragraph
 
     return final_report, final_raw_outputs
 
@@ -104,9 +106,9 @@ def get_dict_items(items, final_report, final_raw_outputs):
                 final_report, final_raw_outputs, "\n \n"
             )
 
-            df_one_paragraph = update_df(value)
-            df_one_paragraph["paragraph"] = f"{first_key}->{key}"
-            returned_df = returned_df.append(df_one_paragraph)
+            # df_one_paragraph = update_df(value)
+            # df_one_paragraph["paragraph"] = f"{first_key}->{key}"
+            # returned_df = returned_df.append(df_one_paragraph)
 
     elif len(dict_treated) == 1:
         value = list(dict_treated.values())[0]
@@ -119,8 +121,8 @@ def get_dict_items(items, final_report, final_raw_outputs):
             final_report, final_raw_outputs, "\n \n"
         )
 
-        df_one_paragraph = update_df(value)
-        df_one_paragraph["paragraph"] = f"{first_key}->{key}"
-        returned_df = returned_df.append(df_one_paragraph)
+        # df_one_paragraph = update_df(value)
+        # df_one_paragraph["paragraph"] = f"{first_key}->{key}"
+        # returned_df = returned_df.append(df_one_paragraph)
 
     return final_report, final_raw_outputs, returned_df
