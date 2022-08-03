@@ -70,7 +70,7 @@ def get_embeddings(texts):
     """
     get all tweets embeddings, one embedding per tweet
     """
-    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-distilroberta-v1")
     return model.encode(texts)
 
 
@@ -88,14 +88,14 @@ def get_hdbscan_partitions(tweets: List[str]):
     # Embeddings
     embeddings = get_embeddings(tweets)
 
-    if embeddings.shape[0] > 30:
+    if embeddings.shape[0] > 100:
         embeddings = umap.UMAP(
-            n_neighbors=7, n_components=8, metric="cosine"
+            n_neighbors=7, n_components=15, metric="cosine"
         ).fit_transform(embeddings)
 
     # Hdbscan
     cluster = hdbscan.HDBSCAN(
-        min_cluster_size=8, metric="euclidean", cluster_selection_method="eom"
+        min_cluster_size=10, metric="euclidean", cluster_selection_method="eom"
     ).fit(embeddings)
 
     return cluster.labels_

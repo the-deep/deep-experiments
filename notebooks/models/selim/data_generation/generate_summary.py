@@ -221,7 +221,7 @@ def get_embeddings(texts):
     """
     get embeddings for each excerpt
     """
-    model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    model = SentenceTransformer("sentence-transformers/all-distilroberta-v1")
     embeddings_all_sentences = model.encode(texts)
 
     return np.array(embeddings_all_sentences)
@@ -287,7 +287,7 @@ def get_summary_one_cluster(
     severity_scores=None,
     reliability_scores=None,
     present_numbers_score=None,
-):
+) -> str:
     """
     get summary for each cluster
     1 - compute cosine similarity
@@ -299,55 +299,54 @@ def get_summary_one_cluster(
         [preprocess_excerpt(one_excerpt) for one_excerpt in original_excerpts]
     )
 
-    try:
-        embeddings_all_sentences = get_embeddings(cleaned_text)
-        cosine_similarity_matrix = get_similarity_matrix(embeddings_all_sentences)
-        graph_one_lang = build_graph(cosine_similarity_matrix)
-        scores = get_top_n_sentence_ids(
-            graph_one_lang,
-            len(cleaned_text),
-            severity_scores,
-            reliability_scores,
-            present_numbers_score,
-        )
+    embeddings_all_sentences = get_embeddings(cleaned_text)
+    cosine_similarity_matrix = get_similarity_matrix(embeddings_all_sentences)
+    graph_one_lang = build_graph(cosine_similarity_matrix)
+    scores = get_top_n_sentence_ids(
+        graph_one_lang,
+        len(cleaned_text),
+        severity_scores,
+        reliability_scores,
+        present_numbers_score,
+    )
 
-        n_max_kept_sentences = 10
+    n_max_kept_sentences = 15
 
-        top_n_sentence_ids = np.argsort(scores)[::-1][:n_max_kept_sentences]
-        ranked_sentence = [original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]
+    top_n_sentence_ids = np.argsort(scores)[::-1][:n_max_kept_sentences]
+    ranked_sentence = [original_excerpts[id_tmp] for id_tmp in (top_n_sentence_ids)]
 
-        """top_n_sentences_token_lengths = [
-            len(nltk.word_tokenize(sent)) for sent in ranked_sentence
-        ]
-        tot_tokens_len = 0
-        final_used_sentences = []
-        for i in range(n_max_kept_sentences):
-            tot_tokens_len += top_n_sentences_token_lengths[i]
-            if tot_tokens_len < 600:
-                final_used_sentences.append(ranked_sentence[i])"""
+    """top_n_sentences_token_lengths = [
+        len(nltk.word_tokenize(sent)) for sent in ranked_sentence
+    ]
+    tot_tokens_len = 0
+    final_used_sentences = []
+    for i in range(n_max_kept_sentences):
+        tot_tokens_len += top_n_sentences_token_lengths[i]
+        if tot_tokens_len < 600:
+            final_used_sentences.append(ranked_sentence[i])"""
 
-        summarized_entries = clean_characters(
-            t2t_generation(" ".join(ranked_sentence), english_returns=True)
-        )
+    summarized_entries = clean_characters(
+        t2t_generation(" ".join(ranked_sentence), english_returns=True)
+    )
 
-        return summarized_entries
-    except IndexError:
-        print("index")
-        print(final_used_sentences)
-        return ""
+    return summarized_entries
 
 
-def get_summary_one_row(row, en_summary=True):
+def get_summary_one_row(row, en_summary=True, n_min_entries=10):
     """
     function used for getting summary for one task
     TODO: Embedding + preprocessing are being done twice
     TODO: reformat this part
     """
-    original_excerpts = list(set(row.excerpt))
+    if type(row) is list:
+        original_excerpts = row
+    else:
+        original_excerpts = list(set(row.excerpt))
+
     # severity_scores = row.severity_scores
     # reliability_scores = row.reliability_scores
     # present_numbers_score = row.present_numbers_score
-    entry_ids = row.entry_id
+    # entry_ids = row.entry_id
 
     dict_clustered_excerpts = get_clusters_sentences(original_excerpts)
 
@@ -355,7 +354,7 @@ def get_summary_one_row(row, en_summary=True):
 
     if n_clusters == 1:
         summarized_entries = get_summary_one_cluster(
-            list(dict_clustered_excerpts.values())[0],
+            original_excerpts,
             severity_scores=None,
             reliability_scores=None,
             present_numbers_score=None,
@@ -380,7 +379,7 @@ def get_summary_one_row(row, en_summary=True):
 
         summarized_entries_per_cluster = []
         for one_cluster_entries in list(dict_clustered_excerpts.values()):
-            if len(one_cluster_entries) > 5:
+            if len(one_cluster_entries) > n_min_entries:
                 summarized_entries_per_cluster.append(
                     get_summary_one_cluster(
                         one_cluster_entries,
@@ -443,7 +442,7 @@ def process_df_one_part(df: pd.DataFrame, col_name: str):
     return grouped_df.sort_values(by="tmp_tag_str")
 
 
-def get_summary_one_part(df, col_name: str, en_summary):
+def get_summary_one_part(df, col_name: str, en_summary, n_min_entries: int = 10):
     """
     main function to get the summary for one part
     example:
@@ -451,7 +450,7 @@ def get_summary_one_part(df, col_name: str, en_summary):
         - we get a paragraph for each different sector using the function 'get_summary_one_row'
     """
     preprocessed_df = df[df[col_name].apply(lambda x: len(x) > 0)].copy()
-    if len(preprocessed_df) < 5:
+    if len(preprocessed_df) < n_min_entries:
         return {}
     else:
         preprocessed_df = process_df_one_part(df, col_name)
@@ -460,7 +459,7 @@ def get_summary_one_part(df, col_name: str, en_summary):
         for index, row in preprocessed_df.iterrows():
             tag_tmp = row.tmp_tag_str
             summarized_text = get_summary_one_row(row, en_summary)
-            if len(summarized_text) > 5:
+            if len(summarized_text) > n_min_entries:
                 final_returns[tag_tmp] = summarized_text
 
         return order_dict(final_returns)
@@ -627,7 +626,6 @@ def get_report_secondary_tags(df, en_summary):
     df_secondary_tags = df[
         (df.n_sectors == 1) & (df.secondary_tags.apply(lambda x: len(x) > 0))
     ].copy()
-
     df_secondary_tags["secondary_tags"] = df_secondary_tags["secondary_tags"].apply(
         lambda x: preprocesss_row(x, 1)
     )
