@@ -161,7 +161,7 @@ class Transformer(pl.LightningModule):
     ):
 
         set = CustomDataset(dataset, tagname_to_tagid, tokenizer, max_len)
-        loader = DataLoader(set, **params, pin_memory=False)
+        loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
     def get_loss_alphas(self, targets_list):
