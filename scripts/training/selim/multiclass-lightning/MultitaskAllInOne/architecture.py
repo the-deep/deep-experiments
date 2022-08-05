@@ -60,32 +60,32 @@ class Model(torch.nn.Module):
 
     def forward(self, inputs):
 
-        common_output = self.common_backbone(
+        fith_layer_transformer_output = self.common_backbone(
             inputs["ids"],
             attention_mask=inputs["mask"],
         ).last_hidden_state
 
-        output_layer_5 = [
-            self.specific_layer[i](common_output.clone())[0]
+        encoder_outputs = [
+            self.pool(
+                {
+                    "token_embeddings": self.specific_layer[i](
+                        fith_layer_transformer_output.clone()
+                    )[0],
+                    "attention_mask": inputs["mask"],
+                }
+            )["sentence_embedding"]
             for i in range(self.n_level0_ids)
         ]
 
-        heads = [
+        classification_heads = [
             self.output_layer[tag_id](
                 self.LayerNorm_specific_hidden[self.tag_id_to_layer_id[tag_id]](
                     self.dropout(
-                        self.pool(
-                            {
-                                "token_embeddings": output_layer_5[
-                                    self.tag_id_to_layer_id[tag_id]
-                                ].clone(),
-                                "attention_mask": inputs["mask"],
-                            }
-                        )["sentence_embedding"]
+                        encoder_outputs[self.tag_id_to_layer_id[tag_id]].clone()
                     )
                 )
             )
             for tag_id in range(self.n_heads)
         ]
 
-        return torch.cat(heads, dim=1)
+        return torch.cat(classification_heads, dim=1)

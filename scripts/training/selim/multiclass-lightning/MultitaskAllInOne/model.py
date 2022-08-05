@@ -237,6 +237,7 @@ class Transformer(pl.LightningModule):
         self.to(testing_device)
         self.eval()
         self.freeze()
+
         y_true = []
         logit_predictions = []
         indexes = []
@@ -248,21 +249,21 @@ class Transformer(pl.LightningModule):
             ):
 
                 if not testing:
-                    y_true.append(batch["targets"].detach())
-                    indexes.append(batch["entry_id"].detach())
+                    y_true.append(batch["targets"])
+                    indexes.append(batch["entry_id"])
 
                 logits = self(
                     {
                         "ids": batch["ids"].to(testing_device),
                         "mask": batch["mask"].to(testing_device),
-                        "token_type_ids": batch["token_type_ids"].to(testing_device),
+                        #"token_type_ids": batch["token_type_ids"].to(testing_device),
                     }
-                )
+                ).cpu()
                 # have a matrix like in the beginning
-                logits_to_array = np.array([np.array(t) for t in logits.cpu()])
-                logit_predictions.append(logits_to_array)
+                # logits_to_array = np.array([np.array(t) for t in logits])
+                logit_predictions.append(logits)
 
-        logit_predictions = np.concatenate(logit_predictions)
+        logit_predictions = torch.cat(logit_predictions, dim=0).numpy()
         logit_predictions = sigmoid(logit_predictions)
 
         target_list = list(self.tagname_to_tagid.keys())

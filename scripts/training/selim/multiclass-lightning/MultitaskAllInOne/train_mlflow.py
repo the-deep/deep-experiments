@@ -10,13 +10,11 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 
 import multiprocessing
-
 import argparse
 
-import logging
 
-logging.basicConfig()
-logging.getLogger().setLevel(logging.DEBUG)
+# logging.basicConfig()
+# logging.getLogger().setLevel(logging.DEBUG)
 
 from pathlib import Path
 
@@ -27,11 +25,10 @@ from model import train_model
 import torch
 
 from inference import TransformersPredictionsWrapper
-
 import torch
-
 import numpy as np
 
+import logging
 
 logging.basicConfig(level=logging.INFO)
 

@@ -55,12 +55,12 @@ class CustomDataset(Dataset):
         )
         ids = inputs["input_ids"]
         mask = inputs["attention_mask"]
-        token_type_ids = inputs["token_type_ids"]
+        # token_type_ids = inputs["token_type_ids"]
 
         encoded = {
             "ids": torch.tensor(ids, dtype=torch.long),
             "mask": torch.tensor(mask, dtype=torch.long),
-            "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
+            # "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
         }
 
         targets = None
@@ -78,12 +78,6 @@ class CustomDataset(Dataset):
             )
             encoded["entry_id"] = self.entry_ids[index]
 
-        if as_batch:
-            return {
-                "ids": encoded["ids"].unsqueeze(0),
-                "mask": encoded["mask"].unsqueeze(0),
-                "token_type_ids": encoded["ids"].unsqueeze(0),
-            }
         return encoded
 
     def __len__(self):
