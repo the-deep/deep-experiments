@@ -66,15 +66,15 @@ def clean_excerpts(all_tweets: List[str]):
     return [clean_one_sentence(one_tweet) for one_tweet in all_tweets]
 
 
-def get_embeddings(texts):
+def get_embeddings(texts: List[str], device: str):
     """
     get all tweets embeddings, one embedding per tweet
     """
-    model = SentenceTransformer("sentence-transformers/all-distilroberta-v1")
+    model = SentenceTransformer("sentence-transformers/all-distilroberta-v1", device=device)
     return model.encode(texts)
 
 
-def get_hdbscan_partitions(tweets: List[str]):
+def get_hdbscan_partitions(tweets: List[str], device: str):
     """
     function to get HDBscan partitions: inspired from https://towardsdatascience.com/topic-modeling-with-bert-779f7db187e6
 
@@ -86,7 +86,7 @@ def get_hdbscan_partitions(tweets: List[str]):
     3) HDBscan clustering
     """
     # Embeddings
-    embeddings = get_embeddings(tweets)
+    embeddings = get_embeddings(tweets, device)
 
     if embeddings.shape[0] > 100:
         embeddings = umap.UMAP(

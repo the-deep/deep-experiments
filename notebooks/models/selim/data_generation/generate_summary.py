@@ -3,7 +3,7 @@ from ast import literal_eval
 from typing import List
 import pandas as pd
 import numpy as np
-from sklearn.cluster import KMeans
+import torch
 from sklearn.metrics.pairwise import cosine_similarity
 
 from transformers import (
@@ -21,6 +21,13 @@ from nltk.corpus import stopwords
 import nltk
 
 stop_words = set(stopwords.words())
+
+if torch.cuda.is_available():
+    gpu_nb = 1
+    training_device = "cuda"
+else:
+    gpu_nb = 0
+    training_device = "cpu"
 
 ############################### PREPROCESSING ########################################
 
@@ -217,11 +224,13 @@ def build_graph(cosine_similarity_matrix):
     return graph_one_lang
 
 
-def get_embeddings(texts):
+def get_embeddings(texts, device):
     """
     get embeddings for each excerpt
     """
-    model = SentenceTransformer("sentence-transformers/all-distilroberta-v1")
+    model = SentenceTransformer(
+        "sentence-transformers/all-distilroberta-v1", device=device
+    )
     embeddings_all_sentences = model.encode(texts)
 
     return np.array(embeddings_all_sentences)
@@ -243,13 +252,15 @@ def t2t_generation(entries: str, english_returns: bool):
     # if english_returns:
 
     MODEL_NAME = "sshleifer/distilbart-cnn-12-6"
-    model = BartForConditionalGeneration.from_pretrained(MODEL_NAME)
+    model = BartForConditionalGeneration.from_pretrained(MODEL_NAME).to(training_device)
     tokenizer = BartTokenizer.from_pretrained(MODEL_NAME)
 
-    inputs = tokenizer([entries], max_length=1024, return_tensors="pt", truncation=True)
+    inputs = tokenizer(
+        [entries], max_length=1024, return_tensors="pt", truncation=True
+    )["input_ids"].to(training_device)
 
     # Generate Summary
-    summary_ids = model.generate(inputs["input_ids"], num_beams=4, num_beam_groups=2)
+    summary_ids = model.generate(inputs, num_beams=4, num_beam_groups=2).cpu()
     summarized_entries = tokenizer.batch_decode(
         summary_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
     )[0]
@@ -299,7 +310,7 @@ def get_summary_one_cluster(
         [preprocess_excerpt(one_excerpt) for one_excerpt in original_excerpts]
     )
 
-    embeddings_all_sentences = get_embeddings(cleaned_text)
+    embeddings_all_sentences = get_embeddings(cleaned_text, training_device)
     cosine_similarity_matrix = get_similarity_matrix(embeddings_all_sentences)
     graph_one_lang = build_graph(cosine_similarity_matrix)
     scores = get_top_n_sentence_ids(
@@ -348,7 +359,7 @@ def get_summary_one_row(row, en_summary=True, n_min_entries=10):
     # present_numbers_score = row.present_numbers_score
     # entry_ids = row.entry_id
 
-    dict_clustered_excerpts = get_clusters_sentences(original_excerpts)
+    dict_clustered_excerpts = get_clusters_sentences(original_excerpts, training_device)
 
     n_clusters = len(dict_clustered_excerpts)
 
