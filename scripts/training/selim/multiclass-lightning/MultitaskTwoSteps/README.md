@@ -7,6 +7,7 @@
 ├── pooling.py        	    # pooling function after transformer output
 ├── MLPModel.py             # classes for MLP models
 ├── TransformerModel.py     # classes for backbone models
+├── ModelsExplainability.py # classes for models explainability
 ├── Inference.py            # inference class
 ├── utils.py                # general util functions for modelling
 ├── requirements.txt        # requirements to be installed before running the scripts
@@ -17,7 +18,7 @@
 
 ## Training structure
 - The objective is this new model architecture to adapt to the data drift and tagging differences across analysis frameworks in the DEEP platform.
-- The training done in two steps:
+- The training is done in two steps:
   - First, the backbone finetuning using a multitask learning architecture.
     - we finetune the backbone `nreimers/mMiniLMv2-L6-H384-distilled-from-XLMR-Large` from Hugigngface
     - When training, the embedding and the first layer are freezed
