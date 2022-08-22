@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-
+from typing import Dict
 from transformers import AdamW, AutoTokenizer, AutoModel
 
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -20,6 +20,10 @@ from pooling import Pooling
 
 
 class TransformerArchitecture(torch.nn.Module):
+    """
+    base architecture, used for finetuning the transformer model.
+    """
+
     def __init__(
         self,
         model_name_or_path,
@@ -78,6 +82,9 @@ class TransformerArchitecture(torch.nn.Module):
 
     def forward(self, inputs):
 
+        if type(inputs) is tuple:
+            inputs = {"ids": inputs[0], "mask": inputs[1]}
+
         fith_layer_transformer_output = self.common_backbone(
             inputs["ids"],
             attention_mask=inputs["mask"],
@@ -117,11 +124,15 @@ class TransformerArchitecture(torch.nn.Module):
 
 
 class TrainingTransformer(pl.LightningModule):
+    """
+    pytorch lightning structure used for finetuning the trasformer.
+    """
+
     def __init__(
         self,
         model_name_or_path: str,
         tokenizer_name_or_path: str,
-        val_params,
+        val_params: Dict[str, float],
         gpus: int,
         tagname_to_tagid,
         loss_alphas,

@@ -125,9 +125,7 @@ def preprocess_df(df: pd.DataFrame, relabeled_columns: str):
     NB: work with ids because the augmented sentences have the same entry_id as the original ones
     """
     # rename column to 'target' to be able to work on it generically
-    dataset = (
-        df[["entry_id", "excerpt", "target", "analysis_framework_id"]].dropna().copy()
-    )
+    dataset = df.dropna().copy()
 
     bool_augmented_data = dataset.entry_id == 0
 

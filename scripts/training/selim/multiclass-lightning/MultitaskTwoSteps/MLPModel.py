@@ -16,6 +16,10 @@ from loss import FocalLoss
 
 
 class MLPArchitecture(torch.nn.Module):
+    """
+    MLP architecture
+    """
+
     def __init__(
         self, ids_each_level, dropout_rate: float, transformer_output_length: int
     ):
@@ -25,8 +29,9 @@ class MLPArchitecture(torch.nn.Module):
         self.activation_function = torch.nn.ELU()
         self.normalization = torch.nn.BatchNorm1d(transformer_output_length)
 
+        self.n_tasks = len(ids_each_level)
         self.mid_layer = torch.nn.Linear(
-            transformer_output_length * 2 * 3, transformer_output_length
+            transformer_output_length * 2 * self.n_tasks, transformer_output_length
         )
         self.output_layer = torch.nn.Linear(
             transformer_output_length, len(flatten(flatten(ids_each_level)))
@@ -42,6 +47,10 @@ class MLPArchitecture(torch.nn.Module):
 
 
 class TrainingMLP(pl.LightningModule):
+    """
+    pytorch lightning structure used for trainng the MLP models.
+    """
+
     def __init__(
         self,
         val_params,
