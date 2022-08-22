@@ -1,5 +1,5 @@
 import os
-from turtle import forward
+from ModelsExplainability import MultiLabelClassificationExplainer
 
 # setting tokenizers parallelism to false adds robustness when dploying the model
 # os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -27,14 +27,22 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
     def predict(self, context, inputs):
 
         input_sentences = inputs["excerpt"]
+        input_ids = inputs["entry_id"]
+        n_entries = len(input_sentences)
         return_type = inputs["return_type"].values[0]
 
-        if return_type == "custom_postprocessing":
-            processing_function = inputs["processing_function"].values[0]
-            kwargs = inputs["kwargs"].values[0]
-            return processing_function(input_sentences, self.models, **kwargs)
+        if return_type == "interpretability_analysis":
+            interpretability_results = {}
+            cls_explainer = MultiLabelClassificationExplainer(self.models["backbone"])
 
-        else:
+            for i in range(n_entries):
+                one_sentence = input_sentences[i]
+                one_entry_id = input_ids[i]
+                attributions_one_entry = cls_explainer(one_sentence)
+                interpretability_results[one_entry_id] = attributions_one_entry
+            return interpretability_results
+
+        elif return_type == "default_analyis":
             af_id = inputs["analyis_framework_id"].values[0]
 
             if af_id in self.models.keys():
@@ -53,4 +61,9 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
                 "raw_predictions": predictions,
                 "thresholds": self.models[final_id].optimal_thresholds,
             }
+
             return outputs
+        else:
+            processing_function = inputs["processing_function"].values[0]
+            kwargs = inputs["kwargs"].values[0]
+            return processing_function(input_sentences, self.models, **kwargs)
