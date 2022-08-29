@@ -4,7 +4,7 @@ This package is intended to generate abstractive reports based on sentences or p
 ### Install
 
 ```posh
-pip install git+https://github.com/the-deep/reports_generator
+pip install git+https://github.com/the-deep/reports_generator #not working yet
 ```
 
 ### Usage
@@ -36,7 +36,7 @@ for one_label in labels_list:
 ### Documentation
 - This package is based on pretrained models from the transformers library. It is restrained to the English language only for now. 
 It was first intended to automatically generate reports for the humanitarian world. 
-Examples of fully automatically generated reports can be found here....
+Examples of fully automatically generated reports can be found here. We need to ask premission to project owners and make the generated reports available...
 - To keep the most relevant information only, the library is based on doing summarization iterations on the original text. 
 - We show pseudocodes of the methodlogy used for reports creation
 ```
@@ -44,13 +44,13 @@ Examples of fully automatically generated reports can be found here....
     `Inputs`: List of sentences or paragraph
     `Output`: summary
     
-    summarized text = perform one iteration of summarization(original text)
+    summarized text = OneSummarizationIteration(original text)
     While (summarized text too long and maximum number of iterations not reached):
-        summarized text = perform one iteration of summarization(summarized text)
+        summarized text = OneSummarizationIteration(summarized text)
         
         
         
-`Method: perform one iteration of summarization`
+`Method: OneSummarizationIteration`
     `Inputs`: text
     `Outputs`: Summarized Text
     
