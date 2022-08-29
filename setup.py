@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
     name="reports_generator",
-    url="https://github.com/the-deep/...",
+    url="https://github.com/the-deep/deep-experiments/tree/test-summarization-lib",
     author="Data Friendly Space",
     author_email="",
     # Needed to actually package something
