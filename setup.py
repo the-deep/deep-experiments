@@ -8,7 +8,7 @@ setup(
     author_email="",
     # Needed to actually package something
     description="A summarization tool designed to extract the most relevant information from long texts.",
-    packages=find_packages(where="reports_generator"),  # include all packages under src
+    packages=find_packages(),  # include all packages under src
     # package_dir={"": "reports_generator"},
     include_package_data=True,
     # Needed for dependencies
