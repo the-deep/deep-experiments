@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
@@ -8,6 +8,9 @@ setup(
     author_email="",
     # Needed to actually package something
     description="A summarization tool designed to extract the most relevant informtion from long texts.",
+    packages=find_packages(where="reports_generator"),  # include all packages under src
+    package_dir={"": "reports_generator"},
+    include_package_data=True,
     # Needed for dependencies
     install_requires=[
         "hdbscan>=0.8.28",
@@ -23,5 +26,5 @@ setup(
     # The license can be anything you like
     license="Apache-2.0",
     # We will also need a readme eventually (there will be a warning)
-    long_description=open("README.txt").read(),
+    long_description=open("README.md").read(),
 )

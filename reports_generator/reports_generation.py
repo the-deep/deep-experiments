@@ -18,7 +18,7 @@ nltk.download("punkt")
 import hdbscan
 import umap.umap_ as umap
 
-from utils import preprocess_sentences, build_graph, get_n_words
+from .utils import preprocess_sentences, build_graph, get_n_words
 
 
 class ReportsGenerator:
