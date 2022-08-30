@@ -7,9 +7,9 @@ setup(
     author="Data Friendly Space",
     author_email="",
     # Needed to actually package something
-    description="A summarization tool designed to extract the most relevant informtion from long texts.",
+    description="A summarization tool designed to extract the most relevant information from long texts.",
     packages=find_packages(where="reports_generator"),  # include all packages under src
-    package_dir={"": "reports_generator"},
+    # package_dir={"": "reports_generator"},
     include_package_data=True,
     # Needed for dependencies
     install_requires=[
