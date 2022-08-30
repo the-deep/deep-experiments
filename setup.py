@@ -3,13 +3,13 @@ from setuptools import setup, find_packages
 setup(
     # Needed to silence warnings (and to be a worthwhile package)
     name="reports_generator",
-    url="https://github.com/the-deep/deep-experiments/tree/test-summarization-lib",
+    #url="https://github.com/the-deep/deep-experiments/tree/test-summarization-lib",
     author="Data Friendly Space",
     author_email="",
     # Needed to actually package something
     description="A summarization tool designed to extract the most relevant information from long texts.",
-    packages=find_packages(),  # include all packages under src
-    package_dir={"": "."},
+    packages=find_packages(where="src"),  # include all packages under src
+    package_dir={"": "src"},
     include_package_data=True,
     # Needed for dependencies
     install_requires=[
