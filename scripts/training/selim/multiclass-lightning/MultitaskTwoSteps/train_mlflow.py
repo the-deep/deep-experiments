@@ -10,12 +10,13 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import multiprocessing
 import argparse
+import time
 
 from pathlib import Path
 import mlflow
 import copy
 import torch
-
+from collections import defaultdict
 import pandas as pd
 import numpy as np
 
@@ -23,9 +24,12 @@ from utils import (
     read_merge_data,
     preprocess_df,
     clean_name_for_logging,
+    custom_eval,
+    preprocess_text,
 )
 
 from ModelTraining import train_model
+from ModelsExplainability import MultiLabelClassificationExplainer
 from Inference import ClassificationInference
 
 import logging
@@ -143,6 +147,10 @@ if __name__ == "__main__":
         mlflow.log_param("train_batch_size", args.train_batch_size)
 
         train_df, val_df = preprocess_df(train_val_df, args.relabeled_columns)
+
+        # preprocess text
+        train_df["excerpt"] = train_df["excerpt"].apply(preprocess_text)
+        val_df["excerpt"] = val_df["excerpt"].apply(preprocess_text)
 
         # initialize models dict
         logged_models = {}
@@ -267,9 +275,7 @@ if __name__ == "__main__":
                 val_params=val_params_MLP,
                 training_type="MLP",
                 gpu_nb=gpu_nb,
-                MAX_EPOCHS=args.epochs * 5
-                if args.epochs != 1
-                else 1,  # 1 for trainig purposes
+                MAX_EPOCHS=args.epochs ** 2,  # 1 for trainig purposes
                 dropout_rate=args.dropout,
                 weight_decay=args.weight_decay,
                 learning_rate=args.learning_rate * 100,
@@ -334,33 +340,152 @@ if __name__ == "__main__":
             await_registration_for=600,
         )
 
-    # TESTING
-    # save time taken
+        # Testing
+        n_test_entries = len(test_df)
 
-    results_df = pd.DataFrame()
-    if af_in_columns_bool:
-        afs_list_test_set = test_df.analysis_framework_id.apply(int).unique()
+        results_df = pd.DataFrame()
+        if af_in_columns_bool:
+            afs_list_test_set = test_df.analysis_framework_id.apply(int).unique()
 
-    for one_AF in trained_afs:
+        total_tested_entries = 0
+        start_predictions = time.process_time()
+        for one_AF in trained_afs:
 
-        if type(one_AF) is not str and one_AF in afs_list_test_set:
-            model_af = int(one_AF)
-            test_df_one_af = test_df[test_df.analysis_framework_id == one_AF]
-        else:
-            model_af = "all"
-            if "analysis_framework_id" in test_df.columns:
-                test_df_one_af = test_df[~test_df.analysis_framework_id.isin(one_AF)]
+            if type(one_AF) is not str and one_AF in afs_list_test_set:
+                model_af = int(one_AF)
+                test_df_one_af = test_df[test_df.analysis_framework_id == one_AF]
             else:
-                test_df_one_af = test_df
+                model_af = "all"
+                if "analysis_framework_id" in test_df.columns:
+                    test_df_one_af = test_df[
+                        ~test_df.analysis_framework_id.isin(one_AF)
+                    ]
+                else:
+                    test_df_one_af = test_df
 
-        backbone_outputs_one_af = transformer_model.get_transformer_outputs(
-            test_df_one_af["excerpt"]
+            total_tested_entries += test_df_one_af.shape[0]
+
+            backbone_outputs_one_af = transformer_model.get_transformer_outputs(
+                test_df_one_af["excerpt"]
+            )
+
+            predictions_test_set_one_af = MLP_prediction_wrapper.models[
+                model_af
+            ].custom_predict({"X": backbone_outputs_one_af}, testing=True)
+
+            test_df_one_af[
+                "ratio_pred_threshold_all_labels"
+            ] = predictions_test_set_one_af
+
+            results_df = results_df.append(
+                test_df_one_af[
+                    ["entry_id", "excerpt", "ratio_pred_threshold_all_labels", "target"]
+                ]
+            )
+
+        # save predictions df
+        results_df.to_csv(Path(args.output_data_dir) / "results_df.csv", index=None)
+
+        assert total_tested_entries == n_test_entries
+
+        end_predictions = time.process_time()
+        time_for_predictions = np.round(
+            (end_predictions - start_predictions) / n_test_entries, 2
         )
-        predictions_test_set_one_af = MLP_prediction_wrapper.models[
-            model_af
-        ].custom_predict({"X": backbone_outputs_one_af}, testing=True)
-        test_df_one_af["predictions"] = predictions_test_set_one_af
-        results_df = results_df.append(test_df_one_af[["entry_id", "predictions"]])
+
+        mlflow.log_metric("z_predictions_time_per_sentence", time_for_predictions)
+
+        # Explainability
+
+        start_explainer = time.process_time()
+        interpretability_results = {
+            "missing_labels": defaultdict(list),
+            "wrong_labels": defaultdict(list),
+        }
+
+        not_relevant_labels_list = [
+            label
+            for label, score in MLP_model_one_af.optimal_scores["f_beta_scores"].items()
+            if score < 0.6
+        ]  # get_relevant_labels(train_val_df.target, 0)
+
+        explainability_df = results_df.copy()
+        explainability_df["predictions"] = explainability_df[
+            "ratio_pred_threshold_all_labels"
+        ].apply(lambda x: [label for label, ratio in x.items() if ratio >= 1])
+
+        n_unperfect_predictions = 0
+        total_explained_labels = 0
+
+        cls_explainer = MultiLabelClassificationExplainer(
+            logged_models["backbone"]  # .to(torch.device("cpu")),
+        )
+
+        for i in range(n_test_entries):
+            # each 100 sentences, log to mlflow the the sentence number and save the predictions
+            if i % 100 == 0:
+                mlflow.log_metric("zz_iter_number", i)
+                with open(
+                    Path(args.output_data_dir) / "explainability_results.pickle", "wb"
+                ) as f:
+                    dill.dump(interpretability_results, f)
+
+            row_i = explainability_df.iloc[i]
+            one_sentence = row_i["excerpt"]
+            one_entry_id = row_i["entry_id"]
+
+            groundtruth_one_row = custom_eval(row_i["target"])
+            predictions_one_row = row_i["predictions"]
+
+            union_labels = list(set(groundtruth_one_row + predictions_one_row))
+
+            missing_labels = [
+                label
+                for label in list(set(union_labels) - set(groundtruth_one_row))
+                if label in not_relevant_labels_list
+            ]
+            wrong_labels = [
+                label
+                for label in list(set(union_labels) - set(predictions_one_row))
+                if label in not_relevant_labels_list
+            ]
+
+            if len(missing_labels) > 0:
+                attributions_one_missing_entry = cls_explainer(
+                    one_sentence, missing_labels
+                )
+                total_explained_labels += len(missing_labels)
+
+                for label_name, sentence in attributions_one_missing_entry.items():
+                    interpretability_results["missing_labels"][label_name].append(
+                        {"entry_id": one_entry_id, "sentence": sentence}
+                    )
+
+            if len(wrong_labels) > 0:
+                attributions_one_wrong_entry = cls_explainer(one_sentence, wrong_labels)
+                total_explained_labels += len(wrong_labels)
+                for label_name, sentence in attributions_one_wrong_entry.items():
+                    interpretability_results["wrong_labels"][label_name].append(
+                        {"entry_id": one_entry_id, "sentence": sentence}
+                    )
+
+        end_explainer = time.process_time()
+        # save time taken
+        time_for_interpretability_per_sentence = np.round(
+            (end_explainer - start_explainer) / n_test_entries, 2
+        )
+
+        mlflow.log_metric(
+            "z_explainability_time_per_sentence", time_for_interpretability_per_sentence
+        )
+
+        time_for_interpretability_per_label = np.round(
+            (end_explainer - start_explainer) / total_explained_labels, 2
+        )
+
+        mlflow.log_metric(
+            "z_explainability_time_per_label", time_for_interpretability_per_label
+        )
 
     # save thresholds
     thresholds = {
@@ -369,6 +494,3 @@ if __name__ == "__main__":
 
     with open(Path(args.output_data_dir) / "logged_values.pickle", "wb") as f:
         dill.dump(thresholds, f)
-
-    # save predictions df
-    results_df.to_csv(Path(args.output_data_dir) / "results_df.csv", index=None)
