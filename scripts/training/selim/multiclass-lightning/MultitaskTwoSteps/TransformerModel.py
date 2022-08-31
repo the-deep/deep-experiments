@@ -1,6 +1,7 @@
 import pytorch_lightning as pl
 
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import numpy as np
@@ -80,10 +81,17 @@ class TransformerArchitecture(torch.nn.Module):
             ]
         )
 
+        self.activation_function = nn.ELU()
+
     def forward(self, inputs):
 
-        if type(inputs) is tuple:
-            inputs = {"ids": inputs[0], "mask": inputs[1]}
+        explainability_bool = type(inputs) is tuple
+        if explainability_bool:
+            model_device = next(self.parameters()).device
+            inputs = {
+                "ids": inputs[0].to(model_device),
+                "mask": inputs[1].to(model_device),
+            }
 
         fith_layer_transformer_output = self.common_backbone(
             inputs["ids"],
@@ -109,18 +117,28 @@ class TransformerArchitecture(torch.nn.Module):
             return torch.cat(encoder_outputs, dim=1)
 
         else:
-            classification_heads = [
-                self.output_layer[tag_id](
-                    self.LayerNorm_specific_hidden[self.tag_id_to_layer_id[tag_id]](
-                        self.dropout(
-                            encoder_outputs[self.tag_id_to_layer_id[tag_id]].clone()
+            classification_heads = torch.cat(
+                [
+                    self.output_layer[tag_id](
+                        self.LayerNorm_specific_hidden[self.tag_id_to_layer_id[tag_id]](
+                            self.dropout(
+                                self.activation_function(
+                                    encoder_outputs[
+                                        self.tag_id_to_layer_id[tag_id]
+                                    ].clone()
+                                )
+                            )
                         )
                     )
-                )
-                for tag_id in range(self.n_heads)
-            ]
+                    for tag_id in range(self.n_heads)
+                ],
+                dim=1,
+            )
 
-            return torch.cat(classification_heads, dim=1)
+            if not explainability_bool:
+                return classification_heads
+            else:
+                return classification_heads.cpu()
 
 
 class TrainingTransformer(pl.LightningModule):
@@ -251,6 +269,7 @@ class LoggedTransformerModel(torch.nn.Module):
         self.tagname_to_tagid = trained_model.tagname_to_tagid
         self.max_len = trained_model.max_len
         self.val_params = trained_model.val_params
+        self.val_params["num_workers"] = 0
 
     def forward(self, inputs):
         output = self.trained_architecture(inputs)
@@ -269,8 +288,6 @@ class LoggedTransformerModel(torch.nn.Module):
         1) get raw predictions
         2) postprocess them to output an output compatible with what we want in the inference
         """
-
-        self.val_params["num_workers"] = 0
 
         validation_loader = self.get_loaders(
             dataset,

@@ -133,9 +133,7 @@ def train_model(
     else:
         returned_model = LoggedMLPModel(model)
         # hypertune decision boundary thresholds for each label
-        returned_model.optimal_scores = returned_model.hypertune_threshold(
-            val_dataset, f_beta
-        )
+        returned_model.hypertune_threshold(val_dataset, f_beta)
 
     # move model to cpu for deployment
-    return returned_model.to(torch.device("cpu"))
+    return returned_model

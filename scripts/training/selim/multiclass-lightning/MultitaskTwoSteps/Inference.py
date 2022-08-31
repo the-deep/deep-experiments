@@ -1,4 +1,4 @@
-import os
+import torch
 from ModelsExplainability import MultiLabelClassificationExplainer
 
 # setting tokenizers parallelism to false adds robustness when dploying the model
@@ -18,7 +18,10 @@ import mlflow
 
 class ClassificationInference(mlflow.pyfunc.PythonModel):
     def __init__(self, models):
-        self.models = models
+        self.models = {
+            model_name: model.to(torch.device("cpu"))
+            for model_name, model in models.items()
+        }
         super().__init__()
 
     def load_context(self, context):
@@ -26,23 +29,13 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
 
     def predict(self, context, inputs):
 
-        input_sentences = inputs["excerpt"]
-        input_ids = inputs["entry_id"]
+        input_sentences = inputs["excerpt"].tolist()
+        input_ids = inputs["entry_id"].tolist()
         n_entries = len(input_sentences)
         return_type = inputs["return_type"].values[0]
+        interpretability_bool = inputs["return_type"].values[0]
 
-        if return_type == "interpretability_analysis":
-            interpretability_results = {}
-            cls_explainer = MultiLabelClassificationExplainer(self.models["backbone"])
-
-            for i in range(n_entries):
-                one_sentence = input_sentences[i]
-                one_entry_id = input_ids[i]
-                attributions_one_entry = cls_explainer(one_sentence)
-                interpretability_results[one_entry_id] = attributions_one_entry
-            return interpretability_results
-
-        elif return_type == "default_analyis":
+        if return_type == "default_analyis":
             af_id = inputs["analyis_framework_id"].values[0]
 
             if af_id in self.models.keys():
@@ -61,6 +54,35 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
                 "raw_predictions": predictions,
                 "thresholds": self.models[final_id].optimal_thresholds,
             }
+
+            if interpretability_bool:
+                prediction_specific_label_ids = inputs[
+                    "prediction_specific_label_ids"
+                ].tolist()
+                interpretability_results = {}
+
+                for i in range(n_entries):
+                    cls_explainer = MultiLabelClassificationExplainer(
+                        self.models["backbone"]
+                    )
+                    one_sentence = input_sentences[i]
+                    one_entry_id = input_ids[i]
+                    if prediction_specific_label_ids[0] is None:
+                        prediction_one_entry = predictions[i]
+                        final_predictions = [
+                            label
+                            for label, ratio in prediction_one_entry.items()
+                            if ratio >= 1
+                        ]
+                        attributions_one_entry = cls_explainer(
+                            one_sentence, final_predictions
+                        )
+                    else:
+                        attributions_one_entry = cls_explainer(
+                            one_sentence, prediction_specific_label_ids[i]
+                        )
+                    interpretability_results[one_entry_id] = attributions_one_entry
+                return interpretability_results
 
             return outputs
         else:
