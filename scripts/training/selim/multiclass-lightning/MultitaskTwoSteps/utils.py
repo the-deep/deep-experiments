@@ -3,17 +3,27 @@ import random
 import numpy as np
 import pandas as pd
 import re
+from copy import copy
 import warnings
-from typing import Dict
+from typing import Dict, List, Union, Tuple
 from collections import Counter
 import torch
+
+import nltk
+
+nltk.download("stopwords")
+nltk.download("wordnet")
+nltk.download("omw-1.4")
+from nltk.corpus import stopwords
+
+stop_words = set(stopwords.words())
 
 warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
 
 
-def map_id_layer_to_level(ids_each_level):
+def map_id_layer_to_level(ids_each_level) -> Dict[int, int]:
     dict_layers = {}
     lengthes = [len(id_one_level) for id_one_level in ids_each_level]
     tag_id = 0
@@ -24,14 +34,14 @@ def map_id_layer_to_level(ids_each_level):
     return dict_layers
 
 
-def beta_score(precision, recall, f_beta):
+def beta_score(precision: float, recall: float, f_beta: Union[int, float]) -> float:
     """get beta score from precision and recall"""
     return (1 + f_beta ** 2) * precision * recall / ((f_beta ** 2) * precision + recall)
 
 
 def clean_name_for_logging(
     dict_values: Dict[str, float], context: str, af_id: int = None
-):
+) -> Dict[str, float]:
     """clean names and prepare them for logging"""
 
     def get_new_name(name: str, context: str, af_id: int = None):
@@ -47,7 +57,7 @@ def clean_name_for_logging(
     }
 
 
-def get_tagname_to_id(target):
+def get_tagname_to_id(target) -> Dict[str, int]:
     """
     Assign id to each tag
     """
@@ -58,7 +68,20 @@ def get_tagname_to_id(target):
     return tagname_to_tagid
 
 
-def read_merge_data(TRAIN_PATH, TEST_PATH, data_format: str = "csv"):
+def custom_eval(x) -> List:
+    if str(x) == "nan":
+        return []
+    if str(x) == "[None]":
+        return []
+    if type(x) == list:
+        return x
+    else:
+        return literal_eval(x)
+
+
+def read_merge_data(
+    TRAIN_PATH: str, TEST_PATH: str, data_format: str = "csv"
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     read data as csv or pickle, then merge it
     """
@@ -74,7 +97,7 @@ def read_merge_data(TRAIN_PATH, TEST_PATH, data_format: str = "csv"):
     return train_df, test_df
 
 
-def clean_rows(row):
+def clean_rows(row: List[str]) -> List[str]:
     """
     1) Apply litteral evaluation
     2) keep unique values
@@ -82,12 +105,14 @@ def clean_rows(row):
     return list(set(literal_eval(row)))
 
 
-def flatten(t):
+def flatten(t: List[List]) -> List:
     """flatten list of lists"""
     return [item for sublist in t for item in sublist]
 
 
-def custom_stratified_train_test_split(df, ratios):
+def custom_stratified_train_test_split(
+    df: pd.DataFrame, ratios: float
+) -> Tuple[List[int], List[int]]:
     """
     custom function for stratified train test splitting
     1) take unique sub-tags (example: ['Health'])
@@ -115,8 +140,9 @@ def custom_stratified_train_test_split(df, ratios):
     return flatten(train_ids), flatten(val_ids)
 
 
-def preprocess_df(df: pd.DataFrame, relabeled_columns: str):
-
+def preprocess_df(
+    df: pd.DataFrame, relabeled_columns: str
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     main preprocessing function:
     1) get positive entries using the porportions of train test split
@@ -172,7 +198,9 @@ def preprocess_df(df: pd.DataFrame, relabeled_columns: str):
     return df_train, df_val
 
 
-def stats_train_test(df_train: pd.DataFrame, df_val: pd.DataFrame, column_name: str):
+def stats_train_test(
+    df_train: pd.DataFrame, df_val: pd.DataFrame, column_name: str
+) -> float:
     """
     Sanity check of data (proportion negative examples)
     """
@@ -196,18 +224,9 @@ def stats_train_test(df_train: pd.DataFrame, df_val: pd.DataFrame, column_name: 
     return ratio_negative_positive
 
 
-def get_full_list_entries(df, tag):
-    """
-    Having a list of tags for each column,
-    Return one list containing all tags in the column
-    """
-    pills_occurances = list()
-    for pills in df[tag]:
-        pills_occurances.extend(pills)
-    return pills_occurances
-
-
-def get_loss_alphas(tagname_to_tagid, targets_list):
+def get_loss_alphas(
+    tagname_to_tagid: Dict[str, int], targets_list: List[str]
+) -> torch.Tensor:
     """get alphas for BCE weighted loss"""
     counts = dict(Counter(flatten(targets_list)))
     sorted_counts = [counts[k] for k, v in tagname_to_tagid.items()]
@@ -217,7 +236,7 @@ def get_loss_alphas(tagname_to_tagid, targets_list):
     )
 
 
-def compute_weights(number_data_classes, n_tot):
+def compute_weights(number_data_classes: List[int], n_tot: int) -> List[float]:
     """
     weights computation for weighted loss function
     INPUTS:
@@ -232,28 +251,12 @@ def compute_weights(number_data_classes, n_tot):
     ]
 
 
-def get_flat_labels(column_of_columns, tag_to_id, nb_subtags):
+def get_flat_labels(column_of_columns, tag_to_id: Dict[str, int], nb_subtags: int):
     matrix = [
         [1 if tag_to_id[i] in column else 0 for i in range(nb_subtags)]
         for column in column_of_columns
     ]
     return np.array(flatten(matrix))
-
-
-def get_preds_entry(preds_column, return_at_least_one=True, ratio_nb=1):
-    preds_entry = [
-        sub_tag
-        for sub_tag in list(preds_column.keys())
-        if preds_column[sub_tag] > ratio_nb
-    ]
-    if return_at_least_one:
-        if len(preds_entry) == 0:
-            preds_entry = [
-                sub_tag
-                for sub_tag in list(preds_column.keys())
-                if preds_column[sub_tag] == max(list(preds_column.values()))
-            ]
-    return preds_entry
 
 
 def get_tag_id_to_layer_id(ids_each_level):
@@ -268,7 +271,7 @@ def get_tag_id_to_layer_id(ids_each_level):
     return tag_to_list
 
 
-def get_first_level_ids(tagname_to_tagid):
+def get_first_level_ids(tagname_to_tagid: Dict[str, int]) -> List[List[List[int]]]:
     """having list of unique labels, create the labels ids in different lists"""
     all_names = list(tagname_to_tagid.keys())
     split_names = [name.split("->") for name in all_names]
@@ -300,3 +303,135 @@ def get_first_level_ids(tagname_to_tagid):
         final_ids.append(first_level_ids)
 
     return final_ids
+
+
+def get_relevant_labels(target_column, min_kept_ratio: float = 0.02) -> List[str]:
+    n_items = len(target_column)
+    targets = flatten(
+        target_column.apply(
+            lambda x: [item for item in custom_eval(x) if item != "NOT_MAPPED"]
+        ).tolist()
+    )
+    relevant_labels = [
+        label_name
+        for label_name, label_counts in dict(Counter(targets)).items()
+        if (label_counts / n_items) > min_kept_ratio
+    ]
+    return relevant_labels
+
+
+def delete_punctuation(text: str) -> str:
+    clean_text = copy(text)
+    to_be_cleaned_punctuations = [
+        # ",",
+        # ";",
+        "[",
+        "]",
+        "(",
+        ")",
+        "-",
+        "_",
+        "{",
+        "}",
+        "+",
+        "*",
+        "=",
+        "<",
+        ">",
+        "/",
+        # "!",
+        # "?",
+    ]
+    for punct in to_be_cleaned_punctuations:
+        clean_text = clean_text.replace(punct, "")
+    return clean_text.rstrip().lstrip()
+
+
+def RepresentsInt(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
+
+def preprocess_one_sentence(sentence):
+    """
+    function to preprocess one_sentence:
+        - lower and remove punctuation
+    """
+
+    if type(sentence) is not str:
+        sentence = str(sentence)
+
+    new_words = []
+    words = sentence.split()
+
+    for word in words:
+        # keep clean words and remove hyperlinks
+        bool_word_not_empty_string = word != ""
+        bool_word_not_stop_word = word.lower() not in stop_words
+
+        if bool_word_not_empty_string and bool_word_not_stop_word:
+
+            if word.isdigit():
+                appended_word = "^"
+
+            elif word_is_country(word):
+                appended_word = "`"
+
+            else:
+                appended_word = word
+
+            new_words.append(appended_word)
+
+    return " ".join(new_words).rstrip().lstrip()
+
+
+def word_is_country(word):
+    """relevant countries based on the list of projects we have"""
+    relevant_countries_list = [
+        "ukr",
+        "afgh",
+        "sudan",
+        "turk",
+        "rdc",
+        "burkina",
+        "faso",
+        "congo",
+        "colomb",
+        "somali",
+        "camero",
+        "peru",
+        "libi",
+        "liby",
+        "chile",
+        "ecuad",
+        "salvad",
+        "banglad",
+        "syr",
+        "ghana",
+        "venezue",
+        "brazil",
+        "bresil",
+        "brasil",
+        "argen",
+        "philip",
+        "niger",
+        "tunis",
+        "chad",
+        "argenti",
+        "ghana",
+        "franc",
+        "ital",
+        "german",
+        "americ",
+    ]
+    return any([one_country in word.lower() for one_country in relevant_countries_list])
+
+
+def preprocess_text(text: str) -> str:
+    clean_text = copy(text)
+    clean_text = delete_punctuation(clean_text)
+    clean_text = preprocess_one_sentence(clean_text)
+    return clean_text
