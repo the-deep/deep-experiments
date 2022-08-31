@@ -7,5 +7,6 @@ scikit-learn==0.22.2.post1
 sagemaker==2.49.1
 s3fs==2021.07.0
 smdebug==1.0.11
-transformers-interpret==0.6.0
- 
+captum==0.5.0
+nltk==3.6
+pytest==7.0
