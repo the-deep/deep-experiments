@@ -25,14 +25,14 @@ def custom_eval(x):
         return literal_eval(x)
 
 
-def get_barplots(col: pd.Series, col_name: str, dir_name: str):
+def get_barplots(col: pd.Series, col_name: str, image_name: str = None, min_percentage: float = 0):
     if "->" in str(col):
-        get_vizu_2_lvl(col, col_name, dir_name)
+        get_vizu_2_lvl(col, col_name, image_name, min_percentage)
     else:
-        get_vizu_1_lvl(col, col_name, dir_name)
+        get_vizu_1_lvl(col, col_name, image_name, min_percentage)
 
 
-def get_vizu_1_lvl(col: pd.Series, col_name: str, dir_name):
+def get_vizu_1_lvl(col: pd.Series, col_name: str, image_name: str, min_percentage: float):
 
     whole_tag = sorted(flatten(col.apply(custom_eval)))
     tot_n_entries = len(col)
@@ -48,10 +48,12 @@ def get_vizu_1_lvl(col: pd.Series, col_name: str, dir_name):
     fig, ax = plt.subplots(figsize=(width * 2, width))
 
     pillar_counts = dict(Counter(whole_tag))
-    proportions = {
-        tag_name: round(100 * tag_count / tot_n_entries, 1)
-        for tag_name, tag_count in pillar_counts.items()
-    }
+
+    proportions = {}
+    for tag_name, tag_count in pillar_counts.items():
+        percentage_one_label = round(100 * tag_count / tot_n_entries, 1)
+        if percentage_one_label>min_percentage:
+            proportions[tag_name] = percentage_one_label
 
     y = list(proportions.keys())
     x = list(proportions.values())
@@ -73,16 +75,17 @@ def get_vizu_1_lvl(col: pd.Series, col_name: str, dir_name):
     lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
     lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
     fig.legend(lines, labels, fontsize=12, loc=4, bbox_to_anchor=(0.9, 0))
-    plt.savefig(
-        dir_name,
-        bbox_inches="tight",
-        facecolor="white",
-        dpi=200,
-    )
+    if image_name is not None:
+        plt.savefig(
+            image_name,
+            bbox_inches="tight",
+            facecolor="white",
+            dpi=200,
+        )
     plt.show()
 
 
-def get_vizu_2_lvl(col: pd.Series, col_name: str, dir_name: str):
+def get_vizu_2_lvl(col: pd.Series, col_name: str, image_name: str, min_percentage: float):
     """
     vizu for hierarchial tags (example: pillars->subpillars)
     """
@@ -93,10 +96,13 @@ def get_vizu_2_lvl(col: pd.Series, col_name: str, dir_name: str):
     n_level0 = len(set(level0))
 
     tot_subpillar_counts = dict(Counter(whole_tag))
-    tot_proportions = {
-        tag_name: round(100 * tag_count / tot_n_entries, 1)
-        for tag_name, tag_count in tot_subpillar_counts.items()
-    }
+    tot_proportions = {}
+
+    for tag_name, tag_count in tot_subpillar_counts.items():
+        percentage_one_label = round(100 * tag_count / tot_n_entries, 1)
+        if percentage_one_label>min_percentage:
+            tot_proportions[tag_name] = percentage_one_label
+
     max_prop = max(list(tot_proportions.values()))
     unique_level1 = list(tot_proportions.keys())
     unique_level0 = [item.split("->")[0] for item in unique_level1]
@@ -158,10 +164,11 @@ def get_vizu_2_lvl(col: pd.Series, col_name: str, dir_name: str):
     lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
     lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
     fig.legend(lines, labels, fontsize=12, loc=4, bbox_to_anchor=(0.9, 0))
-    plt.savefig(
-        dir_name,
-        bbox_inches="tight",
-        facecolor="white",
-        dpi=200,
-    )
+    if image_name is not None:
+        plt.savefig(
+            image_name,
+            bbox_inches="tight",
+            facecolor="white",
+            dpi=200,
+        )
     plt.show()
