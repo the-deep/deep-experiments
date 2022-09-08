@@ -1,0 +1,4 @@
+spacy
+streamlit
+gensim
+scikit-learn

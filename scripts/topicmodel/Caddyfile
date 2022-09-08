@@ -1,0 +1,9 @@
+{
+    email dev@thedeep.io
+}
+
+topicm.nlp.thedeep.io {
+    reverse_proxy server:8501 {
+        header_up X-Forwarded-Proto https
+    }
+}
