@@ -3,6 +3,8 @@ version: '3.2'
 services:
   server:
     build: .
+    volumes:
+      - .:/app
     restart: unless-stopped
   caddy:
     image: caddy:2
