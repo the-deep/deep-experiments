@@ -27,6 +27,7 @@ from rouge import Rouge
 from typing import List
 from pathlib import Path
 import json
+import time
 
 LABEL_NAMES = [
     "is_relevant",
@@ -47,6 +48,22 @@ LABEL_NAMES = [
     "has_sector_Shelter",
     "has_sector_WASH",
 ]
+
+
+class log_time:
+    def __init__(self, name="BLOCK", extra_args=None):
+        self.name = name
+        self.extra_args = extra_args
+        self.start = None
+        self.end = None
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, *args, **kwargs):
+        self.end = time.time()
+        diff = self.end - self.start
+        print("LOG TIME:", f"'{self.name}' took {round(diff, 5)}seconds to run!")
 
 
 @dataclass
@@ -210,6 +227,14 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
             }
         )
 
+    print(
+        {
+            "token_labels": token_labels.shape,
+            "token_labels_mask": token_labels_mask.shape,
+            "sentence_labels": sentence_labels.shape,
+            "sentence_labels_mask": sentence_labels_mask.shape,
+        }
+    )
     return out
 
 
@@ -604,23 +629,27 @@ def create_excerpts_dict(excerpts_df):
     return excerpts_dict
 
 
-def get_test_train_data(args):
-    data = load_dataset(
-        "json",
-        data_files=args.data_path,
-        split="train" if args.n_subsample is None else f"train[:{args.n_subsample}]",
-    )
-    data = data.filter(lambda x: len(x["excerpts"]) > 0)
+def get_test_train_data(args, training_args):
+    with log_time("load_dataset and filter excerpts"):
+        data = load_dataset(
+            "json",
+            data_files=args.data_path,
+            split="train" if args.n_subsample is None else f"train[:{args.n_subsample}]",
+        )
+        data = data.filter(lambda x: len(x["excerpts"]) > 0)
 
     excerpts_df = pd.read_csv(args.excerpts_csv_path)
-    excerpts_dict = create_excerpts_dict(excerpts_df)
+    with log_time("create excerpts dict"):
+        excerpts_dict = create_excerpts_dict(excerpts_df)
 
-    tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
+    with log_time("tokenizer construction"):
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
 
-    data = data.map(
-        partial(encode, tokenizer=tokenizer, args=args, excerpts_dict=excerpts_dict),
-        num_proc=training_args.dataloader_num_workers,
-    )
+    with log_time("map encode to excerpts"):
+        data = data.map(
+            partial(encode, tokenizer=tokenizer, args=args, excerpts_dict=excerpts_dict),
+            num_proc=training_args.dataloader_num_workers,
+        )
 
     train_indices, eval_indices = train_test_split(
         np.arange(len(data)), test_size=0.01, shuffle=True, random_state=1234
@@ -644,7 +673,7 @@ def get_separate_layer_groups(args):
 def train(args, training_args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     datasets = {}
-    datasets["train"], datasets["test"] = get_test_train_data(args)
+    datasets["train"], datasets["test"] = get_test_train_data(args, training_args)
 
     separate_layer_groups = get_separate_layer_groups(args)
 

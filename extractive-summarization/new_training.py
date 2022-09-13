@@ -1,5 +1,6 @@
-import tqdm
+from tqdm import tqdm
 import torch
+from torch.utils.data import Dataset
 import time
 from copy import copy
 
@@ -12,12 +13,34 @@ from train import get_test_train_data, get_args, LABEL_NAMES, get_separate_layer
 from model import Model
 
 
-def train_model(model, train, test, loss_fn, output_dim, lr=0.001, batch_size=512, n_epochs=10):
+class ExtractionDataset(Dataset):
+    def __init__(self, dset):
+        self.dset = dset
+
+    def __getitem__(self, idx):
+        d = self.dset[idx]
+        return {
+            "id": d["id"],
+            "input_ids": d["input_ids"],
+            "attention_mask": d["attention_mask"],
+            "offset_mapping": d["offset_mapping"],
+            "token_labels": d["token_labels"],
+            "token_labels_mask": d["token_labels_mask"],
+            "sentence_labels": d["sentence_labels"],
+            "sentence_labels_mask": d["sentence_labels_mask"],
+        }
+
+    def __len__(self):
+        return len(self.dset)
+
+
+def train_model(
+    model, train_dataset, test, loss_fn, output_dim, lr=0.001, batch_size=512, n_epochs=10
+):
     param_lrs = [{"params": param, "lr": lr} for param in model.parameters()]
-    print("MODEL PARAMS", model.parameters())
     optimizer = torch.optim.Adam(param_lrs, lr=lr)
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: 0.6**epoch)
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size, shuffle=True)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size, shuffle=False)
     training_loss = []
     validation_loss = []
@@ -75,7 +98,7 @@ def train_model(model, train, test, loss_fn, output_dim, lr=0.001, batch_size=51
 
 
 def main():
-    args, _ = get_args()
+    args, training_args = get_args()
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     model = Model(
         args.model_name_or_path,
@@ -90,8 +113,27 @@ def main():
     )
     loss_fn = Rouge(metrics=["rouge-1", "rouge-2", "rouge-l"]).get_scores
     output_dim = None
-    train, test = get_test_train_data(args)
-    train_model(model, train, test, loss_fn, output_dim, lr=0.001, batch_size=512, n_epochs=10)
+    train_data, test_data = get_test_train_data(args, training_args)
+    train_dataset, test_dataset = ExtractionDataset(train_data), ExtractionDataset(test_data)
+    train_model(
+        model, train_dataset, test_dataset, loss_fn, output_dim, lr=0.001, batch_size=5, n_epochs=10
+    )
+
+
+def _debug_arrow_dataset(dataset):
+    for i, x in enumerate(dataset):
+        print(f"Data entry {i+1}")
+        for k, v in x.items():
+            if isinstance(v, list):
+                print(k, (len(v),))
+            elif isinstance(v, str):
+                print(k, (len(v),), v)
+            else:
+                try:
+                    print(k, v.shape)
+                except ValueError:
+                    print(k, v)
+        print()
 
 
 if __name__ == "__main__":
