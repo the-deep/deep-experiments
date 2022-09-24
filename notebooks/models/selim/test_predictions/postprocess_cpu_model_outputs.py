@@ -223,11 +223,11 @@ eval_outputs = flatten(eval_outputs)
 
 thresholds = eval_batch["thresholds"]
 
-thresholds_as_in_first_model = convert_current_dict_to_previous_one(thresholds)
+clean_thresholds = convert_current_dict_to_previous_one(thresholds)
 
-outputs_as_in_first_model = [
+clean_outputs = [
     convert_current_dict_to_previous_one(one_entry_preds)
     for one_entry_preds in eval_outputs
 ]
 
-final_predictions = get_predictions_all(outputs_as_in_first_model)
+final_predictions = get_predictions_all(clean_outputs)
