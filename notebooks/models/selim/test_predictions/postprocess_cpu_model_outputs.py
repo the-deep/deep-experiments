@@ -173,7 +173,7 @@ def get_endpoint_probas(df: pd.DataFrame, endpoint_name: str):
     )
 
     all_outputs = []
-    batch_size = 2
+    batch_size = 128
     for i in range(0, df.shape[0], batch_size):
         inputs = df.iloc[i : i + batch_size][["excerpt"]]
         inputs["return_type"] = "default_analyis"
