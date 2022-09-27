@@ -3,6 +3,7 @@ import sys
 sys.path.append(".")
 
 import math
+import pickle
 import logging
 from typing import List
 from pathlib import Path
@@ -19,13 +20,16 @@ from torch.utils.data import DataLoader
 
 from model import ExtractionModel
 from data import (
-    get_test_train_data,
+    get_train_test_val_data,
     LABEL_NAMES,
     ExtractionDataset,
 )
 from inference import EntryExtractionWrapper
 
 logging.basicConfig(level=logging.INFO)
+
+MLFLOW_SERVER = "http://mlflow-deep-387470f3-1883319727.us-east-1.elb.amazonaws.com/"
+SAGEMAKER_ROLE = "AmazonSageMaker-ExecutionRole-20210519T102514"
 
 
 @dataclass
@@ -36,10 +40,10 @@ class Args:
     max_full_length: int
     max_length: int
     extra_context_length: int
-    tracking_uri: str
-    experiment_name: str
+    tracking_uri: str = MLFLOW_SERVER
+    experiment_name: str = "entry_extraction"
     n_separate_layers: int = 0
-    separate_layer_groups: List[List[str]] = []
+    separate_layer_groups: List[List[str]] = list
     token_loss_weight: float = 1.0
     sentence_edit_threshold: int = math.inf
     n_subsample: int = None
@@ -83,12 +87,20 @@ if __name__ == "__main__":
     logging.info("building training and testing datasets")
 
     args, training_args = get_args()
-    train_data, test_data, val_data = get_test_train_data(args, training_args)
-    train_dataset, test_dataset, val_dataset = (
-        ExtractionDataset(train_data),
-        ExtractionDataset(test_data),
-        ExtractionDataset(val_data),
-    )
+    try:
+        with open("datasets.pkl", "rb") as f:
+            train_dataset, test_dataset, val_dataset = pickle.load(f)
+    except Exception as e:
+        print("Could not load datasets from pickle", e)
+        train_data, test_data, val_data = get_train_test_val_data(args, training_args)
+        train_dataset, test_dataset, val_dataset = (
+            ExtractionDataset(train_data),
+            ExtractionDataset(test_data),
+            ExtractionDataset(val_data),
+        )
+        with open("datasets.pkl", "wb") as f:
+            pickle.dump((train_dataset, test_dataset, val_dataset), f)
+        print("WRITTEN DATASETS")
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -100,8 +112,8 @@ if __name__ == "__main__":
 
     with mlflow.start_run():
 
-        train_params = {"batch_size": args.train_batch_size, "shuffle": True, "num_workers": 0}
-        val_params = {"batch_size": args.eval_batch_size, "shuffle": False, "num_workers": 0}
+        train_params = {"batch_size": 256, "shuffle": True, "num_workers": 0}
+        val_params = {"batch_size": 256, "shuffle": False, "num_workers": 0}
 
         training_loader = DataLoader(train_dataset, **train_params)
         val_loader = DataLoader(val_dataset, **val_params)
@@ -114,7 +126,7 @@ if __name__ == "__main__":
 
         logging.info("training model")
 
-        trainer = pl.Trainer(gpus=1, max_epochs=args.epochs)
+        trainer = pl.Trainer(gpus=1, max_epochs=training_args.num_train_epochs)
         tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
         model = ExtractionModel(
             args.model_name_or_path,
@@ -135,5 +147,13 @@ if __name__ == "__main__":
             python_model=prediction_wrapper,
             artifact_path="model",
             conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[__file__, "model.py", "data.py", "inference.py"],  # file dependencies
+            code_path=[
+                __file__,
+                "model.py",
+                "data.py",
+                "inference.py",
+                "config.json",
+                "requirements.txt",
+                "dataserts.pkl",
+            ],  # file dependencies
         )

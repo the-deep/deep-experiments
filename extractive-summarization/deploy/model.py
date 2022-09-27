@@ -1,11 +1,11 @@
-import pytorch_lighting as pl
+import pytorch_lightning as pl
 from torch import nn
 import torch
 from transformers import BertModel, BertConfig
 from transformers.models.bert.modeling_bert import BertEncoder
 
 
-class ExtractionModel(pl.LightingModule):
+class ExtractionModel(pl.LightningModule):
     def __init__(
         self,
         backbone,
@@ -94,7 +94,7 @@ class ExtractionModel(pl.LightingModule):
         token_labels = batch["token_labels"]
         length = input_ids.shape[0]
 
-        n_steps = int(input_ids.shape[0] / self.slice_length)
+        n_steps = int(length / self.slice_length)
 
         extra_context = torch.cat(
             [
@@ -183,3 +183,6 @@ class ExtractionModel(pl.LightingModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=None):
         output = self(batch)
         return {"logits": output}
+
+    def configure_optimizers(self, *args, **kwargs):
+        pass

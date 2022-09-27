@@ -257,7 +257,7 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
     return out
 
 
-def get_test_train_data(args, training_args):
+def get_train_test_val_data(args, training_args):
     with log_time("load_dataset and filter excerpts"):
         data = load_dataset(
             "json",
