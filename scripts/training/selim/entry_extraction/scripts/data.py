@@ -1,33 +1,16 @@
 import time
 from functools import partial
-
+from typing import List, Dict
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
 from datasets import load_dataset
-
-
-LABEL_NAMES = [
-    "is_relevant",
-    "has_sectors",
-    "has_subpillars_1d",
-    "has_subpillars_2d",
-    "has_other",
-    "has_sector_Agriculture",
-    "has_sector_Cross",
-    "has_sector_Education",
-    "has_sector_Food Security",
-    "has_sector_Health",
-    "has_sector_Livelihoods",
-    "has_sector_Logistics",
-    "has_sector_NOT_MAPPED",
-    "has_sector_Nutrition",
-    "has_sector_Protection",
-    "has_sector_Shelter",
-    "has_sector_WASH",
-]
+from utils import flatten
+from ast import literal_eval, process_tag
+import torch
+import json
 
 
 class ExtractionDataset(Dataset):
@@ -67,123 +50,129 @@ class log_time:
         print("LOG TIME:", f"'{self.name}' took {round(diff, 5)}seconds to run!")
 
 
-def create_excerpts_dict(excerpts_df):
-    possible_sectors = set(s for sectors in excerpts_df["sectors"].values for s in eval(sectors))
-
-    has_sectors = np.zeros(len(excerpts_df), dtype=bool)
-    sectors_value_dict = {s: np.zeros_like(has_sectors) for s in possible_sectors}
-
-    for i, row in excerpts_df.iterrows():
-        for sector in eval(row["sectors"]):
-            sectors_value_dict[sector][i] = 1
-            has_sectors[i] = True
-
-    excerpts_df["has_sectors"] = has_sectors
-
-    for key, value in sectors_value_dict.items():
-        excerpts_df[f"has_sector_{key}"] = value
-
-    excerpts_df["has_subpillars_1d"] = (
-        excerpts_df["subpillars_1d"].apply(eval).apply(len) > 0
-        if "subpillars_1d" in excerpts_df
-        else False
-    )
-    excerpts_df["has_subpillars_2d"] = (
-        excerpts_df["subpillars_2d"].apply(eval).apply(len) > 0
-        if "subpillars_2d" in excerpts_df
-        else False
-    )
-    excerpts_df["is_relevant"] = 1
-    excerpts_df["has_other"] = ~(
-        excerpts_df["has_sectors"]
-        | excerpts_df["has_subpillars_1d"]
-        | excerpts_df["has_subpillars_2d"]
-    )
-
-    for key in LABEL_NAMES:
-        if key not in excerpts_df.columns:
-            print(f"Warning: {key} not present in excerpts dataframe. Filling with 'false'.")
-            excerpts_df[key] = False
-
-    excerpts_dict = {}
-    for _, row in excerpts_df.iterrows():
-        excerpts_dict[row["entry_id"]] = {k: v for k, v in row.iteritems() if k in LABEL_NAMES}
-
-    return excerpts_dict
-
-
-def get_label_vector(entry_id, excerpts_dict=None):
-    label = np.zeros(len(LABEL_NAMES))
-    # every excerpt is relevant
-    label[LABEL_NAMES.index("is_relevant")] = 1
-
-    if excerpts_dict is not None:
-        for i, l in enumerate(LABEL_NAMES):
-            label[i] = float(excerpts_dict[entry_id][l])
-
-    return label
-
-
-def encode(sample, tokenizer, args, excerpts_dict=None):
-    sentences = sample["sentences"]
-    text = sample["text"]
-
-    has_labels = "excerpts" in sample
-
-    encoding = tokenizer(sentences, add_special_tokens=False, return_offsets_mapping=True)
-
-    input_ids = [tokenizer.cls_token_id]
-    offset_mapping = [(0, 0)]
-
-    prev_offset = 0
-
-    for (sentence, sentence_ids, sentence_offsets) in zip(
-        sentences, encoding["input_ids"], encoding["offset_mapping"]
+class DataPreparation:
+    def __init__(
+        self,
+        raw_data_path: str,
+        excerpts_df_path: pd.DataFrame,
+        tokenizer_name_or_path: str,
+        dataloader_num_workers: int = 1,
     ):
-        input_ids.extend(sentence_ids)
-        input_ids.append(tokenizer.sep_token_id)
+        self.dataloader_num_workers = dataloader_num_workers
 
-        offset_mapping.extend(
-            [(prev_offset + start, prev_offset + end) for start, end in sentence_offsets]
+        self.original_data = load_dataset(
+            "json",
+            data_files=raw_data_path,
+            split="train",
         )
-        offset_mapping.append((0, 0))
+        self.original_data = self.original_data.filter(lambda x: len(x["excerpts"]) > 0)
 
-        prev_offset += len(sentence)
+        self.excerpts_df = pd.read_csv(excerpts_df_path)[
+            ["entry_id", "sectors", "subpillars_1d", "subpillars_2d", "lead_id"]
+        ]
+        self.lead_ids = self.excerpts_df.lead_id.unique().tolist()
+        self._create_excerpts_dict()
 
-        if len(input_ids) >= args.max_full_length:
-            input_ids = input_ids[: args.max_full_length]
-            offset_mapping = offset_mapping[: args.max_full_length]
-            break
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
 
-    while len(input_ids) < args.max_full_length:
-        input_ids.append(tokenizer.pad_token_id)
-        offset_mapping.append((0, 0))
+    def _create_excerpts_dict(self):
 
-    input_ids = np.array(input_ids, dtype=np.int32)
-    offset_mapping = np.array(offset_mapping, dtype=np.int32)
+        self.excerpts_df["primary_tags"] = self.excerpts_df.apply(
+            lambda x: flatten(
+                [
+                    process_tag(literal_eval(x[tag]), tag)
+                    for tag in ["sectors", "subpillars_1d", "subpillars_2d"]
+                ]
+            ),
+            axis=1,
+        )
 
-    attention_mask = np.zeros(args.max_full_length, dtype=np.int32)
-    attention_mask[np.where(input_ids != tokenizer.pad_token_id)] = 1
+        self.excerpts_df["primary_tags"] = self.excerpts_df["primary_tags"].apply(
+            lambda x: x + ["is_relevant"] if len(x) > 0 else x
+        )
 
-    # token labels
-    if has_labels:
-        token_labels = np.zeros((args.max_full_length, len(LABEL_NAMES)))
+        self.excerpts_dict = dict(
+            zip(self.excerpts_df.entry_id, self.excerpts_df.primary_tags)
+        )
+
+    def _get_label_vector(self, entry_id: int):
+        target_ids = torch.zeros(len(self.tagname_to_tagid), dtype=torch.long)
+
+        # every excerpt is relevant
+        target_ids[self.tagname_to_tagid["is_relevant"]] = 1
+
+        if self.excerpts_dict is not None:
+            entry_tags: List = self.excerpts_dict[entry_id]
+            entry_tag_ids = [self.tagname_to_tagid[tag] for tag in entry_tags]
+            target_ids[entry_tag_ids] = 1
+
+        return target_ids
+
+    def _prepare_X_data(self, sample):
+        sentences = sample["sentences"]
+
+        encoding = self.tokenizer(
+            sentences, add_special_tokens=False, return_offsets_mapping=True
+        )
+
+        input_ids = [self.tokenizer.cls_token_id]
+        offset_mapping = [(0, 0)]
+
+        prev_offset = 0
+
+        for (sentence, sentence_ids, sentence_offsets) in zip(
+            sentences, encoding["input_ids"], encoding["offset_mapping"]
+        ):
+
+            input_ids.extend(sentence_ids)
+            input_ids.append(self.tokenizer.sep_token_id)
+
+            offset_mapping.extend(
+                [
+                    (prev_offset + start, prev_offset + end)
+                    for start, end in sentence_offsets
+                ]
+            )
+            offset_mapping.append((0, 0))
+
+            prev_offset += len(sentence)
+
+        input_ids = torch.tensor(input_ids, dtype=torch.long)
+        offset_mapping = torch.tensor(offset_mapping, dtype=torch.long)
+
+        attention_mask = torch.zeros_like(input_ids, dtype=torch.long)
+        attention_mask[torch.where(input_ids != self.tokenizer.pad_token_id)] = 1
+
+        return (input_ids, attention_mask, offset_mapping)
+
+    def _create_y_data(self, sample, input_ids, attention_mask, offset_mapping):
+        self.label_names = sorted(list(set(flatten(self.excerpts_dict.values()))))
+        self.tagname_to_tagid = {
+            tag_name: tag_id for tag_id, tag_name in enumerate(self.label_names)
+        }
+
+        token_labels = torch.zeros(
+            (input_ids.shape[0], len(self.label_names)), dtype=torch.long
+        )
+        text = sample["text"]
 
         for excerpt in sample["excerpts"]:
             e = excerpt["text"]
-            e_source = excerpt["source"]
+            entry_id = excerpt["source"]
 
             start_index = text.index(e)
             end_index = start_index + len(e)
 
             def is_in_excerpt(offset):
                 return (
-                    offset[0] != offset[1] and offset[0] >= start_index and offset[1] <= end_index
+                    offset[0] != offset[1]
+                    and offset[0] >= start_index
+                    and offset[1] <= end_index
                 )
 
             for i, offset in enumerate(offset_mapping):
                 if is_in_excerpt(offset):
-                    label = get_label_vector(e_source, excerpts_dict)
+                    label = self._get_label_vector(entry_id)
 
                     if i == 0 or not is_in_excerpt(offset_mapping[i - 1]):
                         # the token is at the boundary, could be encoded differently (i.e B- and I-)
@@ -192,98 +181,166 @@ def encode(sample, tokenizer, args, excerpts_dict=None):
                     else:
                         token_labels[i] = label
 
-        token_labels_mask = attention_mask.copy()
-        token_labels_mask[np.where(input_ids == tokenizer.sep_token_id)] = 0
-        token_labels_mask[np.where(input_ids == tokenizer.cls_token_id)] = 0
-    else:
-        token_labels = token_labels_mask = None
+        token_labels_mask = attention_mask.clone()
+        token_labels_mask[torch.where(input_ids == self.tokenizer.sep_token_id)] = 0
+        token_labels_mask[torch.where(input_ids == self.tokenizer.cls_token_id)] = 0
 
-    # sentence labels
-    if has_labels and sentences is not None:
-        assert sum(len(x) for x in sentences) == len(text)
+        return (token_labels, token_labels_mask)
 
-        sentence_indices = (
-            [
-                x["index"]
-                for x in sample["excerpt_sentence_indices"]
-                if x["distance"] < args.sentence_edit_threshold
-            ]
-            if has_labels
-            else None
-        )
-        sentence_labels_list = (
-            [
-                get_label_vector(x["source"], excerpts_dict)
-                for x in sample["excerpt_sentence_indices"]
-                if x["distance"] < args.sentence_edit_threshold
-            ]
-            if has_labels
-            else None
-        )
+    def _encode(self, sample):
 
-        sentence_labels = np.zeros((args.max_full_length, len(LABEL_NAMES)))
-        sentence_labels_mask = np.zeros(args.max_full_length, dtype=np.int32)
+        input_ids, attention_mask, offset_mapping = self._prepare_X_data(sample)
 
-        sep_positions = np.where(input_ids == tokenizer.sep_token_id)[0]
-        sentence_indices_in_ids = [i for i in sentence_indices if i < len(sep_positions)]
-        sentence_labels_in_ids = [
-            label
-            for i, label in zip(sentence_indices, sentence_labels_list)
-            if i < len(sep_positions)
+        token_has_labels = "excerpts" in sample
+        if token_has_labels:
+            token_labels, token_labels_mask = self._create_y_data(
+                sample, input_ids, attention_mask, offset_mapping
+            )
+        else:
+            token_labels = token_labels_mask = None
+
+        out = {
+            "lead_in_classification_data": True,
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "offset_mapping": offset_mapping,
+            "token_labels": token_labels,
+            "token_labels_mask": token_labels_mask,
+        }
+
+        return out
+
+    def __call__(self, testing: bool = False, save_split_dicts: bool = True):
+
+        """
+        testing: bool for whether we are testing the ddf or if we want all the data
+        save_split_dicts: bool: whether or not to save the data split to train val test
+
+        - preprocessing function, to be run before training models
+        - output is raw
+            - no max length
+            - still need to add context and to pad etc to lengths, which is done in the training,
+                because different cdepending on the context we want to add
+
+        """
+
+        # sanity check: make sur all leads are in excerpts df.
+        used_data = self.original_data
+        ids = used_data["id"]
+        selected_ids = [
+            i
+            for i, lead_proj_ids in enumerate(ids)
+            if lead_proj_ids[0] in self.lead_ids
         ]
+        used_data = used_data.select(selected_ids)
 
-        if len(sentence_indices_in_ids) > 0:
-            sentence_labels[sep_positions[sentence_indices_in_ids]] = sentence_labels_in_ids
-        sentence_labels_mask[sep_positions] = 1
+        # testing: make sure everything is working
+        if testing:
+            n_sample_rows = 100
+            used_data = used_data.select(range(n_sample_rows))
+        else:
+            used_data = self.original_data
+
+        with log_time("map encode to excerpts"):
+            processed_data = used_data.map(
+                partial(self._encode),
+                num_proc=self.dataloader_num_workers,
+            )
+
+        # TODO: add stratified splitting
+        train_val_indices, test_indices = train_test_split(
+            np.arange(len(processed_data)),
+            test_size=0.1,
+            shuffle=True,
+            random_state=1234,
+        )
+        train_indices, val_indices = train_test_split(
+            train_val_indices, test_size=0.1, random_state=1234
+        )
+        train = processed_data.select(train_indices).to_dict()  # list of <something>
+        val = processed_data.select(val_indices).to_dict()
+        test = processed_data.select(test_indices).to_dict()
+
+        final_outputs = {"train": train, "val": val, "test": test}
+
+        if save_split_dicts:
+            dict_name = "full_data.json" if testing else "sample_data.json"
+
+            with open(dict_name, "w") as fp:
+                json.dump(final_outputs, fp)
+
+        return final_outputs
+
+
+# still to be fixed
+# TODO: add context here, from the beginning
+# TODO: somewhere here with context 64 in the beginning, 64 in the end, attention mask
+# TODO: loss backprop
+def prepare_data_for_forward_pass(
+    batch,
+    slice_length: int,
+    extra_context_length: int,
+    pad_token_id: int,
+    num_labels: int,
+    training: bool,
+):
+
+    """
+    batch: same structure as in the '_operate_train_or_val_step' function.
+    training: bool: whether we are training (the are present labels) or not (no loss computation needed)
+    """
+
+    input_ids = batch["input_ids"]
+    attention_mask = batch["attention_mask"]
+    token_labels_mask = batch["token_labels_mask"]
+    token_labels = batch["token_labels"]
+    length = input_ids.shape[0]
+
+    n_steps = int(length / slice_length)
+
+    extra_context = torch.cat(
+        [
+            torch.full(
+                extra_context_length,
+                pad_token_id,
+                device=input_ids.device,
+            ),
+            input_ids[: length - extra_context_length],
+        ],
+        1,
+    ).view(n_steps, slice_length)[:, :extra_context_length]
+
+    input_ids = input_ids.view(n_steps, slice_length)
+    attention_mask = attention_mask.view(n_steps, slice_length)
+
+    # Adding extra context
+    input_ids = torch.cat([extra_context, input_ids], 1)
+    attention_mask = torch.cat([torch.ones_like(extra_context), attention_mask], 1)
+
+    if training:
+        token_labels_mask = torch.cat(
+            [
+                torch.zeros_like(extra_context),
+                token_labels_mask.view(n_steps, slice_length),
+            ],
+            1,
+        )
+        token_labels = torch.cat(
+            [
+                torch.zeros((*extra_context.shape, num_labels))
+                .type_as(token_labels)
+                .to(extra_context.device),
+                token_labels.view((n_steps, slice_length, num_labels)),
+            ],
+            1,
+        )
     else:
-        sentence_labels = sentence_labels_mask = None
+        token_labels_mask = None
+        token_labels = None
 
-    out = {
+    return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
-        "offset_mapping": offset_mapping,
+        "token_labels_mask": token_labels_mask,
+        "token_labels": token_labels,
     }
-
-    if has_labels:
-        out.update(
-            {
-                "token_labels": token_labels,
-                "token_labels_mask": token_labels_mask,
-                "sentence_labels": sentence_labels,
-                "sentence_labels_mask": sentence_labels_mask,
-            }
-        )
-
-    return out
-
-
-def get_train_test_val_data(args, training_args):
-    with log_time("load_dataset and filter excerpts"):
-        data = load_dataset(
-            "json",
-            data_files=args.data_path,
-            split="train" if args.n_subsample is None else f"train[:{args.n_subsample}]",
-        )
-        data = data.filter(lambda x: len(x["excerpts"]) > 0)
-
-    excerpts_df = pd.read_csv(args.excerpts_csv_path)
-    with log_time("create excerpts dict"):
-        excerpts_dict = create_excerpts_dict(excerpts_df)
-
-    with log_time("tokenizer construction"):
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-
-    with log_time("map encode to excerpts"):
-        data = data.map(
-            partial(encode, tokenizer=tokenizer, args=args, excerpts_dict=excerpts_dict),
-            num_proc=training_args.dataloader_num_workers,
-        )
-
-    train_indices_, eval_indices = train_test_split(
-        np.arange(len(data)), test_size=0.01, shuffle=True, random_state=1234
-    )
-    train_indices, val_indices = train_test_split(train_indices_, test_size=0.1, random_state=1234)
-    train = data.select(train_indices)  # list of <something>
-    test = data.select(eval_indices)
-    val = data.select(val_indices)
-    return train, test, val
