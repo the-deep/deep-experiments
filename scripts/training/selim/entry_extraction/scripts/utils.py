@@ -1,5 +1,5 @@
 import torch
-from typing import List, Union
+from typing import List, Union, Dict
 
 
 def flatten(t: List[List]) -> List:
@@ -22,6 +22,17 @@ def process_tag(tags: List[str], tag_section: str):
                 ]
             )
         )
+
+
+def keep_relevant_keys(input_dict: Dict, relevant_keys=List[str]):
+    return {k: v for k, v in input_dict.items() if k in relevant_keys}
+
+
+def create_loss_backprop_mask(attention_mask, input_ids, sep_token_id, cls_token_id):
+    loss_backprop_mask = attention_mask.clone()
+    loss_backprop_mask[torch.where(input_ids == sep_token_id)] = 0
+    loss_backprop_mask[torch.where(input_ids == cls_token_id)] = 0
+    return loss_backprop_mask
 
 
 def fill_data_tensors(

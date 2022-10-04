@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer
 from datasets import load_dataset
-from utils import flatten, process_tag, prepare_X_data
+from utils import flatten, process_tag, prepare_X_data, keep_relevant_keys
 from ast import literal_eval
 import torch
 import json
@@ -128,11 +128,7 @@ class DataPreparation:
                     else:
                         token_labels[i] = label
 
-        token_labels_mask = attention_mask.clone()
-        token_labels_mask[torch.where(input_ids == self.tokenizer.sep_token_id)] = 0
-        token_labels_mask[torch.where(input_ids == self.tokenizer.cls_token_id)] = 0
-
-        return (token_labels, token_labels_mask)
+        return token_labels
 
     def _encode(self, sample):
 
@@ -142,24 +138,26 @@ class DataPreparation:
 
         token_has_labels = "excerpts" in sample
         if token_has_labels:
-            token_labels, token_labels_mask = self._create_y_data(
+            token_labels = self._create_y_data(
                 sample, input_ids, attention_mask, offset_mapping
             )
         else:
-            token_labels = token_labels_mask = None
+            token_labels = None
 
         out = {
-            "lead_in_classification_data": True,
             "input_ids": input_ids,
             "attention_mask": attention_mask,
-            "offset_mapping": offset_mapping,
             "token_labels": token_labels,
-            "token_labels_mask": token_labels_mask,
         }
 
         return out
 
-    def __call__(self, testing: bool = False, save_split_dicts: bool = True):
+    def __call__(
+        self,
+        testing: bool = False,
+        save_split_dicts: bool = True,
+        kept_keys=["input_ids", "attention_mask", "token_labels"],
+    ):
 
         """
         testing: bool for whether we are testing the ddf or if we want all the data
@@ -206,9 +204,17 @@ class DataPreparation:
         train_indices, val_indices = train_test_split(
             train_val_indices, test_size=0.1, random_state=1234
         )
-        train = processed_data.select(train_indices).to_dict()  # list of <something>
-        val = processed_data.select(val_indices).to_dict()
-        test = processed_data.select(test_indices).to_dict()
+        train = keep_relevant_keys(
+            processed_data.select(train_indices).to_dict(), kept_keys
+        )
+
+        val = keep_relevant_keys(
+            processed_data.select(val_indices).to_dict(), kept_keys
+        )
+
+        test = keep_relevant_keys(
+            processed_data.select(test_indices).to_dict(), kept_keys
+        )
 
         final_outputs = {
             "train": train,

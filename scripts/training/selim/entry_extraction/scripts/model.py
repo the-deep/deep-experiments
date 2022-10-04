@@ -6,6 +6,7 @@ from transformers import AdamW, AutoTokenizer, AutoModel
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.nn.functional as F
 from data import ExtractionDataset
+from tqdm import tqdm
 
 
 class EntryExtractor(nn.Module):
@@ -39,7 +40,7 @@ class EntryExtractor(nn.Module):
             ]
         )
 
-    def forward(self, input_ids, attention_mask):
+    def forward(self, input_ids, attention_mask, loss_mask):
         logits = []
 
         hidden_state = self.common_backbone(
@@ -54,19 +55,21 @@ class EntryExtractor(nn.Module):
 
             output = (cls_output + mean_pooling) / 2
 
-            logits.append(
-                output  
-            )  
-        return torch.stack(logits, dim=2)
+            logits.append(output)
+
+        output = torch.stack(logits, dim=2)
+        output = output[torch.where(loss_mask == 1)]
+        return output
 
 
 class TrainingExtractionModel(pl.LightningModule):
     def __init__(
         self,
-        backbone,
-        num_labels,
-        slice_length,
-        extra_context_length,
+        backbone_name: str,
+        tokenizer_name: str,
+        num_labels: int,
+        slice_length: int,
+        extra_context_length: int,
         lr: float = 1e-4,
         adam_epsilon: float = 1e-7,
         weight_decay: float = 1e-2,
@@ -82,18 +85,15 @@ class TrainingExtractionModel(pl.LightningModule):
                 once
             extra_context_length: length of prefix that will be fed to the
                 model as additional context (without generating predictions)
-            n_separate_layers: number of separate layers to use for different
-                `separate_layer_groups`
-            separate_layer_groups: list of lists of label indices indicating
-                how to group labels into separate final layers
         """
         super().__init__()
 
-        self.entry_extraction_model = EntryExtractor(backbone, num_labels, slice_length)
+        self.entry_extraction_model = EntryExtractor(
+            backbone_name, num_labels, slice_length
+        )
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-        self.tokenizer = AutoTokenizer.from_pretrained(backbone)
         self.pad_token_id = self.tokenizer.pad_token_id
-
         self.num_labels = num_labels
         self.slice_length = slice_length
         self.extra_context_length = extra_context_length
@@ -115,8 +115,7 @@ class TrainingExtractionModel(pl.LightningModule):
         attention_mask,
         loss_mask,
     ):
-        output = self.entry_extraction_model(input_ids, attention_mask)
-        output = output[torch.where(loss_mask == 1)]
+        output = self.entry_extraction_model(input_ids, attention_mask, loss_mask)
         return output
 
     def _operate_train_or_val_step(self, batch):
@@ -279,5 +278,24 @@ class LoggedExtractionModel(nn.Module):
 
         self.to(testing_device)
 
+        backbone_outputs = []
+
         with torch.no_grad():
-            ...
+            for batch in tqdm(
+                test_loader,
+                total=len(test_loader.dataset) // test_loader.batch_size,
+            ):
+
+                logits = self(
+                    batch["input_ids"].to(testing_device),
+                    batch["attention_mask"].to(testing_device),
+                    batch["loss_mask"].to(testing_device),
+                ).cpu()
+
+                probabilities = torch.sigmoid(logits)
+
+                backbone_outputs.append(probabilities)
+
+        # TODO: need to return with each probailities the token offsets, to know from where to where
+        # TODO: token offsets to real words
+        return backbone_outputs

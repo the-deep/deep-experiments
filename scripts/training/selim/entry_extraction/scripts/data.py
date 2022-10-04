@@ -1,7 +1,7 @@
 from collections import defaultdict
 from typing import List, Dict, Union
 from torch.utils.data import Dataset
-from utils import fill_data_tensors
+from utils import fill_data_tensors, create_loss_backprop_mask
 import torch
 
 
@@ -67,13 +67,16 @@ class ExtractionDataset(Dataset):
 
                 final_outputs["input_ids"].append(input_ids_one_lead)
                 final_outputs["attention_mask"].append(attention_mask_one_lead)
-                loss_backprop_mask = attention_mask_one_lead.clone()
+
+                loss_backprop_mask = create_loss_backprop_mask(
+                    attention_mask_one_lead,
+                    input_ids_one_lead,
+                    self.tokenizer.sep_token_id,
+                    self.tokenizer.cls_token_id,
+                )
                 final_outputs["loss_mask"].append(loss_backprop_mask)
 
                 if self.training_mode:
-                    assert (
-                        len(token_labels_one_lead) == self.max_input_len
-                    ), "token labels short entries"
                     final_outputs["token_labels"].append(token_labels_one_lead)
 
             else:
@@ -92,7 +95,12 @@ class ExtractionDataset(Dataset):
                     final_outputs["input_ids"].append(tmp_input_tensor)
                     final_outputs["attention_mask"].append(tmp_attention_mask_tensor)
 
-                    tmp_loss_backprop_mask = tmp_attention_mask_tensor.clone()
+                    tmp_loss_backprop_mask = create_loss_backprop_mask(
+                        tmp_attention_mask_tensor,
+                        tmp_input_tensor,
+                        self.tokenizer.sep_token_id,
+                        self.tokenizer.cls_token_id,
+                    )
 
                     if initial_id == 0:  # initial tokens case
                         tmp_loss_backprop_mask[-self.extra_context_length :] = 0
@@ -121,7 +129,12 @@ class ExtractionDataset(Dataset):
                 final_outputs["input_ids"].append(tmp_input_tensor)
                 final_outputs["attention_mask"].append(tmp_attention_mask_tensor)
 
-                tmp_loss_backprop_mask = tmp_attention_mask_tensor.clone()
+                tmp_loss_backprop_mask = create_loss_backprop_mask(
+                    tmp_attention_mask_tensor,
+                    tmp_input_tensor,
+                    self.tokenizer.sep_token_id,
+                    self.tokenizer.cls_token_id,
+                )
                 tmp_loss_backprop_mask[: initial_id + self.extra_context_length] = 0
                 final_outputs["loss_mask"].append(tmp_loss_backprop_mask)
 
@@ -134,13 +147,21 @@ class ExtractionDataset(Dataset):
 
     def __getitem__(self, idx):
         out = {
-            "input_ids": self.data["input_ids"][idx],
-            "attention_mask": self.data["attention_mask"][idx],
-            "loss_mask": self.data["loss_mask"][idx],
+            "input_ids": torch.tensor(self.data["input_ids"][idx].clone().detach(), dtype=torch.long),
+            "attention_mask": torch.tensor(
+                self.data["attention_mask"][idx].clone().detach(), dtype=torch.long
+            ),
+            "loss_mask": torch.tensor(self.data["loss_mask"][idx].clone().detach(), dtype=torch.long),
         }
 
         if self.training_mode:
-            out.update({"token_labels": self.data["token_labels"][idx]})
+            out.update(
+                {
+                    "token_labels": torch.tensor(
+                        self.data["token_labels"][idx].clone().detach(), dtype=torch.long
+                    )
+                }
+            )
 
         return out
 
