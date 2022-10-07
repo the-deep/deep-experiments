@@ -4,11 +4,13 @@ from torch.utils.data import Dataset
 from utils import fill_data_tensors, create_loss_backprop_mask
 import torch
 
+# TODO: check all the input ids and offsets and attention maska and loss backprop are working well.
+
 
 class ExtractionDataset(Dataset):
     def __init__(
         self,
-        dset: Union[Dict, str],  # dict if training and raw text input text if test
+        dset: Dict,
         training_mode: bool,
         tokenizer: str,
         max_input_len: int = 512,
@@ -23,21 +25,14 @@ class ExtractionDataset(Dataset):
         self.data = self._prepare_data_for_forward_pass()
 
     def _prepare_data_for_forward_pass(self):
-
         """
         batch: same structure as in the '_operate_train_or_val_step' function.
         training: bool: whether we are training (the are present labels) or not (no loss computation needed)
         """
 
-        if self.training_mode:
-            input_ids = self.dset["input_ids"]
-            attention_mask = self.dset["attention_mask"]
-            token_labels = self.dset["token_labels"]
-        else:
-            input_ids, attention_mask = self.tokenizer(
-                [self.dset], add_special_tokens=False, return_tensors="pt"
-            )
-            token_labels = None
+        input_ids = self.dset["input_ids"]
+        attention_mask = self.dset["attention_mask"]
+        token_labels = self.dset["token_labels"]
 
         final_outputs = defaultdict(list)
 
@@ -147,18 +142,23 @@ class ExtractionDataset(Dataset):
 
     def __getitem__(self, idx):
         out = {
-            "input_ids": torch.tensor(self.data["input_ids"][idx].clone().detach(), dtype=torch.long),
+            "input_ids": torch.tensor(
+                self.data["input_ids"][idx].clone().detach(), dtype=torch.long
+            ),
             "attention_mask": torch.tensor(
                 self.data["attention_mask"][idx].clone().detach(), dtype=torch.long
             ),
-            "loss_mask": torch.tensor(self.data["loss_mask"][idx].clone().detach(), dtype=torch.long),
+            "loss_mask": torch.tensor(
+                self.data["loss_mask"][idx].clone().detach(), dtype=torch.long
+            ),
         }
 
         if self.training_mode:
             out.update(
                 {
                     "token_labels": torch.tensor(
-                        self.data["token_labels"][idx].clone().detach(), dtype=torch.long
+                        self.data["token_labels"][idx].clone().detach(),
+                        dtype=torch.long,
                     )
                 }
             )

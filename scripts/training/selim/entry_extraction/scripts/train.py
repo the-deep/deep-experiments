@@ -175,7 +175,7 @@ if __name__ == "__main__":
         training_model = TrainingExtractionModel(
             backbone_name=args.model_name_or_path,
             tokenizer_name=args.tokenizer_name_or_path,
-            num_labels=len(tagname_to_tagid),
+            tagname_to_tagid=tagname_to_tagid,
             slice_length=args.max_len,
             extra_context_length=args.extra_context_length,
             lr=args.learning_rate,
@@ -193,8 +193,12 @@ if __name__ == "__main__":
 
         ###################### new model, used for logging, torch.nn.Module type #####################
         ###################### avoids logging errors #####################
+        training_model.eval()
+        training_model.freeze()
 
         logged_extraction_model = LoggedExtractionModel(training_model)
+
+        logged_extraction_model.hypertune_threshold(val_dataset, fbeta) #TODO: add fbeta
 
         # This class is logged as a pickle artifact and used at inference time
         prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)

@@ -1,4 +1,6 @@
+from utils import prepare_X_data, get_metric, get_label_vote_one_sentence
 import pytorch_lightning as pl
+import numpy as np
 from torch import nn
 import torch
 from torch.utils.data import DataLoader
@@ -7,6 +9,8 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.nn.functional as F
 from data import ExtractionDataset
 from tqdm import tqdm
+from typing import List, Dict
+from collections import defaultdict
 
 
 class EntryExtractor(nn.Module):
@@ -67,7 +71,7 @@ class TrainingExtractionModel(pl.LightningModule):
         self,
         backbone_name: str,
         tokenizer_name: str,
-        num_labels: int,
+        tagname_to_id: Dict[str, int],
         slice_length: int,
         extra_context_length: int,
         lr: float = 1e-4,
@@ -88,13 +92,14 @@ class TrainingExtractionModel(pl.LightningModule):
         """
         super().__init__()
 
+        self.tagname_to_id = tagname_to_id
+        self.num_labels = len(tagname_to_id)
         self.entry_extraction_model = EntryExtractor(
-            backbone_name, num_labels, slice_length
+            backbone_name, self.num_labels, slice_length
         )
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
         self.pad_token_id = self.tokenizer.pad_token_id
-        self.num_labels = num_labels
         self.slice_length = slice_length
         self.extra_context_length = extra_context_length
         self.lr = lr
@@ -208,13 +213,6 @@ class TrainingExtractionModel(pl.LightningModule):
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
-    def hypertune_threshold(self, validation_loader):
-        """
-        After training the model, generate predictions on validation set and get the optimal decision threshold for
-        each label, maximizing a chosen parameter (eg. fscore, recall, precision ...)
-        """
-        pass
-
 
 class LoggedExtractionModel(nn.Module):
     def __init__(self, trained_model) -> None:
@@ -227,6 +225,7 @@ class LoggedExtractionModel(nn.Module):
         self.slice_length = trained_model.slice_length
         self.extra_context_length = trained_model.extra_context_length
         self.num_labels = trained_model.num_labels
+        self.tagname_to_id = trained_model.tagname_to_id
 
         self.test_params = {"batch_size": 16, "shuffle": False, "num_workers": 0}
 
@@ -260,16 +259,7 @@ class LoggedExtractionModel(nn.Module):
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
-    def get_highlights(self, raw_input_text):
-        """
-        only function called in inference
-        return predictions from raw input text
-        """
-        test_loader = self.get_loaders(
-            raw_input_text,
-            self.val_params,
-        )
-
+    def _generate_probas(self, data_loader):
         # can be on cpu
         if torch.cuda.is_available():
             testing_device = "cuda"
@@ -282,8 +272,8 @@ class LoggedExtractionModel(nn.Module):
 
         with torch.no_grad():
             for batch in tqdm(
-                test_loader,
-                total=len(test_loader.dataset) // test_loader.batch_size,
+                data_loader,
+                total=len(data_loader.dataset) // data_loader.batch_size,
             ):
 
                 logits = self(
@@ -296,6 +286,138 @@ class LoggedExtractionModel(nn.Module):
 
                 backbone_outputs.append(probabilities)
 
-        # TODO: need to return with each probailities the token offsets, to know from where to where
-        # TODO: token offsets to real words
         return backbone_outputs
+
+    def get_highlights(self, sentences: List[str]):
+        """
+        better to do sentences splitting on one side only, so no confusion.
+
+        only function called in inference
+        return predictions from raw input text
+
+        1) split input text into sentences
+        2) tokenizer and get off set for each one
+        3) generate results for all tokens
+        4) using offsets get relevant tokens for each sentence
+        5) postprocessing to get results for each sentence.
+            - postprocessing does not depend on the
+
+        output: (n_words, n_labels), output[0, 1]: whether token 0 is relevant for label 1
+        """
+
+        final_outputs = []
+
+        input_ids, attention_mask, offset_mapping = prepare_X_data(
+            sentences, self.tokenizer
+        )
+        token_labels = None
+        test_dset = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "token_labels": token_labels,
+        }
+
+        test_loader = self._get_loaders(
+            test_dset,
+            self.test_params,
+        )
+
+        probas = self._generate_probas(test_loader)
+
+        ratios_probas_thresholds = probas / torch.tensor(
+            list(self.optimal_thresholds.values())
+        )  # divide probas tensor(n_tokens, n_labels) by threshold tensor(n_labels)
+
+        n_sentences = len(sentences)
+
+        for i in range(n_sentences):
+            final_outputs_one_sentence = []
+            # TODO: check the offset mapping, or just do it manually, with the input ids length
+            # probably better with just input ids length
+            token_begin_one_sent, token_end_one_sent = offset_mapping[i]
+
+            ratios_one_sent = ratios_probas_thresholds[
+                token_begin_one_sent:token_end_one_sent
+            ]
+
+            for tag_name, tag_id in self.tagname_to_id.items():
+                label_votes_one_sent = get_label_vote_one_sentence(
+                    ratios_one_sent, self.optimal_quantiles[tag_name]
+                )
+
+                final_outputs_one_sentence.append(label_votes_one_sent)
+
+            final_outputs.append(final_outputs_one_sentence)
+
+        return final_outputs
+
+    def _get_final_thresholds(self, probas, groundtruths):
+        """
+        test different ones, mean, median, max, custom one?
+        """
+        outputs = defaultdict(lambda: defaultdict())
+        self.optimal_thresholds = defaultdict()
+        self.optimal_quantiles = defaultdict()
+
+        quantiles = np.linspace(10, 90, 9)  # 10 to 90 with step of 10
+
+        # TODO: needs to be sentence-wise
+
+        for tag_name, tag_id in self.tagname_to_id.items():
+
+            probas_one_tag = probas[:, tag_id]
+            gt_one_tag = groundtruths[:, tag_id]
+
+            min_proba = np.round(min(probas_one_tag), 3)
+            max_proba = np.round(max(probas_one_tag), 3)
+
+            thresholds_one_tag = np.round(np.linspace(max_proba, min_proba, 21), 3)
+
+            best_fbeta_score = 0
+            best_recall = 0
+            best_precision = 0
+            best_threshold = 0
+            best_quantile = 0
+
+            for one_threshold in thresholds_one_tag:
+                ratios_per_threshold_tag = probas_one_tag / one_threshold
+
+                for one_quantile in quantiles:
+
+                    results_per_quantile_threshold_tag = get_metric(
+                        gt_one_tag,
+                        ratios_per_threshold_tag,  # TODO: iterate on sentences and get max quantiles
+                    )
+
+                    if (
+                        results_per_quantile_threshold_tag["fbeta_score"]
+                        > best_fbeta_score
+                    ):
+                        best_fbeta_score = results_per_quantile_threshold_tag[
+                            "fbeta_score"
+                        ]
+                        best_recall = results_per_quantile_threshold_tag["recall"]
+                        best_precision = results_per_quantile_threshold_tag["precision"]
+                        best_quantile = one_quantile
+                        best_threshold = one_threshold
+
+            outputs[tag_name][f"{tag_name}_fbeta_score"] = np.round(best_fbeta_score, 2)
+            outputs[tag_name][f"{tag_name}_precision"] = np.round(best_precision, 2)
+            outputs[tag_name][f"{tag_name}_recall"] = np.round(best_recall, 2)
+            outputs[tag_name][f"optimal_threshold_{tag_name}"] = best_threshold
+            outputs[tag_name][f"optimal_quantile_{tag_name}"] = best_quantile
+
+            self.optimal_thresholds[tag_name] = best_threshold
+            self.optimal_quantiles[tag_name] = best_quantile
+
+        return outputs
+
+    def hypertune_threshold(self, val_loader):
+        probas = self._generate_probas(
+            val_loader
+        )  # TODO: predictions per sentence to be generated.
+        groundtruths = val_loader.dataset.data["token_labels"]
+
+        final_results = self._get_final_thresholds(probas, groundtruths)
+
+        return final_results

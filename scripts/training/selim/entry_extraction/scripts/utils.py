@@ -1,5 +1,7 @@
 import torch
 from typing import List, Union, Dict
+import numpy as np
+from sklearn import metrics
 
 
 def flatten(t: List[List]) -> List:
@@ -60,6 +62,48 @@ def fill_data_tensors(
         token_labels_one_lead = None
 
     return (input_ids_one_lead, attention_mask_one_lead, token_labels_one_lead)
+
+
+def beta_score(precision: float, recall: float, f_beta: float) -> float:
+    """get beta score from precision and recall"""
+    return (1 + f_beta ** 2) * precision * recall / ((f_beta ** 2) * precision + recall)
+
+
+def get_metric(preds, groundtruth, f_beta):
+
+    precision = metrics.precision_score(
+        groundtruth,
+        preds,
+        average="binary",
+    )
+    recall = metrics.recall_score(
+        groundtruth,
+        preds,
+        average="binary",
+    )
+    f_beta_score = beta_score(precision, recall, f_beta)
+    return {
+        "precision": np.round(precision, 3),
+        "recall": np.round(recall, 3),
+        "fbeta_score": np.round(f_beta_score, 3),
+    }
+
+
+def get_label_vote_one_sentence(
+    ratios_per_threshold_tag: torch.Tensor, one_quantile: float
+):
+    quantile_per_threshold_tag = ratios_per_threshold_tag.quantile(one_quantile).item()
+
+    preds_per_quantile_threshold_tag = (
+        ratios_per_threshold_tag > quantile_per_threshold_tag
+    )
+
+    n_positive_votes = preds_per_quantile_threshold_tag.sum().item()
+    n_negative_votes = len(ratios_per_threshold_tag) - n_positive_votes
+
+    final_vote = 1 if n_positive_votes > n_negative_votes else 0
+
+    return final_vote
 
 
 def prepare_X_data(sentences: List[str], tokenizer):
