@@ -16,6 +16,7 @@ class ExtractionDataset(Dataset):
         max_input_len: int = 512,
         extra_context_length: int = 64,
     ):
+
         self.dset = dset
         self.training_mode = training_mode
         self.max_input_len = max_input_len
@@ -35,6 +36,7 @@ class ExtractionDataset(Dataset):
         token_labels = self.dset["token_labels"]
 
         final_outputs = defaultdict(list)
+        final_outputs["sentences_boundaries"] = self.dset["sentences_boundaries"]
 
         n_leads = len(input_ids)
 
@@ -158,6 +160,15 @@ class ExtractionDataset(Dataset):
                 {
                     "token_labels": torch.tensor(
                         self.data["token_labels"][idx].clone().detach(),
+                        dtype=torch.long,
+                    )
+                }
+            )
+        else:
+            out.update(
+                {
+                    "sentences_boundaries": torch.tensor(
+                        self.data["sentences_boundaries"][idx].clone().detach(),
                         dtype=torch.long,
                     )
                 }

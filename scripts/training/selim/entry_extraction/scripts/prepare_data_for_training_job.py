@@ -1,12 +1,12 @@
 from functools import partial
 import time
-from typing import List
+from typing import Dict, List
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer
 from datasets import load_dataset
-from utils import flatten, process_tag, prepare_X_data, keep_relevant_keys
+from utils import flatten, process_tag, keep_relevant_keys, prepare_X_data
 from ast import literal_eval
 import torch
 import json
@@ -76,6 +76,12 @@ class DataPreparation:
             zip(self.excerpts_df.entry_id, self.excerpts_df.primary_tags)
         )
 
+        self.label_names = sorted(list(set(flatten(self.excerpts_dict.values()))))
+
+        self.tagname_to_tagid = {
+            tag_name: tag_id for tag_id, tag_name in enumerate(self.label_names)
+        }
+
     def _get_label_vector(self, entry_id: int):
         target_ids = torch.zeros(len(self.tagname_to_tagid), dtype=torch.long)
 
@@ -89,57 +95,39 @@ class DataPreparation:
 
         return target_ids
 
-    def _create_y_data(self, sample, input_ids, attention_mask, offset_mapping):
+    def _create_y_data(self, sample, input_ids, offset_mapping):
         # TODO: recheck all works
 
-        self.label_names = sorted(list(set(flatten(self.excerpts_dict.values()))))
-        self.tagname_to_tagid = {
-            tag_name: tag_id for tag_id, tag_name in enumerate(self.label_names)
-        }
+        # initiliaze token labels with emoty list, to be filled iteratively with lists of len n_labels
+        n_tokens = input_ids.shape[0]
+        token_labels = torch.zeros((n_tokens * len(self.label_names)), dtype=torch.long)
 
-        token_labels = torch.zeros(
-            (input_ids.shape[0], len(self.label_names)), dtype=torch.long
-        )
-        text = sample["text"]
+        for one_sent_tag in sample[
+            "excerpt_sentence_indices"
+        ]:  # only the tagged sentences filled, everything else not needed
+            sentence_entry_id = one_sent_tag["source"]
+            sentence_begin, sentence_end = offset_mapping[one_sent_tag["index"]]
 
-        for excerpt in sample["excerpts"]:
-            e = excerpt["text"]
-            entry_id = excerpt["source"]
-
-            start_index = text.index(e)
-            end_index = start_index + len(e)
-
-            def is_in_excerpt(offset):
-                return (
-                    offset[0] != offset[1]
-                    and offset[0] >= start_index
-                    and offset[1] <= end_index
-                )
-
-            for i, offset in enumerate(offset_mapping):
-                if is_in_excerpt(offset):
-                    label = self._get_label_vector(entry_id)
-
-                    # TODO: understand and fix this
-                    if i == 0 or not is_in_excerpt(offset_mapping[i - 1]):
-                        # the token is at the boundary, could be encoded differently (i.e B- and I-)
-                        # but currently encoded the same
-                        token_labels[i] = label
-                    else:
-                        token_labels[i] = label
+            token_labels[sentence_begin:sentence_end] = self._get_label_vector(
+                sentence_entry_id
+            )
 
         return token_labels
 
     def _encode(self, sample):
 
-        input_ids, attention_mask, offset_mapping = prepare_X_data(
+        """
+        sample: one element from original text.
+        """
+
+        input_ids, attention_mask, sentences_boundaries = prepare_X_data(
             sample["sentences"], self.tokenizer
         )
 
         token_has_labels = "excerpts" in sample
         if token_has_labels:
             token_labels = self._create_y_data(
-                sample, input_ids, attention_mask, offset_mapping
+                sample, input_ids, attention_mask, sentences_boundaries
             )
         else:
             token_labels = None
@@ -148,6 +136,7 @@ class DataPreparation:
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "token_labels": token_labels,
+            "sentences_boundaries": sentences_boundaries,
         }
 
         return out
@@ -156,7 +145,12 @@ class DataPreparation:
         self,
         testing: bool = False,
         save_split_dicts: bool = True,
-        kept_keys=["input_ids", "attention_mask", "token_labels"],
+        kept_keys=[
+            "input_ids",
+            "attention_mask",
+            "token_labels",
+            "sentences_boundaries",
+        ],
     ):
 
         """

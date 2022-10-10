@@ -46,6 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--val_batch_size", type=int, default=32)
     parser.add_argument("--instance_type", type=str)
     parser.add_argument("--dropout", type=float, default=0.2)
+    parser.add_argument("--fbeta", type=float, default=2)
 
     parser.add_argument("--experiment_name", type=str)
     parser.add_argument("--tracking_uri", type=str)
@@ -119,6 +120,7 @@ if __name__ == "__main__":
             "max_len": args.max_len,
             "dropout": args.dropout,
             "weight_decay": args.weight_decay,
+            "fbeta": args.fbeta,
         }
 
         mlflow.log_params(model_params)
@@ -198,7 +200,13 @@ if __name__ == "__main__":
 
         logged_extraction_model = LoggedExtractionModel(training_model)
 
-        logged_extraction_model.hypertune_threshold(val_dataset, fbeta) #TODO: add fbeta
+        val_results = logged_extraction_model.hypertune_threshold(
+            val_dataset, args.fbeta
+        )
+
+        # log tag results
+        for tag_name, tag_results in val_results.items():
+            mlflow.log_metrics(tag_results)
 
         # This class is logged as a pickle artifact and used at inference time
         prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)

@@ -1,4 +1,4 @@
-from utils import prepare_X_data, get_metric, get_label_vote_one_sentence
+from utils import prepare_X_data, get_metric, get_label_vote_one_sentence, flatten
 import pytorch_lightning as pl
 import numpy as np
 from torch import nn
@@ -332,8 +332,7 @@ class LoggedExtractionModel(nn.Module):
 
         for i in range(n_sentences):
             final_outputs_one_sentence = []
-            # TODO: check the offset mapping, or just do it manually, with the input ids length
-            # probably better with just input ids length
+            # TODO: check the offset mapping
             token_begin_one_sent, token_end_one_sent = offset_mapping[i]
 
             ratios_one_sent = ratios_probas_thresholds[
@@ -351,25 +350,42 @@ class LoggedExtractionModel(nn.Module):
 
         return final_outputs
 
-    def _get_final_thresholds(self, probas, groundtruths):
-        """
-        test different ones, mean, median, max, custom one?
-        """
+    def _get_final_thresholds(self, probas, groundtruths, sentences_offsets, fbeta):
+        """ """
         outputs = defaultdict(lambda: defaultdict())
         self.optimal_thresholds = defaultdict()
         self.optimal_quantiles = defaultdict()
 
         quantiles = np.linspace(10, 90, 9)  # 10 to 90 with step of 10
 
-        # TODO: needs to be sentence-wise
+        # from raw predictions to sentences
+
+        sentences_probas = []
+        sentences_groundtruths = []
+
+        for sentence_begin, sentence_end in sentences_offsets:
+            if (
+                sentence_end > sentence_begin + 2
+            ):  # no highlightining sentences of 2 tokens or less
+                sentences_probas.append(probas[sentence_begin:sentence_end])
+                sentences_groundtruths.append(groundtruths[sentence_begin])
+
+        # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
 
         for tag_name, tag_id in self.tagname_to_id.items():
 
-            probas_one_tag = probas[:, tag_id]
-            gt_one_tag = groundtruths[:, tag_id]
+            probas_one_tag = [
+                one_sentence_probas[:, tag_id]
+                for one_sentence_probas in sentences_probas
+            ]
+            gts_one_tag = [
+                one_sentence_groundtruths[tag_id]
+                for one_sentence_groundtruths in sentences_groundtruths
+            ]
 
-            min_proba = np.round(min(probas_one_tag), 3)
-            max_proba = np.round(max(probas_one_tag), 3)
+            all_probas_one_tag = flatten(probas_one_tag)
+            min_proba = np.round(min(all_probas_one_tag), 3)
+            max_proba = np.round(max(all_probas_one_tag), 3)
 
             thresholds_one_tag = np.round(np.linspace(max_proba, min_proba, 21), 3)
 
@@ -380,13 +396,21 @@ class LoggedExtractionModel(nn.Module):
             best_quantile = 0
 
             for one_threshold in thresholds_one_tag:
-                ratios_per_threshold_tag = probas_one_tag / one_threshold
-
                 for one_quantile in quantiles:
 
+                    preds_per_sent_tag = []
+
+                    for preds_one_sent in probas_one_tag:
+                        ratios_proba_threshold_one_sent = preds_one_sent / one_threshold
+                        final_vote_one_sent = get_label_vote_one_sentence(
+                            ratios_proba_threshold_one_sent, one_quantile
+                        )
+                        preds_per_sent_tag.append(final_vote_one_sent)
+
                     results_per_quantile_threshold_tag = get_metric(
-                        gt_one_tag,
-                        ratios_per_threshold_tag,  # TODO: iterate on sentences and get max quantiles
+                        preds_per_sent_tag,
+                        gts_one_tag,
+                        fbeta,
                     )
 
                     if (
@@ -412,12 +436,15 @@ class LoggedExtractionModel(nn.Module):
 
         return outputs
 
-    def hypertune_threshold(self, val_loader):
-        probas = self._generate_probas(
-            val_loader
-        )  # TODO: predictions per sentence to be generated.
+    def hypertune_threshold(self, val_loader, fbeta):
+        probas = self._generate_probas(val_loader)
         groundtruths = val_loader.dataset.data["token_labels"]
+        sentences_offsets = val_loader.dataset.data[
+            "sentences_boundaries"
+        ]  # TODO: synthax to be checked
 
-        final_results = self._get_final_thresholds(probas, groundtruths)
+        final_results = self._get_final_thresholds(
+            probas, groundtruths, sentences_offsets, fbeta
+        )
 
         return final_results

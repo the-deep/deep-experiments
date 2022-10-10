@@ -108,36 +108,31 @@ def get_label_vote_one_sentence(
 
 def prepare_X_data(sentences: List[str], tokenizer):
 
-    encoding = tokenizer(
-        sentences, add_special_tokens=False, return_offsets_mapping=True
-    )
+    # TODO: check works
+
+    sentences_boundaries = []
+
+    encoding = tokenizer(sentences, add_special_tokens=False)
 
     input_ids = [tokenizer.cls_token_id]
-    offset_mapping = [(0, 0)]
+    sentence_begin_offset = 1  # because the first input id is 'cls_token_id'
 
-    prev_offset = 0
-
-    for (sentence_ids, sentence_offsets) in zip(
-        encoding["input_ids"], encoding["offset_mapping"]
-    ):
+    for sentence_ids in encoding["input_ids"]:
 
         input_ids.extend(sentence_ids)
         input_ids.append(tokenizer.sep_token_id)
 
-        offset_mapping.extend(
-            [
-                (prev_offset + start, prev_offset + end)
-                for start, end in sentence_offsets
-            ]
-        )
-        offset_mapping.append((0, 0))
+        sentence_begin_offset += 1  # because we add 'sep_token_id' between sentences
 
-        prev_offset += len(sentence_ids) + 1  # TODO: check this is right
+        sentence_end_offset = sentence_begin_offset + len(sentence_ids)
+        sentences_boundaries.append(
+            (sentence_begin_offset - 1, sentence_end_offset)
+        )  # because of the pythonic ways of seelcted ids in lists etc.
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
-    offset_mapping = torch.tensor(offset_mapping, dtype=torch.long)
+    sentences_boundaries = torch.tensor(sentences_boundaries, dtype=torch.long)
 
     attention_mask = torch.zeros_like(input_ids, dtype=torch.long)
     attention_mask[torch.where(input_ids != tokenizer.pad_token_id)] = 1
 
-    return (input_ids, attention_mask, offset_mapping)
+    return (input_ids, attention_mask, sentences_boundaries)
