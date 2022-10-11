@@ -120,14 +120,16 @@ def prepare_X_data(sentences: List[str], tokenizer):
     for sentence_ids in encoding["input_ids"]:
 
         input_ids.extend(sentence_ids)
-        input_ids.append(tokenizer.sep_token_id)
-
-        sentence_begin_offset += 1  # because we add 'sep_token_id' between sentences
 
         sentence_end_offset = sentence_begin_offset + len(sentence_ids)
         sentences_boundaries.append(
-            (sentence_begin_offset - 1, sentence_end_offset)
+            [sentence_begin_offset, sentence_end_offset]
         )  # because of the pythonic ways of seelcted ids in lists etc.
+
+        sentence_begin_offset = sentence_end_offset
+
+        input_ids.append(tokenizer.sep_token_id)
+        sentence_begin_offset += 1  # because we add 'sep_token_id' between sentences
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     sentences_boundaries = torch.tensor(sentences_boundaries, dtype=torch.long)

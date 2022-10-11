@@ -154,7 +154,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             logger=None,
             callbacks=[early_stopping_callback, checkpoint_callback],
-            # progress_bar_refresh_rate=20,
+            #enable_progress_bar=True,
             profiler="simple",
             # log_gpu_memory=True,
             # weights_summary=None,

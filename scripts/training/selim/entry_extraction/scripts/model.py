@@ -364,7 +364,7 @@ class LoggedExtractionModel(nn.Module):
         self.optimal_thresholds = defaultdict()
         self.optimal_quantiles = defaultdict()
 
-        quantiles = np.linspace(10, 90, 9)  # 10 to 90 with step of 10
+        quantiles = np.linspace(0.1, 0.9, 9)  # 0.1 to 0.9 with step of 0.1
 
         # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
 
@@ -433,12 +433,13 @@ class LoggedExtractionModel(nn.Module):
         return outputs
 
     def hypertune_threshold(self, val_loader, fbeta):
-        outputs = self._generate_probas(val_loader)
-
-        all_leads_probas = outputs["backbone_outputs"]
-
         lead_nbs = np.array(val_loader.dataset.data["leads_nb"])
+
+        # len equals to the number of leads not to the number os rows
         all_leads_sentences_offsets = val_loader.dataset.data["sentences_boundaries"]
+
+        # len equals to number of rows
+        all_leads_probas = self._generate_probas(val_loader)
         all_leads_groundtruths = val_loader.dataset.data["token_labels"]
 
         # from raw predictions to sentences
@@ -450,9 +451,17 @@ class LoggedExtractionModel(nn.Module):
 
             one_lead_ids = np.argwhere(lead_nbs == i).flatten()
 
-            one_lead_probas = all_leads_probas[one_lead_ids]
-            one_lead_groundtruth = all_leads_groundtruths[one_lead_ids]
-            one_lead_sentences_offsets = all_leads_sentences_offsets[one_lead_ids]
+            one_lead_probas = torch.cat(
+                [
+                    all_leads_probas[idx : idx + val_loader.batch_size]
+                    for idx in one_lead_ids
+                ]
+            )
+            one_lead_groundtruth = torch.cat(
+                [all_leads_groundtruths[idx] for idx in one_lead_ids]
+            )
+
+            one_lead_sentences_offsets = all_leads_sentences_offsets[i]
 
             for sentence_begin, sentence_end in one_lead_sentences_offsets:
                 if (
