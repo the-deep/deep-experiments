@@ -95,16 +95,20 @@ class DataPreparation:
 
         return target_ids
 
-    def _create_y_data(self, sample, input_ids, offset_mapping):
+    def _create_y_data(self, excerpt_sentence_ids, input_ids, offset_mapping):
         # TODO: recheck all works
 
         # initiliaze token labels with emoty list, to be filled iteratively with lists of len n_labels
         n_tokens = input_ids.shape[0]
-        token_labels = torch.zeros((n_tokens * len(self.label_names)), dtype=torch.long)
+        token_labels = torch.zeros(
+            (n_tokens, len(self.tagname_to_tagid)), dtype=torch.long
+        )
 
-        for one_sent_tag in sample[
-            "excerpt_sentence_indices"
-        ]:  # only the tagged sentences filled, everything else not needed
+        for (
+            one_sent_tag
+        ) in (
+            excerpt_sentence_ids
+        ):  # only the tagged sentences filled, everything else not needed
             sentence_entry_id = one_sent_tag["source"]
             sentence_begin, sentence_end = offset_mapping[one_sent_tag["index"]]
 
@@ -127,7 +131,7 @@ class DataPreparation:
         token_has_labels = "excerpts" in sample
         if token_has_labels:
             token_labels = self._create_y_data(
-                sample, input_ids, attention_mask, sentences_boundaries
+                sample["excerpt_sentence_indices"], input_ids, sentences_boundaries
             )
         else:
             token_labels = None

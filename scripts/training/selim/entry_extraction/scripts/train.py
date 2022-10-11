@@ -201,7 +201,7 @@ if __name__ == "__main__":
         logged_extraction_model = LoggedExtractionModel(training_model)
 
         val_results = logged_extraction_model.hypertune_threshold(
-            val_dataset, args.fbeta
+            val_loader, args.fbeta
         )
 
         # log tag results
@@ -210,6 +210,7 @@ if __name__ == "__main__":
 
         # This class is logged as a pickle artifact and used at inference time
         prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
+
         mlflow.pyfunc.log_model(
             python_model=prediction_wrapper,
             artifact_path="model",

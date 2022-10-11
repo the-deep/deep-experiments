@@ -64,6 +64,7 @@ class ExtractionDataset(Dataset):
 
                 final_outputs["input_ids"].append(input_ids_one_lead)
                 final_outputs["attention_mask"].append(attention_mask_one_lead)
+                final_outputs["leads_nb"].append(i)
 
                 loss_backprop_mask = create_loss_backprop_mask(
                     attention_mask_one_lead,
@@ -91,6 +92,7 @@ class ExtractionDataset(Dataset):
 
                     final_outputs["input_ids"].append(tmp_input_tensor)
                     final_outputs["attention_mask"].append(tmp_attention_mask_tensor)
+                    final_outputs["leads_nb"].append(i)
 
                     tmp_loss_backprop_mask = create_loss_backprop_mask(
                         tmp_attention_mask_tensor,
@@ -125,6 +127,7 @@ class ExtractionDataset(Dataset):
 
                 final_outputs["input_ids"].append(tmp_input_tensor)
                 final_outputs["attention_mask"].append(tmp_attention_mask_tensor)
+                final_outputs["leads_nb"].append(i)
 
                 tmp_loss_backprop_mask = create_loss_backprop_mask(
                     tmp_attention_mask_tensor,
@@ -164,17 +167,8 @@ class ExtractionDataset(Dataset):
                     )
                 }
             )
-        else:
-            out.update(
-                {
-                    "sentences_boundaries": torch.tensor(
-                        self.data["sentences_boundaries"][idx].clone().detach(),
-                        dtype=torch.long,
-                    )
-                }
-            )
 
         return out
 
     def __len__(self):
-        return len(self.dset)
+        return len(self.data["input_ids"])

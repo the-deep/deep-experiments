@@ -71,7 +71,7 @@ class TrainingExtractionModel(pl.LightningModule):
         self,
         backbone_name: str,
         tokenizer_name: str,
-        tagname_to_id: Dict[str, int],
+        tagname_to_tagid: Dict[str, int],
         slice_length: int,
         extra_context_length: int,
         lr: float = 1e-4,
@@ -92,8 +92,8 @@ class TrainingExtractionModel(pl.LightningModule):
         """
         super().__init__()
 
-        self.tagname_to_id = tagname_to_id
-        self.num_labels = len(tagname_to_id)
+        self.tagname_to_id = tagname_to_tagid
+        self.num_labels = len(tagname_to_tagid)
         self.entry_extraction_model = EntryExtractor(
             backbone_name, self.num_labels, slice_length
         )
@@ -235,8 +235,9 @@ class LoggedExtractionModel(nn.Module):
         attention_mask,
         loss_mask,
     ):
-        output = self.entry_extraction_model(input_ids, attention_mask)
-        output = output[torch.where(loss_mask == 1)]
+        output = self.trained_entry_extraction_model(
+            input_ids, attention_mask, loss_mask
+        )
         return output
 
     def _get_loaders(self, data, params, training_mode: bool):
@@ -282,11 +283,13 @@ class LoggedExtractionModel(nn.Module):
                     batch["loss_mask"].to(testing_device),
                 ).cpu()
 
+                # this is used if we want to recollate each lead together
+
                 probabilities = torch.sigmoid(logits)
 
                 backbone_outputs.append(probabilities)
 
-        return backbone_outputs
+        return torch.cat(backbone_outputs)
 
     def get_highlights(self, sentences: List[str]):
         """
@@ -303,6 +306,9 @@ class LoggedExtractionModel(nn.Module):
             - postprocessing does not depend on the
 
         output: (n_words, n_labels), output[0, 1]: whether token 0 is relevant for label 1
+
+
+        !!!!!! DESIGNED FOR ONE LEAD: SENTENCES: LIST OF ONE SPLIT LEAD.
         """
 
         final_outputs = []
@@ -350,25 +356,15 @@ class LoggedExtractionModel(nn.Module):
 
         return final_outputs
 
-    def _get_final_thresholds(self, probas, groundtruths, sentences_offsets, fbeta):
-        """ """
+    def _get_final_thresholds(self, sentences_probas, sentences_groundtruths, fbeta):
+        """
+        ...
+        """
         outputs = defaultdict(lambda: defaultdict())
         self.optimal_thresholds = defaultdict()
         self.optimal_quantiles = defaultdict()
 
         quantiles = np.linspace(10, 90, 9)  # 10 to 90 with step of 10
-
-        # from raw predictions to sentences
-
-        sentences_probas = []
-        sentences_groundtruths = []
-
-        for sentence_begin, sentence_end in sentences_offsets:
-            if (
-                sentence_end > sentence_begin + 2
-            ):  # no highlightining sentences of 2 tokens or less
-                sentences_probas.append(probas[sentence_begin:sentence_end])
-                sentences_groundtruths.append(groundtruths[sentence_begin])
 
         # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
 
@@ -437,14 +433,38 @@ class LoggedExtractionModel(nn.Module):
         return outputs
 
     def hypertune_threshold(self, val_loader, fbeta):
-        probas = self._generate_probas(val_loader)
-        groundtruths = val_loader.dataset.data["token_labels"]
-        sentences_offsets = val_loader.dataset.data[
-            "sentences_boundaries"
-        ]  # TODO: synthax to be checked
+        outputs = self._generate_probas(val_loader)
+
+        all_leads_probas = outputs["backbone_outputs"]
+
+        lead_nbs = np.array(val_loader.dataset.data["leads_nb"])
+        all_leads_sentences_offsets = val_loader.dataset.data["sentences_boundaries"]
+        all_leads_groundtruths = val_loader.dataset.data["token_labels"]
+
+        # from raw predictions to sentences
+
+        sentences_probas = []
+        sentences_groundtruths = []
+
+        for i in list(set(lead_nbs)):
+
+            one_lead_ids = np.argwhere(lead_nbs == i).flatten()
+
+            one_lead_probas = all_leads_probas[one_lead_ids]
+            one_lead_groundtruth = all_leads_groundtruths[one_lead_ids]
+            one_lead_sentences_offsets = all_leads_sentences_offsets[one_lead_ids]
+
+            for sentence_begin, sentence_end in one_lead_sentences_offsets:
+                if (
+                    sentence_end > sentence_begin + 2
+                ):  # no highlightining sentences of 2 tokens or less
+                    sentences_probas.append(
+                        one_lead_probas[sentence_begin:sentence_end]
+                    )
+                    sentences_groundtruths.append(one_lead_groundtruth[sentence_begin])
 
         final_results = self._get_final_thresholds(
-            probas, groundtruths, sentences_offsets, fbeta
+            sentences_probas, sentences_groundtruths, fbeta
         )
 
         return final_results
