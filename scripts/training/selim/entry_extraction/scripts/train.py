@@ -15,6 +15,7 @@ import pytorch_lightning as pl
 from ast import literal_eval
 from model import TrainingExtractionModel, LoggedExtractionModel
 from inference import EntryExtractionWrapper
+from utils import clean_name_for_logging
 
 logging.basicConfig(level=logging.INFO)
 
@@ -154,7 +155,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             logger=None,
             callbacks=[early_stopping_callback, checkpoint_callback],
-            #enable_progress_bar=True,
+            # enable_progress_bar=True,
             profiler="simple",
             # log_gpu_memory=True,
             # weights_summary=None,
@@ -206,7 +207,7 @@ if __name__ == "__main__":
 
         # log tag results
         for tag_name, tag_results in val_results.items():
-            mlflow.log_metrics(tag_results)
+            mlflow.log_metrics(clean_name_for_logging(tag_results))
 
         # This class is logged as a pickle artifact and used at inference time
         prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)

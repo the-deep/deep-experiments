@@ -272,10 +272,7 @@ class LoggedExtractionModel(nn.Module):
         backbone_outputs = []
 
         with torch.no_grad():
-            for batch in tqdm(
-                data_loader,
-                total=len(data_loader.dataset) // data_loader.batch_size,
-            ):
+            for batch in data_loader:
 
                 logits = self(
                     batch["input_ids"].to(testing_device),
@@ -289,27 +286,11 @@ class LoggedExtractionModel(nn.Module):
 
                 backbone_outputs.append(probabilities)
 
+                #print('------------------------------ probabilities', probabilities.shape)
+
         return torch.cat(backbone_outputs)
 
     def get_highlights(self, sentences: List[str]):
-        """
-        better to do sentences splitting on one side only, so no confusion.
-
-        only function called in inference
-        return predictions from raw input text
-
-        1) split input text into sentences
-        2) tokenizer and get off set for each one
-        3) generate results for all tokens
-        4) using offsets get relevant tokens for each sentence
-        5) postprocessing to get results for each sentence.
-            - postprocessing does not depend on the
-
-        output: (n_words, n_labels), output[0, 1]: whether token 0 is relevant for label 1
-
-
-        !!!!!! DESIGNED FOR ONE LEAD: SENTENCES: LIST OF ONE SPLIT LEAD.
-        """
 
         final_outputs = []
 
@@ -433,6 +414,9 @@ class LoggedExtractionModel(nn.Module):
         return outputs
 
     def hypertune_threshold(self, val_loader, fbeta):
+        """
+        ...
+        """
         lead_nbs = np.array(val_loader.dataset.data["leads_nb"])
 
         # len equals to the number of leads not to the number os rows
@@ -440,6 +424,7 @@ class LoggedExtractionModel(nn.Module):
 
         # len equals to number of rows
         all_leads_probas = self._generate_probas(val_loader)
+
         all_leads_groundtruths = val_loader.dataset.data["token_labels"]
 
         # from raw predictions to sentences
@@ -447,16 +432,12 @@ class LoggedExtractionModel(nn.Module):
         sentences_probas = []
         sentences_groundtruths = []
 
+        initial_sentence_ids = 0
+
         for i in list(set(lead_nbs)):
 
             one_lead_ids = np.argwhere(lead_nbs == i).flatten()
 
-            one_lead_probas = torch.cat(
-                [
-                    all_leads_probas[idx : idx + val_loader.batch_size]
-                    for idx in one_lead_ids
-                ]
-            )
             one_lead_groundtruth = torch.cat(
                 [all_leads_groundtruths[idx] for idx in one_lead_ids]
             )
@@ -464,13 +445,18 @@ class LoggedExtractionModel(nn.Module):
             one_lead_sentences_offsets = all_leads_sentences_offsets[i]
 
             for sentence_begin, sentence_end in one_lead_sentences_offsets:
+
+                sent_len = sentence_end - sentence_begin
+
                 if (
-                    sentence_end > sentence_begin + 2
+                    sent_len > 2
                 ):  # no highlightining sentences of 2 tokens or less
                     sentences_probas.append(
-                        one_lead_probas[sentence_begin:sentence_end]
+                        all_leads_probas[initial_sentence_ids:initial_sentence_ids+sent_len]
                     )
                     sentences_groundtruths.append(one_lead_groundtruth[sentence_begin])
+
+                initial_sentence_ids += sent_len
 
         final_results = self._get_final_thresholds(
             sentences_probas, sentences_groundtruths, fbeta

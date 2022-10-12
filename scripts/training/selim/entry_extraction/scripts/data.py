@@ -135,7 +135,7 @@ class ExtractionDataset(Dataset):
                     self.tokenizer.sep_token_id,
                     self.tokenizer.cls_token_id,
                 )
-                tmp_loss_backprop_mask[: initial_id + self.extra_context_length] = 0
+                tmp_loss_backprop_mask[: -(n_tokens_one_lead - initial_id + 1)] = 0
                 final_outputs["loss_mask"].append(tmp_loss_backprop_mask)
 
                 if self.training_mode:
@@ -171,4 +171,4 @@ class ExtractionDataset(Dataset):
         return out
 
     def __len__(self):
-        return len(self.data["input_ids"])
+        return len(self.data["leads_nb"])

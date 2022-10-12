@@ -2,7 +2,7 @@ import torch
 from typing import List, Union, Dict
 import numpy as np
 from sklearn import metrics
-
+import re
 
 def flatten(t: List[List]) -> List:
     """flatten list of lists"""
@@ -66,21 +66,23 @@ def fill_data_tensors(
 
 def beta_score(precision: float, recall: float, f_beta: float) -> float:
     """get beta score from precision and recall"""
-    return (1 + f_beta ** 2) * precision * recall / ((f_beta ** 2) * precision + recall)
+    if precision * recall == 0:  # any of them is 0:
+        return 0
+    else:
+        return (
+            (1 + f_beta ** 2)
+            * precision
+            * recall
+            / ((f_beta ** 2) * precision + recall)
+        )
 
 
 def get_metric(preds, groundtruth, f_beta):
 
     precision = metrics.precision_score(
-        groundtruth,
-        preds,
-        average="binary",
+        groundtruth, preds, average="binary", zero_division=0
     )
-    recall = metrics.recall_score(
-        groundtruth,
-        preds,
-        average="binary",
-    )
+    recall = metrics.recall_score(groundtruth, preds, average="binary", zero_division=0)
     f_beta_score = beta_score(precision, recall, f_beta)
     return {
         "precision": np.round(precision, 3),
@@ -104,6 +106,14 @@ def get_label_vote_one_sentence(
     final_vote = 1 if n_positive_votes > n_negative_votes else 0
 
     return final_vote
+
+def clean_name_for_logging(
+    dict_values: Dict[str, float]
+) -> Dict[str, float]:
+    """clean names and prepare them for logging"""
+    return {
+        re.sub("[^0-9a-zA-Z]+", "_", name): value for name, value in dict_values.items()
+    }
 
 
 def prepare_X_data(sentences: List[str], tokenizer):
