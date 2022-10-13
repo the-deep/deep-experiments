@@ -147,7 +147,7 @@ class DataPreparation:
 
     def __call__(
         self,
-        testing: bool = False,
+        use_sample: bool = False,
         save_split_dicts: bool = True,
         kept_keys=[
             "input_ids",
@@ -180,7 +180,7 @@ class DataPreparation:
         used_data = used_data.select(selected_ids)
 
         # testing: make sure everything is working
-        if testing:
+        if use_sample:
             n_sample_rows = 100
             used_data = used_data.select(range(n_sample_rows))
         else:
@@ -222,7 +222,7 @@ class DataPreparation:
         }
 
         if save_split_dicts:
-            dict_name = "sample_data.json" if testing else "full_data.json"
+            dict_name = "sample_data.json" if use_sample else "full_data.json"
 
             with open(dict_name, "w") as fp:
                 json.dump(final_outputs, fp)
