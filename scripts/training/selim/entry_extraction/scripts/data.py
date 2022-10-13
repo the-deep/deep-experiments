@@ -4,8 +4,6 @@ from torch.utils.data import Dataset
 from utils import fill_data_tensors, create_loss_backprop_mask
 import torch
 
-# TODO: check all the input ids and offsets and attention maska and loss backprop are working well.
-
 
 class ExtractionDataset(Dataset):
     def __init__(
@@ -81,7 +79,7 @@ class ExtractionDataset(Dataset):
                 initial_id = 0
                 final_id = self.max_input_len
 
-                step_size = self.max_input_len - self.extra_context_length
+                step_size = self.max_input_len - self.extra_context_length - 1
 
                 while final_id < n_tokens_one_lead:
 
@@ -135,7 +133,7 @@ class ExtractionDataset(Dataset):
                     self.tokenizer.sep_token_id,
                     self.tokenizer.cls_token_id,
                 )
-                tmp_loss_backprop_mask[: -(n_tokens_one_lead - initial_id + 1)] = 0
+                tmp_loss_backprop_mask[: -(n_tokens_one_lead - initial_id - 1)] = 0
                 final_outputs["loss_mask"].append(tmp_loss_backprop_mask)
 
                 if self.training_mode:
