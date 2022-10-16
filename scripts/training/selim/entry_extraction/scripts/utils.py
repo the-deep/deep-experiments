@@ -168,7 +168,7 @@ def custom_leads_stratified_splitting(
         )
         train_indices, val_indices = train_test_split(
             train_val_indices,
-            train_size=int(n_leads_in_proj * ratios["train"]),
+            train_size=int(len(train_val_indices) * ratios["train"]),
             random_state=random_state,
             shuffle=True,
         )
