@@ -1,3 +1,4 @@
+from collections import defaultdict
 import torch
 from typing import List, Union, Dict, Tuple
 import numpy as np
@@ -58,7 +59,7 @@ def beta_score(precision: float, recall: float, f_beta: float) -> float:
         )
 
 
-def get_metric(preds, groundtruth, f_beta):
+def get_metric(preds: List[int], groundtruth: List[int], f_beta: float):
 
     precision = metrics.precision_score(
         groundtruth, preds, average="binary", zero_division=0
@@ -177,3 +178,41 @@ def custom_leads_stratified_splitting(
         test_ids.extend(test_indices)
 
     return train_ids, val_ids, test_ids
+
+
+def retrieve_sentences_probas_gt(
+    all_leads_probas, all_leads_groundtruths, all_leads_sentences_offsets, leads_nb
+):  # TODO
+    # get sentences
+
+    initial_sentence_ids = 0
+    n_tags = all_leads_probas.shape[1]
+
+    sentences_probas = [[] for _ in range(n_tags)]
+    sentences_groundtruths = [[] for _ in range(n_tags)]
+
+    for i in list(set(leads_nb)):
+
+        one_lead_sentences_offsets = all_leads_sentences_offsets[i]
+
+        for sentence_begin, sentence_end in one_lead_sentences_offsets:
+
+            sent_len = sentence_end - sentence_begin
+            final_sentences_ids = initial_sentence_ids + sent_len
+
+            if sent_len > 3:  # no highlightining sentences of 3 tokens or less
+                probas_one_sent = all_leads_probas[
+                    initial_sentence_ids:final_sentences_ids, :
+                ]
+
+                gt_one_sent = all_leads_groundtruths[
+                    initial_sentence_ids, :
+                ]  # take first id, made sure in sanity check that they re all the same
+
+                for tag_idx in range(n_tags):
+                    sentences_probas[tag_idx].append(probas_one_sent[:, tag_idx])
+                    sentences_groundtruths[tag_idx].append(gt_one_sent[tag_idx].item())
+
+            initial_sentence_ids = final_sentences_ids
+
+    return sentences_probas, sentences_groundtruths

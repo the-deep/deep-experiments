@@ -1,7 +1,13 @@
-from utils import prepare_X_data, get_metric, get_label_vote_one_sentence, flatten
+from utils import (
+    prepare_X_data,
+    get_metric,
+    get_label_vote_one_sentence,
+    flatten,
+    retrieve_sentences_probas_gt,
+)
 import pytorch_lightning as pl
 import numpy as np
-from torch import nn
+from torch import nn, threshold
 import torch
 from torch.utils.data import DataLoader
 from transformers import AdamW, AutoTokenizer, AutoModel
@@ -210,7 +216,8 @@ class TrainingExtractionModel(pl.LightningModule):
             max_input_len=self.slice_length,
             extra_context_length=self.extra_context_length,
         )
-        set.run_sanity_check()
+        if training_mode:
+            set.run_sanity_check()
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
@@ -258,7 +265,8 @@ class LoggedExtractionModel(nn.Module):
             max_input_len=self.slice_length,
             extra_context_length=self.extra_context_length,
         )
-        set.run_sanity_check()
+        if training_mode:
+            set.run_sanity_check()
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
@@ -295,18 +303,10 @@ class LoggedExtractionModel(nn.Module):
 
         final_outputs = []
 
-        input_ids, attention_mask, offset_mapping = prepare_X_data(
-            sentences, self.tokenizer
-        )
-        token_labels = None
-        test_dset = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "token_labels": token_labels,
-        }
+        test_dset = prepare_X_data(sentences, self.tokenizer)
 
         test_loader = self._get_loaders(
-            test_dset, self.test_params, training_mode=False
+            [test_dset], self.test_params, training_mode=False
         )
 
         probas = self._generate_probas(test_loader)
@@ -315,56 +315,77 @@ class LoggedExtractionModel(nn.Module):
             list(self.optimal_thresholds.values())
         )  # divide probas tensor(n_tokens, n_labels) by threshold tensor(n_labels)
 
-        n_sentences = len(sentences)
+        initial_sentence_ids = 0
 
-        for i in range(n_sentences):
+        for sentence_begin, sentence_end in test_dset["sentences_boundaries"]:
+
+            sent_len = sentence_end - sentence_begin
+            final_sentences_ids = initial_sentence_ids + sent_len
+
             final_outputs_one_sentence = []
+            if sent_len > 3:
+                ratios_one_sent = ratios_probas_thresholds[
+                    initial_sentence_ids:final_sentences_ids, :
+                ]
 
-            token_begin_one_sent, token_end_one_sent = offset_mapping[i]
+                for tag_name, tag_id in self.tagname_to_id.items():
+                    if (ratios_one_sent < 1).all():
+                        label_votes_one_sent = 0
+                    elif (ratios_one_sent >= 1).all():
+                        label_votes_one_sent = 1
+                    else:
+                        label_votes_one_sent = get_label_vote_one_sentence(
+                            ratios_one_sent,
+                            self.optimal_quantiles[tag_name],
+                        )
 
-            ratios_one_sent = ratios_probas_thresholds[
-                token_begin_one_sent:token_end_one_sent
-            ]
-
-            for tag_name, tag_id in self.tagname_to_id.items():
-                label_votes_one_sent = get_label_vote_one_sentence(
-                    ratios_one_sent, self.optimal_quantiles[tag_name]
-                )
-
-                final_outputs_one_sentence.append(label_votes_one_sent)
+                    # return tagname if prediited value is 1.
+                    if label_votes_one_sent:
+                        final_outputs_one_sentence.append(tag_name)
 
             final_outputs.append(final_outputs_one_sentence)
 
         return final_outputs
 
-    def _get_final_thresholds(self, sentences_probas, sentences_groundtruths, fbeta):
+    def _get_final_thresholds(
+        self,
+        all_leads_probas: torch.Tensor,
+        all_leads_groundtruths: torch.Tensor,
+        all_leads_sentences_offsets: torch.Tensor,
+        leads_nb: List[int],
+        fbeta: float,
+    ):
         """
         ...
         """
+
         outputs = defaultdict(lambda: defaultdict())
         self.optimal_thresholds = defaultdict()
         self.optimal_quantiles = defaultdict()
 
+        # quantiles
         quantiles = np.linspace(0.1, 0.9, 5)  # 0.1 to 0.9 with step of 0.2
 
-        # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
+        # threshold lists for each tag
+        mins = torch.min(all_leads_probas, dim=0).values.tolist()
+        maxs = torch.max(all_leads_probas, dim=0).values.tolist()
+        thresholds_possibilities = [
+            np.round(np.linspace(min, max, 10), 3)
+            for (min, max) in list(zip(mins, maxs))
+        ]
+
+        sentences_probas, sentences_groundtruths = retrieve_sentences_probas_gt(
+            all_leads_probas,
+            all_leads_groundtruths,
+            all_leads_sentences_offsets,
+            leads_nb,
+        )
 
         for tag_name, tag_id in self.tagname_to_id.items():
 
-            probas_one_tag = [
-                one_sentence_probas[:, tag_id]
-                for one_sentence_probas in sentences_probas
-            ]
-            gts_one_tag = [
-                one_sentence_groundtruths[tag_id]
-                for one_sentence_groundtruths in sentences_groundtruths
-            ]
-
-            all_probas_one_tag = flatten(probas_one_tag)
-            min_proba = np.round(min(all_probas_one_tag), 3)
-            max_proba = np.round(max(all_probas_one_tag), 3)
-
-            thresholds_one_tag = np.round(np.linspace(max_proba, min_proba, 21), 3)
+            gts_one_tag = sentences_groundtruths[tag_id]
+            probas_one_tag = sentences_probas[tag_id]
+            thresholds_one_tag = thresholds_possibilities[tag_id]
 
             best_fbeta_score = -1
             best_recall = -1
@@ -373,16 +394,27 @@ class LoggedExtractionModel(nn.Module):
             best_quantile = -1
 
             for one_threshold in thresholds_one_tag:
+
+                # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
+
                 for one_quantile in quantiles:
 
                     preds_per_sent_tag = []
 
-                    for preds_one_sent in probas_one_tag:
-                        ratios_proba_threshold_one_sent = preds_one_sent / one_threshold
-                        final_vote_one_sent = get_label_vote_one_sentence(
-                            ratios_proba_threshold_one_sent, one_quantile
+                    for proba_per_tag_sentence in probas_one_tag:
+                        ratio_per_threshold_tag_sentence = (
+                            proba_per_tag_sentence / one_threshold
                         )
-                        preds_per_sent_tag.append(final_vote_one_sent)
+                        if (ratio_per_threshold_tag_sentence < 1).all():
+                            vote = 0
+                        elif (ratio_per_threshold_tag_sentence >= 1).all():
+                            vote = 1
+                        else:
+                            vote = get_label_vote_one_sentence(
+                                ratio_per_threshold_tag_sentence,
+                                one_quantile,
+                            )
+                        preds_per_sent_tag.append(vote)
 
                     results_per_quantile_threshold_tag = get_metric(
                         preds_per_sent_tag,
@@ -435,44 +467,22 @@ class LoggedExtractionModel(nn.Module):
         all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks == 1]
 
         start_thresholds = time.process_time()
+
         # from raw predictions to sentences
 
-        sentences_probas = []
-        sentences_groundtruths = []
-
-        initial_sentence_ids = 0
-
-        for i in list(set(val_loader.dataset.data["leads_nb"])):
-
-            one_lead_sentences_offsets = all_leads_sentences_offsets[i]
-
-            for sentence_begin, sentence_end in one_lead_sentences_offsets:
-
-                sent_len = sentence_end - sentence_begin
-                final_sentences_ids = initial_sentence_ids + sent_len
-
-                if sent_len > 2:  # no highlightining sentences of 2 tokens or less
-                    sentences_probas.append(
-                        all_leads_probas[initial_sentence_ids:final_sentences_ids]
-                    )
-
-                    one_sent_gt = all_leads_groundtruths[
-                        initial_sentence_ids:final_sentences_ids
-                    ]
-
-                    sentences_groundtruths.append(one_sent_gt[0])
-
-                initial_sentence_ids = final_sentences_ids
-
         final_results = self._get_final_thresholds(
-            sentences_probas, sentences_groundtruths, fbeta
+            all_leads_probas,
+            all_leads_groundtruths,
+            all_leads_sentences_offsets,
+            leads_nb=val_loader.dataset.data["leads_nb"],
+            fbeta=fbeta,
         )
 
         end_thresholds = time.process_time()
         time_for_thresholds_tuning = end_thresholds - start_thresholds
 
         times = {
-            "_time_bacth_forward_per_sentence": round(time_for_preds / n_sentences, 5),
+            "_time_batch_forward_per_sentence": round(time_for_preds / n_sentences, 5),
             "_time_threshold_calculation_per_sentence": round(
                 time_for_thresholds_tuning / n_sentences, 2
             ),

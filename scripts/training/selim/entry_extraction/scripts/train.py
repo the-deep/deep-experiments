@@ -1,5 +1,7 @@
 import sys
 
+from mlflow.tracking.fluent import log_metrics
+
 sys.path.append(".")
 
 import logging
@@ -17,6 +19,8 @@ from model import TrainingExtractionModel, LoggedExtractionModel
 from inference import EntryExtractionWrapper
 from utils import clean_name_for_logging
 from prepare_data_for_training_job import DataPreparation
+import time
+import json
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -237,3 +241,31 @@ if __name__ == "__main__":
                 "requirements.txt",
             ],  # file dependencies
         )
+
+        # Generate test set results
+
+        start_test_predictions = time.process_time()
+        results_test_set = {}
+        n_test_sentences = 0
+
+        for test_lead in test_dataset:
+            lead_id = test_lead["lead_id"]
+            sentences = test_lead["sentences"]
+            predictions_one_lead = logged_extraction_model.get_highlights(sentences)
+
+            n_test_sentences += len(sentences)
+
+            results_test_set[lead_id] = {lead_id: dict(zip(sentences, predictions_one_lead))}
+
+        end_test_predictions = time.process_time()
+        test_set_results_generation_time = end_test_predictions - start_test_predictions
+        mlflow.log_metrics(
+            {
+                "_time_test_set_predictions_per_sentence": round(
+                    test_set_results_generation_time / n_test_sentences, 2
+                )
+            }
+        )
+
+    with open(Path(args.output_data_dir) / "test_results_predictions.json", "w") as f:
+        json.dump(results_test_set, f)

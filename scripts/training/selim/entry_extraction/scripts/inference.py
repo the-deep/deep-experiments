@@ -8,7 +8,7 @@ import mlflow
 
 class EntryExtractionWrapper(mlflow.pyfunc.PythonModel):
     def __init__(self, model):
-        self.model = model.eval()
+        self.model = model
         super().__init__()
 
     def load_context(self, context):
@@ -16,4 +16,4 @@ class EntryExtractionWrapper(mlflow.pyfunc.PythonModel):
 
     def predict(self, context, model_input):
         predictions = self.model.get_highlights(model_input)
-        return pd.Series(predictions)
+        return predictions

@@ -8,7 +8,7 @@ import torch
 class ExtractionDataset(Dataset):
     def __init__(
         self,
-        dset: Dict,
+        dset: List[Dict],
         training_mode: bool,
         tokenizer: str,
         max_input_len: int = 512,
@@ -105,6 +105,8 @@ class ExtractionDataset(Dataset):
                 token_labels_one_lead = (
                     ith_lead_data["token_labels"].clone().detach().long()
                 )
+            else:
+                token_labels_one_lead = None
 
             if "sentences_boundaries" in ith_lead_data.keys():
                 final_outputs["sentences_boundaries"].append(

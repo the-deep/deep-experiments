@@ -99,6 +99,7 @@ class DataPreparation:
             "token_labels": token_labels,
             "sentences_boundaries": sentences_boundaries,
             "loss_mask": loss_mask,
+            "sentences": sample["sentences"],
         }
 
         return out
@@ -121,7 +122,7 @@ class DataPreparation:
         ]
 
         # stratified splitting: project-wise.
-        project_ids = [lead['project_id'] for lead in processed_data]
+        project_ids = [lead["project_id"] for lead in processed_data]
 
         train_indices, val_indices, test_indices = custom_leads_stratified_splitting(
             project_ids
@@ -167,6 +168,7 @@ class DataPreparation:
                     "token_labels",
                     "sentences_boundaries",
                     "loss_mask",
+                    "sentences",
                 ],
             )
             for i in test_indices
