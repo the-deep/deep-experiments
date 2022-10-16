@@ -8,9 +8,9 @@ from transformers import AdamW, AutoTokenizer, AutoModel
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import torch.nn.functional as F
 from data import ExtractionDataset
-from tqdm import tqdm
 from typing import List, Dict
 from collections import defaultdict
+import time
 
 
 class EntryExtractor(nn.Module):
@@ -210,6 +210,7 @@ class TrainingExtractionModel(pl.LightningModule):
             max_input_len=self.slice_length,
             extra_context_length=self.extra_context_length,
         )
+        set.run_sanity_check()
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
@@ -257,6 +258,7 @@ class LoggedExtractionModel(nn.Module):
             max_input_len=self.slice_length,
             extra_context_length=self.extra_context_length,
         )
+        set.run_sanity_check()
         loader = DataLoader(set, **params, pin_memory=True)
         return loader
 
@@ -272,6 +274,7 @@ class LoggedExtractionModel(nn.Module):
         backbone_outputs = []
 
         with torch.no_grad():
+
             for batch in data_loader:
 
                 logits = self(
@@ -285,8 +288,6 @@ class LoggedExtractionModel(nn.Module):
                 probabilities = torch.sigmoid(logits)
 
                 backbone_outputs.append(probabilities)
-
-                #print('------------------------------ probabilities', probabilities.shape)
 
         return torch.cat(backbone_outputs)
 
@@ -305,8 +306,7 @@ class LoggedExtractionModel(nn.Module):
         }
 
         test_loader = self._get_loaders(
-            test_dset,
-            self.test_params,
+            test_dset, self.test_params, training_mode=False
         )
 
         probas = self._generate_probas(test_loader)
@@ -319,7 +319,7 @@ class LoggedExtractionModel(nn.Module):
 
         for i in range(n_sentences):
             final_outputs_one_sentence = []
-            # TODO: check the offset mapping
+
             token_begin_one_sent, token_end_one_sent = offset_mapping[i]
 
             ratios_one_sent = ratios_probas_thresholds[
@@ -345,7 +345,7 @@ class LoggedExtractionModel(nn.Module):
         self.optimal_thresholds = defaultdict()
         self.optimal_quantiles = defaultdict()
 
-        quantiles = np.linspace(0.1, 0.9, 9)  # 0.1 to 0.9 with step of 0.1
+        quantiles = np.linspace(0.1, 0.9, 5)  # 0.1 to 0.9 with step of 0.2
 
         # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
 
@@ -366,11 +366,11 @@ class LoggedExtractionModel(nn.Module):
 
             thresholds_one_tag = np.round(np.linspace(max_proba, min_proba, 21), 3)
 
-            best_fbeta_score = 0
-            best_recall = 0
-            best_precision = 0
-            best_threshold = 0
-            best_quantile = 0
+            best_fbeta_score = -1
+            best_recall = -1
+            best_precision = -1
+            best_threshold = -1
+            best_quantile = -1
 
             for one_threshold in thresholds_one_tag:
                 for one_quantile in quantiles:
@@ -402,9 +402,9 @@ class LoggedExtractionModel(nn.Module):
                         best_quantile = one_quantile
                         best_threshold = one_threshold
 
-            outputs[tag_name][f"{tag_name}_fbeta_score"] = np.round(best_fbeta_score, 2)
-            outputs[tag_name][f"{tag_name}_precision"] = np.round(best_precision, 2)
-            outputs[tag_name][f"{tag_name}_recall"] = np.round(best_recall, 2)
+            outputs[tag_name][f"fbeta_score_{tag_name}"] = np.round(best_fbeta_score, 2)
+            outputs[tag_name][f"precision_{tag_name}"] = np.round(best_precision, 2)
+            outputs[tag_name][f"recall_{tag_name}"] = np.round(best_recall, 2)
             outputs[tag_name][f"optimal_threshold_{tag_name}"] = best_threshold
             outputs[tag_name][f"optimal_quantile_{tag_name}"] = best_quantile
 
@@ -417,16 +417,24 @@ class LoggedExtractionModel(nn.Module):
         """
         ...
         """
-        lead_nbs = np.array(val_loader.dataset.data["leads_nb"])
 
         # len equals to the number of leads not to the number os rows
         all_leads_sentences_offsets = val_loader.dataset.data["sentences_boundaries"]
+        n_sentences = sum([len(offsets) for offsets in all_leads_sentences_offsets])
 
+        start_preds = time.process_time()
         # len equals to number of rows
         all_leads_probas = self._generate_probas(val_loader)
+        end_preds = time.process_time()
+        time_for_preds = end_preds - start_preds
 
-        all_leads_groundtruths = val_loader.dataset.data["token_labels"]
+        all_leads_groundtruths = torch.cat(val_loader.dataset.data["token_labels"])
+        all_leads_loss_masks = torch.cat(val_loader.dataset.data["loss_mask"])
 
+        # keep only the backpropagated loss
+        all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks == 1]
+
+        start_thresholds = time.process_time()
         # from raw predictions to sentences
 
         sentences_probas = []
@@ -434,32 +442,40 @@ class LoggedExtractionModel(nn.Module):
 
         initial_sentence_ids = 0
 
-        for i in list(set(lead_nbs)):
-
-            one_lead_ids = np.argwhere(lead_nbs == i).flatten()
-
-            one_lead_groundtruth = torch.cat(
-                [all_leads_groundtruths[idx] for idx in one_lead_ids]
-            )
+        for i in list(set(val_loader.dataset.data["leads_nb"])):
 
             one_lead_sentences_offsets = all_leads_sentences_offsets[i]
 
             for sentence_begin, sentence_end in one_lead_sentences_offsets:
 
                 sent_len = sentence_end - sentence_begin
+                final_sentences_ids = initial_sentence_ids + sent_len
 
-                if (
-                    sent_len > 2
-                ):  # no highlightining sentences of 2 tokens or less
+                if sent_len > 2:  # no highlightining sentences of 2 tokens or less
                     sentences_probas.append(
-                        all_leads_probas[initial_sentence_ids:initial_sentence_ids+sent_len]
+                        all_leads_probas[initial_sentence_ids:final_sentences_ids]
                     )
-                    sentences_groundtruths.append(one_lead_groundtruth[sentence_begin])
 
-                initial_sentence_ids += sent_len
+                    one_sent_gt = all_leads_groundtruths[
+                        initial_sentence_ids:final_sentences_ids
+                    ]
+
+                    sentences_groundtruths.append(one_sent_gt[0])
+
+                initial_sentence_ids = final_sentences_ids
 
         final_results = self._get_final_thresholds(
             sentences_probas, sentences_groundtruths, fbeta
         )
 
-        return final_results
+        end_thresholds = time.process_time()
+        time_for_thresholds_tuning = end_thresholds - start_thresholds
+
+        times = {
+            "_time_bacth_forward_per_sentence": round(time_for_preds / n_sentences, 5),
+            "_time_threshold_calculation_per_sentence": round(
+                time_for_thresholds_tuning / n_sentences, 2
+            ),
+        }
+
+        return (final_results, times)

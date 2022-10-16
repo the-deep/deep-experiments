@@ -1,45 +1,20 @@
 import torch
-from typing import List, Union, Dict
+from typing import List, Union, Dict, Tuple
 import numpy as np
 from sklearn import metrics
 import re
+from sklearn.model_selection import train_test_split
+
 
 def flatten(t: List[List]) -> List:
     """flatten list of lists"""
     return [item for sublist in t for item in sublist]
 
 
-def process_tag(tags: List[str], tag_section: str):
-    if tag_section == "sectors":
-        return [
-            f"sectors->{one_tag}" for one_tag in tags if "NOT_MAPPED" not in one_tag
-        ]
-    else:  # subpillars
-        return list(
-            set(
-                [
-                    f"{tag_section.replace('sub', '')}->{one_tag.split('->')[0]}"
-                    for one_tag in tags
-                    if "NOT_MAPPED" not in one_tag
-                ]
-            )
-        )
-
-
-def keep_relevant_keys(input_dict: Dict, relevant_keys=List[str]):
-    return {k: v for k, v in input_dict.items() if k in relevant_keys}
-
-
-def create_loss_backprop_mask(attention_mask, input_ids, sep_token_id, cls_token_id):
-    loss_backprop_mask = attention_mask.clone()
-    loss_backprop_mask[torch.where(input_ids == sep_token_id)] = 0
-    loss_backprop_mask[torch.where(input_ids == cls_token_id)] = 0
-    return loss_backprop_mask
-
-
 def fill_data_tensors(
     inputs_one_lead,
     attention_mask_one_lead,
+    loss_mask_one_lead,
     pad_token_id: int,
     n_missing_elements: int,
     token_labels=None,
@@ -54,6 +29,7 @@ def fill_data_tensors(
     attention_mask_one_lead = torch.cat(
         [attention_mask_one_lead, added_attention_mask_one_lead]
     )
+    loss_mask_one_lead = torch.cat([loss_mask_one_lead, added_attention_mask_one_lead])
 
     if token_labels is not None:
         added_token_labels = torch.zeros((n_missing_elements, token_labels.shape[1]))
@@ -61,7 +37,12 @@ def fill_data_tensors(
     else:
         token_labels_one_lead = None
 
-    return (input_ids_one_lead, attention_mask_one_lead, token_labels_one_lead)
+    return (
+        input_ids_one_lead,
+        attention_mask_one_lead,
+        loss_mask_one_lead,
+        token_labels_one_lead,
+    )
 
 
 def beta_score(precision: float, recall: float, f_beta: float) -> float:
@@ -96,20 +77,12 @@ def get_label_vote_one_sentence(
 ):
     quantile_per_threshold_tag = ratios_per_threshold_tag.quantile(one_quantile).item()
 
-    preds_per_quantile_threshold_tag = (
-        ratios_per_threshold_tag > quantile_per_threshold_tag
-    )
-
-    n_positive_votes = preds_per_quantile_threshold_tag.sum().item()
-    n_negative_votes = len(ratios_per_threshold_tag) - n_positive_votes
-
-    final_vote = 1 if n_positive_votes > n_negative_votes else 0
+    final_vote = 1 if quantile_per_threshold_tag >= 1 else 0
 
     return final_vote
 
-def clean_name_for_logging(
-    dict_values: Dict[str, float]
-) -> Dict[str, float]:
+
+def clean_name_for_logging(dict_values: Dict[str, float]) -> Dict[str, float]:
     """clean names and prepare them for logging"""
     return {
         re.sub("[^0-9a-zA-Z]+", "_", name): value for name, value in dict_values.items()
@@ -118,16 +91,18 @@ def clean_name_for_logging(
 
 def prepare_X_data(sentences: List[str], tokenizer):
 
-    # TODO: check works
-
     sentences_boundaries = []
 
+    assert type(sentences) is list, "sentences inputs are not lists !"
     encoding = tokenizer(sentences, add_special_tokens=False)
 
     input_ids = [tokenizer.cls_token_id]
     sentence_begin_offset = 1  # because the first input id is 'cls_token_id'
+    loss_mask = [0]
 
     for sentence_ids in encoding["input_ids"]:
+        if len(sentence_ids) == 0:
+            sentence_ids = [tokenizer.pad_token_id]
 
         input_ids.extend(sentence_ids)
 
@@ -135,11 +110,13 @@ def prepare_X_data(sentences: List[str], tokenizer):
         sentences_boundaries.append(
             [sentence_begin_offset, sentence_end_offset]
         )  # because of the pythonic ways of seelcted ids in lists etc.
+        loss_mask.extend([1 for _ in range(len(sentence_ids))])
 
         sentence_begin_offset = sentence_end_offset
 
         input_ids.append(tokenizer.sep_token_id)
         sentence_begin_offset += 1  # because we add 'sep_token_id' between sentences
+        loss_mask.append(0)
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     sentences_boundaries = torch.tensor(sentences_boundaries, dtype=torch.long)
@@ -147,4 +124,56 @@ def prepare_X_data(sentences: List[str], tokenizer):
     attention_mask = torch.zeros_like(input_ids, dtype=torch.long)
     attention_mask[torch.where(input_ids != tokenizer.pad_token_id)] = 1
 
-    return (input_ids, attention_mask, sentences_boundaries)
+    loss_mask = torch.tensor(loss_mask, dtype=torch.long)
+
+    return {
+        "input_ids": input_ids,
+        "attention_mask": attention_mask,
+        "sentences_boundaries": sentences_boundaries,
+        "loss_mask": loss_mask,
+    }
+
+
+def custom_leads_stratified_splitting(
+    project_ids: List[int],
+    ratios: Dict[str, float] = {"train": 0.8, "val": 0.1, "test": 0.1},
+) -> Tuple[List[int], List[int], List[int]]:
+    """
+    custom function for stratified train test splitting
+    1) take unique sub-tags (example: ['Health'])
+    2) For each unique subtag:
+        i) take all indexes that have that specific subtag
+        ii) split them randomly to train and test sets
+    """
+    # fix random state
+    random_state = 1234
+
+    train_ids = []
+    val_ids = []
+    test_ids = []
+
+    unique_proj_ids = list(set(project_ids))
+
+    for project_id in unique_proj_ids:
+
+        ids_lead = [i for i, proj_id in enumerate(project_ids) if proj_id == project_id]
+        n_leads_in_proj = len(ids_lead)
+
+        train_val_indices, test_indices = train_test_split(
+            ids_lead,
+            train_size=int(n_leads_in_proj * (ratios["train"] + ratios["val"])),
+            shuffle=True,
+            random_state=random_state,
+        )
+        train_indices, val_indices = train_test_split(
+            train_val_indices,
+            train_size=int(n_leads_in_proj * ratios["train"]),
+            random_state=random_state,
+            shuffle=True,
+        )
+
+        train_ids.extend(train_indices)
+        val_ids.extend(val_indices)
+        test_ids.extend(test_indices)
+
+    return train_ids, val_ids, test_ids

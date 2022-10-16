@@ -1,97 +1,53 @@
-from functools import partial
-import time
 from typing import Dict, List
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from transformers import AutoTokenizer
-from datasets import load_dataset
-from utils import flatten, process_tag, keep_relevant_keys, prepare_X_data
-from ast import literal_eval
+from utils import custom_leads_stratified_splitting, prepare_X_data
 import torch
-import json
 
 
-class log_time:
-    def __init__(self, name="BLOCK", extra_args=None):
-        self.name = name
-        self.extra_args = extra_args
-        self.start = 0
-        self.end = 0
+def keep_relevant_keys(input_dict: Dict, relevant_keys=List[str]):
+    return {k: v for k, v in input_dict.items() if k in relevant_keys}
 
-    def __enter__(self):
-        self.start = time.time()
 
-    def __exit__(self, *args, **kwargs):
-        self.end = time.time()
-        diff = self.end - self.start
-        print("LOG TIME:", f"'{self.name}' took {round(diff, 5)}seconds to run!")
+def get_df_from_dict(data: Dict):
+
+    str_data = {k: str(v) for k, v in data.items()}
+
+    keys = list(str_data.keys())
+    vals = list(str_data.values())
+
+    df_data = pd.DataFrame(list(zip(keys, vals)), columns=["col_name", "vals"])
+
+    return df_data
 
 
 class DataPreparation:
     def __init__(
         self,
-        raw_data_path: str,
-        excerpts_df_path: pd.DataFrame,
+        leads_dict: List[Dict],
+        tagname_to_tagid: Dict[str, int],
         tokenizer_name_or_path: str,
-        dataloader_num_workers: int = 1,
     ):
         """
         need to ensure that the tokenizer used here is the same as the one used in the models.
         """
-        self.dataloader_num_workers = dataloader_num_workers
+        self.original_data = leads_dict
 
-        self.original_data = load_dataset(
-            "json",
-            data_files=raw_data_path,
-            split="train",
-        )
-        self.original_data = self.original_data.filter(lambda x: len(x["excerpts"]) > 0)
-
-        self.excerpts_df = pd.read_csv(excerpts_df_path)[
-            ["entry_id", "sectors", "subpillars_1d", "subpillars_2d", "lead_id"]
-        ]
-        self.lead_ids = self.excerpts_df.lead_id.unique().tolist()
-        self._create_excerpts_dict()
+        self.tagname_to_tagid = tagname_to_tagid
 
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
 
-    def _create_excerpts_dict(self):
+        self._encode_leads()
 
-        self.excerpts_df["primary_tags"] = self.excerpts_df.apply(
-            lambda x: flatten(
-                [
-                    process_tag(literal_eval(x[tag]), tag)
-                    for tag in ["sectors", "subpillars_1d", "subpillars_2d"]
-                ]
-            ),
-            axis=1,
-        )
-
-        self.excerpts_df["primary_tags"] = self.excerpts_df["primary_tags"].apply(
-            lambda x: x + ["is_relevant"] if len(x) > 0 else x
-        )
-
-        self.excerpts_dict = dict(
-            zip(self.excerpts_df.entry_id, self.excerpts_df.primary_tags)
-        )
-
-        self.label_names = sorted(list(set(flatten(self.excerpts_dict.values()))))
-
-        self.tagname_to_tagid = {
-            tag_name: tag_id for tag_id, tag_name in enumerate(self.label_names)
-        }
-
-    def _get_label_vector(self, entry_id: int):
+    def _get_label_vector(self, entry_tags: List[str]):
         target_ids = torch.zeros(len(self.tagname_to_tagid), dtype=torch.long)
 
         # every excerpt is relevant
         target_ids[self.tagname_to_tagid["is_relevant"]] = 1
 
-        if self.excerpts_dict is not None:
-            entry_tags: List = self.excerpts_dict[entry_id]
-            entry_tag_ids = [self.tagname_to_tagid[tag] for tag in entry_tags]
-            target_ids[entry_tag_ids] = 1
+        entry_tag_ids = [self.tagname_to_tagid[tag] for tag in entry_tags]
+        target_ids[entry_tag_ids] = 1
 
         return target_ids
 
@@ -109,53 +65,45 @@ class DataPreparation:
         ) in (
             excerpt_sentence_ids
         ):  # only the tagged sentences filled, everything else not needed
-            sentence_entry_id = one_sent_tag["source"]
+            entry_tags = one_sent_tag["tags"]
             sentence_begin, sentence_end = offset_mapping[one_sent_tag["index"]]
 
             token_labels[sentence_begin:sentence_end] = self._get_label_vector(
-                sentence_entry_id
+                entry_tags
             )
 
         return token_labels
 
-    def _encode(self, sample):
+    def _encode_one_lead(self, sample):
 
         """
         sample: one element from original text.
         """
 
-        input_ids, attention_mask, sentences_boundaries = prepare_X_data(
-            sample["sentences"], self.tokenizer
+        forward_data = prepare_X_data(sample["sentences"], self.tokenizer)
+
+        input_ids = forward_data["input_ids"]
+        attention_mask = forward_data["attention_mask"]
+        sentences_boundaries = forward_data["sentences_boundaries"]
+        loss_mask = forward_data["loss_mask"]
+
+        token_labels = self._create_y_data(
+            sample["excerpt_sentence_indices"], input_ids, sentences_boundaries
         )
 
-        token_has_labels = "excerpts" in sample
-        if token_has_labels:
-            token_labels = self._create_y_data(
-                sample["excerpt_sentence_indices"], input_ids, sentences_boundaries
-            )
-        else:
-            token_labels = None
-
         out = {
+            "lead_id": sample["id"]["lead_id"],
+            "project_id": sample["id"]["project_id"],
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "token_labels": token_labels,
             "sentences_boundaries": sentences_boundaries,
+            "loss_mask": loss_mask,
         }
 
         return out
 
-    def __call__(
-        self,
-        use_sample: bool = False,
-        save_split_dicts: bool = True,
-        kept_keys=[
-            "input_ids",
-            "attention_mask",
-            "token_labels",
-            "sentences_boundaries",
-        ],
-    ):
+    def _encode_leads(self):
 
         """
         testing: bool for whether we are testing the ddf or if we want all the data
@@ -166,65 +114,66 @@ class DataPreparation:
             - no max length
             - still need to add context and to pad etc to lengths, which is done in the training,
                 because different cdepending on the context we want to add
-
         """
 
-        # sanity check: make sur all leads are in excerpts df.
-        used_data = self.original_data
-        ids = used_data["id"]
-        selected_ids = [
-            i
-            for i, lead_proj_ids in enumerate(ids)
-            if lead_proj_ids[0] in self.lead_ids
+        processed_data = [
+            self._encode_one_lead(one_lead_data) for one_lead_data in self.original_data
         ]
-        used_data = used_data.select(selected_ids)
 
-        # testing: make sure everything is working
-        if use_sample:
-            n_sample_rows = 100
-            used_data = used_data.select(range(n_sample_rows))
-        else:
-            used_data = self.original_data
+        # stratified splitting: project-wise.
+        project_ids = [lead['project_id'] for lead in processed_data]
 
-        with log_time("map encode to excerpts"):
-            processed_data = used_data.map(
-                partial(self._encode),
-                num_proc=self.dataloader_num_workers,
+        train_indices, val_indices, test_indices = custom_leads_stratified_splitting(
+            project_ids
+        )
+
+        train = [
+            keep_relevant_keys(
+                processed_data[i],
+                relevant_keys=[
+                    "lead_id",
+                    "input_ids",
+                    "attention_mask",
+                    "token_labels",
+                    "sentences_boundaries",
+                    "loss_mask",
+                ],
             )
+            for i in train_indices
+        ]
 
-        # TODO: add stratified splitting
-        train_val_indices, test_indices = train_test_split(
-            np.arange(len(processed_data)),
-            test_size=0.1,
-            shuffle=True,
-            random_state=1234,
-        )
-        train_indices, val_indices = train_test_split(
-            train_val_indices, test_size=0.1, random_state=1234
-        )
-        train = keep_relevant_keys(
-            processed_data.select(train_indices).to_dict(), kept_keys
-        )
+        val = [
+            keep_relevant_keys(
+                processed_data[i],
+                relevant_keys=[
+                    "lead_id",
+                    "input_ids",
+                    "attention_mask",
+                    "token_labels",
+                    "sentences_boundaries",
+                    "loss_mask",
+                ],
+            )
+            for i in val_indices
+        ]
 
-        val = keep_relevant_keys(
-            processed_data.select(val_indices).to_dict(), kept_keys
-        )
+        test = [
+            keep_relevant_keys(
+                processed_data[i],
+                relevant_keys=[
+                    "lead_id",
+                    "input_ids",
+                    "attention_mask",
+                    "token_labels",
+                    "sentences_boundaries",
+                    "loss_mask",
+                ],
+            )
+            for i in test_indices
+        ]
 
-        test = keep_relevant_keys(
-            processed_data.select(test_indices).to_dict(), kept_keys
-        )
-
-        final_outputs = {
+        self.final_outputs = {
             "train": train,
             "val": val,
             "test": test,
-            "tagname_to_id": self.tagname_to_tagid,
         }
-
-        if save_split_dicts:
-            dict_name = "sample_data.json" if use_sample else "full_data.json"
-
-            with open(dict_name, "w") as fp:
-                json.dump(final_outputs, fp)
-
-        return final_outputs

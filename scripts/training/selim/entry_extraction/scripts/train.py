@@ -16,6 +16,9 @@ from ast import literal_eval
 from model import TrainingExtractionModel, LoggedExtractionModel
 from inference import EntryExtractionWrapper
 from utils import clean_name_for_logging
+from prepare_data_for_training_job import DataPreparation
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 logging.basicConfig(level=logging.INFO)
 
@@ -63,19 +66,27 @@ if __name__ == "__main__":
     # parser.add_argument("--val_dir", type=str, default=os.environ["SM_CHANNEL_TEST"])
     args, _ = parser.parse_known_args()
 
-    logging.info("building training and testing datasets")
-
     # load data
     full_data = pd.read_pickle(f"{args.data_dir}/data.pickle")
 
-    train_dataset = literal_eval(
-        full_data[full_data.col_name == "train"].vals.values[0]
-    )
-    test_dataset = literal_eval(full_data[full_data.col_name == "test"].vals.values[0])
-    val_dataset = literal_eval(full_data[full_data.col_name == "val"].vals.values[0])
-    tagname_to_tagid = literal_eval(
-        full_data[full_data.col_name == "tagname_to_id"].vals.values[0]
-    )
+    data = literal_eval(full_data.iloc[0]["data"])
+    tagname_to_tagid = literal_eval(full_data.iloc[0]["tagname_to_tagid"])
+
+    preprocessed_data = DataPreparation(
+        leads_dict=data,
+        tagname_to_tagid=tagname_to_tagid,
+        tokenizer_name_or_path=args.tokenizer_name_or_path,
+    ).final_outputs
+
+    train_dataset = preprocessed_data["train"]
+    test_dataset = preprocessed_data["test"]
+    val_dataset = preprocessed_data["val"]
+
+    n_leads_per_category = {
+        "_n_leads_train": len(train_dataset),
+        "_n_leads_val": len(val_dataset),
+        "_n_leads_test": len(test_dataset),
+    }
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -93,6 +104,7 @@ if __name__ == "__main__":
         training_device = "cpu"
 
     with mlflow.start_run():
+        mlflow.log_params(n_leads_per_category)
 
         train_params = {
             "batch_size": args.train_batch_size,
@@ -125,8 +137,6 @@ if __name__ == "__main__":
         }
 
         mlflow.log_params(model_params)
-
-        logging.info("training model")
 
         ##################### train model using pytorch lightning #####################
 
@@ -201,9 +211,10 @@ if __name__ == "__main__":
 
         logged_extraction_model = LoggedExtractionModel(training_model)
 
-        val_results = logged_extraction_model.hypertune_threshold(
+        val_results, times = logged_extraction_model.hypertune_threshold(
             val_loader, args.fbeta
         )
+        mlflow.log_metrics(times)
 
         # log tag results
         for tag_name, tag_results in val_results.items():
@@ -222,6 +233,7 @@ if __name__ == "__main__":
                 "data.py",
                 "inference.py",
                 "utils.py",
+                "merge_leads_excerpts.py",
                 "requirements.txt",
             ],  # file dependencies
         )
