@@ -1,10 +1,14 @@
-from collections import defaultdict
 import torch
 from typing import List, Union, Dict, Tuple
 import numpy as np
 from sklearn import metrics
 import re
-from sklearn.model_selection import train_test_split
+import random
+import itertools
+
+# fix random state
+random_state = 1234
+random.seed(random_state)
 
 
 def flatten(t: List[List]) -> List:
@@ -140,42 +144,35 @@ def custom_leads_stratified_splitting(
     ratios: Dict[str, float] = {"train": 0.8, "val": 0.1, "test": 0.1},
 ) -> Tuple[List[int], List[int], List[int]]:
     """
-    custom function for stratified train test splitting
-    1) take unique sub-tags (example: ['Health'])
-    2) For each unique subtag:
-        i) take all indexes that have that specific subtag
-        ii) split them randomly to train and test sets
+    custom function for stratified train val test splitting with respect to the project_id
     """
-    # fix random state
-    random_state = 1234
 
     train_ids = []
     val_ids = []
     test_ids = []
 
-    unique_proj_ids = list(set(project_ids))
+    initial_id = 0
 
-    for project_id in unique_proj_ids:
+    for proj_id, iter in itertools.groupby(
+        sorted(project_ids)
+    ):  # for project_id in unique_proj_ids:
+        final_id = initial_id + len(list(iter))
+        ids_lead = [i for i in range(initial_id, final_id)]
+        initial_id = final_id
 
-        ids_lead = [i for i, proj_id in enumerate(project_ids) if proj_id == project_id]
-        n_leads_in_proj = len(ids_lead)
-
-        train_val_indices, test_indices = train_test_split(
-            ids_lead,
-            train_size=int(n_leads_in_proj * (ratios["train"] + ratios["val"])),
-            shuffle=True,
-            random_state=random_state,
+        train_val_ids_one_proj = random.sample(
+            ids_lead, int(len(ids_lead) * (ratios["train"] + ratios["val"]))
         )
-        train_indices, val_indices = train_test_split(
-            train_val_indices,
-            train_size=int(len(train_val_indices) * ratios["train"]),
-            random_state=random_state,
-            shuffle=True,
-        )
+        test_ids_one_proj = list(set(ids_lead) - set(train_val_ids_one_proj))
 
-        train_ids.extend(train_indices)
-        val_ids.extend(val_indices)
-        test_ids.extend(test_indices)
+        train_ids_one_proj = random.sample(
+            train_val_ids_one_proj, int(len(train_val_ids_one_proj) * ratios["train"])
+        )
+        val_ids_one_proj = list(set(train_val_ids_one_proj) - set(train_ids_one_proj))
+
+        train_ids.extend(train_ids_one_proj)
+        val_ids.extend(val_ids_one_proj)
+        test_ids.extend(test_ids_one_proj)
 
     return train_ids, val_ids, test_ids
 
