@@ -3,16 +3,23 @@ from datasets import load_dataset
 import pandas as pd
 from ast import literal_eval
 from copy import copy
+from utils import flatten
+from collections import Counter
 
-############################ MERGING EXCERPTS AND LEAD, USED BEFORE TRAININIG #############
-
-
-def flatten(t: List[List]) -> List:
-    """flatten list of lists"""
-    return [item for sublist in t for item in sublist]
+############################ MERGING EXCERPTS AND LEAD, USED BEFORE TRAININIG ################
 
 
-def process_tag(tags: List[str], tag_section: str):
+def process_tag(tags: List[str], tag_section: str) -> List[str]:
+    """
+    Get list of sectors, pillars_1d and pillars_2d from each prediction.
+    args:
+        - 'tags': List of tags: example: tags=['Context->Politics'], tag_section='subpillars_1d'
+        - 'tag_section': str: one of['sectors', 'subpillars_1d', 'subpillars_2d']
+
+    Outputs:
+        - Not the same processing for sectors and subpillars
+        - Example of outputs= ['pillars_1d->Context->Politics']
+    """
     if tag_section == "sectors":
         return [
             f"sectors->{one_tag}" for one_tag in tags if "NOT_MAPPED" not in one_tag
@@ -29,8 +36,10 @@ def process_tag(tags: List[str], tag_section: str):
         )
 
 
-def get_excerpts_dict(excerpts_df):
-
+def get_excerpts_dict(excerpts_df) -> Dict[int, List[str]]:
+    """
+    Get for each entry_id the list of primary tags (sectors, pillars_1d and pillars_2d)
+    """
     excerpts_df["primary_tags"] = excerpts_df.apply(
         lambda x: flatten(
             [
@@ -53,7 +62,9 @@ def get_excerpts_dict(excerpts_df):
 def add_tags_to_excerpt_sentence_indices(
     tagged_excerpts: List[Dict[str, int]], excerpts_dict: Dict[int, List[str]]
 ):
-
+    """
+    preprocessing function: add the tags to the excerpts
+    """
     final_outputs = []
     for one_excerpt_vals in tagged_excerpts:
         new_val = copy(one_excerpt_vals)
@@ -69,6 +80,9 @@ def get_training_dict(
     use_sample: bool,
     sample_percentage: float = 0.1,
 ):
+    """
+    Main function, used to ....
+    """
 
     excerpts_df = pd.read_csv(excerpts_df_path)
     full_leads_data = (
@@ -82,9 +96,20 @@ def get_training_dict(
     n_leads = len(full_leads_data["id"])
 
     excerpts_dict = get_excerpts_dict(excerpts_df)
-    label_names = sorted(list(set(flatten(excerpts_dict.values()))))
+    full_tags_list = flatten(excerpts_dict.values())
+    n_total_sentences = sum(
+        [len(sentences_one_lead) for sentences_one_lead in full_leads_data["sentences"]]
+    )
+    raw_tags_proportions = {
+        tag_name: tag_count / n_total_sentences
+        for tag_name, tag_count in dict(Counter(full_tags_list))
+    }
 
+    label_names = sorted(list(set(full_tags_list)))
     tagname_to_tagid = {tag_name: tag_id for tag_id, tag_name in enumerate(label_names)}
+    tagname_to_tag_proportion = {
+        tag_name: raw_tags_proportions[tag_name] for tag_name in label_names
+    }
 
     kept_leads = []
 
@@ -113,11 +138,21 @@ def get_training_dict(
         n_samples = int(n_leads * sample_percentage)
         kept_leads = [kept_leads[i] for i in range(n_samples)]
 
-    final_output = {"data": kept_leads, "tagname_to_tagid": tagname_to_tagid}
+    final_output = {
+        "data": kept_leads,
+        "tagname_to_tagid": tagname_to_tagid,
+        "tagname_to_tag_proportion": tagname_to_tag_proportion,
+    }
 
     output_as_df = pd.DataFrame(
-        [[final_output["data"], final_output["tagname_to_tagid"]]],
-        columns=["data", "tagname_to_tagid"],
+        [
+            [
+                final_output["data"],
+                final_output["tagname_to_tagid"],
+                final_output["tagname_to_tag_proportion"],
+            ]
+        ],
+        columns=["data", "tagname_to_tagid", "tagname_to_tag_proportion"],
     )
 
     return output_as_df
