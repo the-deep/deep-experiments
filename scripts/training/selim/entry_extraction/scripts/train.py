@@ -1,7 +1,5 @@
 import sys
 
-from mlflow.tracking.fluent import log_metrics
-
 sys.path.append(".")
 
 import logging
@@ -75,6 +73,9 @@ if __name__ == "__main__":
 
     data = literal_eval(full_data.iloc[0]["data"])
     tagname_to_tagid = literal_eval(full_data.iloc[0]["tagname_to_tagid"])
+    tagname_to_tag_proportion = literal_eval(
+        full_data.iloc[0]["tagname_to_tag_proportion"]
+    )
 
     preprocessed_data = DataPreparation(
         leads_dict=data,
@@ -255,14 +256,16 @@ if __name__ == "__main__":
 
             n_test_sentences += len(sentences)
 
-            results_test_set[lead_id] = {lead_id: dict(zip(sentences, predictions_one_lead))}
+            results_test_set[lead_id] = {
+                lead_id: dict(zip(sentences, predictions_one_lead))
+            }
 
         end_test_predictions = time.process_time()
         test_set_results_generation_time = end_test_predictions - start_test_predictions
         mlflow.log_metrics(
             {
                 "_time_test_set_predictions_per_sentence": round(
-                    test_set_results_generation_time / n_test_sentences, 2
+                    test_set_results_generation_time / n_test_sentences, 4
                 )
             }
         )

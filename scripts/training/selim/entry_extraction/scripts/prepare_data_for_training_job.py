@@ -1,25 +1,7 @@
 from typing import Dict, List
-import numpy as np
-import pandas as pd
 from transformers import AutoTokenizer
-from utils import custom_leads_stratified_splitting, prepare_X_data
+from utils import custom_leads_stratified_splitting, prepare_X_data, keep_relevant_keys
 import torch
-
-
-def keep_relevant_keys(input_dict: Dict, relevant_keys=List[str]):
-    return {k: v for k, v in input_dict.items() if k in relevant_keys}
-
-
-def get_df_from_dict(data: Dict):
-
-    str_data = {k: str(v) for k, v in data.items()}
-
-    keys = list(str_data.keys())
-    vals = list(str_data.values())
-
-    df_data = pd.DataFrame(list(zip(keys, vals)), columns=["col_name", "vals"])
-
-    return df_data
 
 
 class DataPreparation:
@@ -177,5 +159,5 @@ class DataPreparation:
         self.final_outputs = {
             "train": train,
             "val": val,
-            "test": test,
+            "test": test
         }
