@@ -1,5 +1,5 @@
 import torch
-from typing import List, Union, Dict, Tuple
+from typing import List, Dict, Tuple
 import numpy as np
 from sklearn import metrics
 import re
@@ -14,6 +14,10 @@ random.seed(random_state)
 def flatten(t: List[List]) -> List:
     """flatten list of lists"""
     return [item for sublist in t for item in sublist]
+
+
+def keep_relevant_keys(input_dict: Dict, relevant_keys=List[str]):
+    return {k: v for k, v in input_dict.items() if k in relevant_keys}
 
 
 def fill_data_tensors(

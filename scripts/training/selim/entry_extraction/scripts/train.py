@@ -3,7 +3,6 @@ import sys
 sys.path.append(".")
 
 import logging
-from typing import List
 from pathlib import Path
 import os
 import pandas as pd
@@ -73,9 +72,6 @@ if __name__ == "__main__":
 
     data = literal_eval(full_data.iloc[0]["data"])
     tagname_to_tagid = literal_eval(full_data.iloc[0]["tagname_to_tagid"])
-    tagname_to_tag_proportion = literal_eval(
-        full_data.iloc[0]["tagname_to_tag_proportion"]
-    )
 
     preprocessed_data = DataPreparation(
         leads_dict=data,
@@ -86,6 +82,7 @@ if __name__ == "__main__":
     train_dataset = preprocessed_data["train"]
     test_dataset = preprocessed_data["test"]
     val_dataset = preprocessed_data["val"]
+    tag_token_proportions = preprocessed_data["tag_token_proportions"]
 
     n_leads_per_category = {
         "_n_leads_train": len(train_dataset),
@@ -143,7 +140,7 @@ if __name__ == "__main__":
 
         mlflow.log_params(model_params)
 
-        ##################### train model using pytorch lightning #####################
+        # train model using pytorch lightning
 
         MODEL_NAME = "transformer_model"
         MODEL_DIR = args.model_dir
@@ -194,6 +191,7 @@ if __name__ == "__main__":
             backbone_name=args.model_name_or_path,
             tokenizer_name=args.tokenizer_name_or_path,
             tagname_to_tagid=tagname_to_tagid,
+            tag_token_proportions=tag_token_proportions,
             slice_length=args.max_len,
             extra_context_length=args.extra_context_length,
             lr=args.learning_rate,
@@ -209,8 +207,8 @@ if __name__ == "__main__":
 
         trainer.fit(training_model, training_loader, val_loader)
 
-        ###################### new model, used for logging, torch.nn.Module type #####################
-        ###################### avoids logging errors #####################
+        # new model, used for logging, torch.nn.Module type
+        # avoids logging errors
         training_model.eval()
         training_model.freeze()
 

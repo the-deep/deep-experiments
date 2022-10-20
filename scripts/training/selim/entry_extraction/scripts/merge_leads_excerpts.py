@@ -4,9 +4,8 @@ import pandas as pd
 from ast import literal_eval
 from copy import copy
 from utils import flatten
-from collections import Counter
 
-############################ MERGING EXCERPTS AND LEAD, USED BEFORE TRAININIG ################
+# MERGING EXCERPTS AND LEAD, USED BEFORE TRAININIG
 
 
 def process_tag(tags: List[str], tag_section: str) -> List[str]:
@@ -97,19 +96,9 @@ def get_training_dict(
 
     excerpts_dict = get_excerpts_dict(excerpts_df)
     full_tags_list = flatten(excerpts_dict.values())
-    n_total_sentences = sum(
-        [len(sentences_one_lead) for sentences_one_lead in full_leads_data["sentences"]]
-    )
-    raw_tags_proportions = {
-        tag_name: tag_count / n_total_sentences
-        for tag_name, tag_count in dict(Counter(full_tags_list))
-    }
 
     label_names = sorted(list(set(full_tags_list)))
     tagname_to_tagid = {tag_name: tag_id for tag_id, tag_name in enumerate(label_names)}
-    tagname_to_tag_proportion = {
-        tag_name: raw_tags_proportions[tag_name] for tag_name in label_names
-    }
 
     kept_leads = []
 
@@ -141,7 +130,6 @@ def get_training_dict(
     final_output = {
         "data": kept_leads,
         "tagname_to_tagid": tagname_to_tagid,
-        "tagname_to_tag_proportion": tagname_to_tag_proportion,
     }
 
     output_as_df = pd.DataFrame(
@@ -149,10 +137,9 @@ def get_training_dict(
             [
                 final_output["data"],
                 final_output["tagname_to_tagid"],
-                final_output["tagname_to_tag_proportion"],
             ]
         ],
-        columns=["data", "tagname_to_tagid", "tagname_to_tag_proportion"],
+        columns=["data", "tagname_to_tagid"],
     )
 
     return output_as_df

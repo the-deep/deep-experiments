@@ -2,12 +2,12 @@ from utils import (
     prepare_X_data,
     get_metric,
     get_label_vote_one_sentence,
-    flatten,
     retrieve_sentences_probas_gt,
 )
+from typing import Optional
 import pytorch_lightning as pl
 import numpy as np
-from torch import nn, threshold
+from torch import nn
 import torch
 from torch.utils.data import DataLoader
 from transformers import AdamW, AutoTokenizer, AutoModel
@@ -17,6 +17,81 @@ from data import ExtractionDataset
 from typing import List, Dict
 from collections import defaultdict
 import time
+
+
+class FocalLoss(nn.modules.loss._WeightedLoss):
+    def __init__(
+        self,
+        tag_token_proportions: Optional[torch.Tensor] = None,
+        gamma: float = 2,
+        reduction='mean'
+    ):
+        """
+        tag_token_proportions: Contains proportions of positive tokens for each tag.
+            Its shape is 1 x num_tags
+        """
+
+        weight = self._compute_weight_from_proportions(tag_token_proportions)
+
+        super(FocalLoss, self).__init__(weight, reduction=reduction)
+        self.gamma = gamma
+        self.weight = weight
+
+    @staticmethod
+    def _compute_weight_from_proportions(tag_token_proportions: Optional[torch.Tensor]):
+        """
+        tag_token_proportions: Tensor, 1 x num_tags
+
+        returns: Tensor, 2 x num_tags
+            Each column consists of loss weight for positive groundtruth(row 0) and
+            negative groundtruth(row 1) values
+
+        NOTE: loss_weight for positive predictions = num_positive_tokens / (2 * total_tokens)
+              loss_weight for negative predictions = num_negative_tokens / (2 * total_tokens)
+        """
+        if tag_token_proportions is None:
+            return tag_token_proportions
+
+        pos_neg_proportions = torch.stack([
+            tag_token_proportions,  # this is positive proportions
+            1 - tag_token_proportions  # this gives negative proportions
+        ])
+        weight = 1 / (pos_neg_proportions * 2)
+        return weight
+
+    def _get_weight_for_target(self, target: torch.Tensor):
+        """
+        Get weight for this batch based on the target.
+        Technically, if the target is 1 then we need weight corresponding to positive values.
+
+        target: (batch_size * max_tokens) x num_labels
+
+        Returns: torch.Tensor, (batch_size * max_tokens) x num_labels
+        """
+        if self.weight is None:
+            weight = None
+        else:
+            weight = torch.ones_like(target)
+            for i, token_tag_truths in enumerate(target):
+                for j, truth_value_for_tag in enumerate(token_tag_truths):
+                    if truth_value_for_tag.item():
+                        weight[i][j] = self.weight[0][j]
+                    else:
+                        weight[i][j] = self.weight[1][j]
+        return weight
+
+    def forward(self, inp, target):
+        weight = self._get_weight_for_target(target)
+        ce_loss = F.binary_cross_entropy_with_logits(
+            inp,
+            # generally target is binary, so to be on the safe side convert to float64
+            target.to(torch.float64),
+            reduction=self.reduction,
+            weight=weight,
+        )
+        pt = torch.exp(-ce_loss)
+        focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
+        return focal_loss
 
 
 class EntryExtractor(nn.Module):
@@ -78,6 +153,7 @@ class TrainingExtractionModel(pl.LightningModule):
         backbone_name: str,
         tokenizer_name: str,
         tagname_to_tagid: Dict[str, int],
+        tag_token_proportions: torch.Tensor,  # 1 x num_labels
         slice_length: int,
         extra_context_length: int,
         lr: float = 1e-4,
@@ -112,13 +188,11 @@ class TrainingExtractionModel(pl.LightningModule):
         self.adam_epsilon = adam_epsilon
         self.weight_decay = weight_decay
 
+        self.focal_loss = FocalLoss(tag_token_proportions)
+
     def _compute_loss(self, logits, groundtruth):
-
-        token_loss = F.binary_cross_entropy_with_logits(
-            logits, groundtruth.float(), reduction="mean"
-        )
-
-        return token_loss
+        focal_loss = self.focal_loss(logits, groundtruth)
+        return focal_loss
 
     def forward(
         self,

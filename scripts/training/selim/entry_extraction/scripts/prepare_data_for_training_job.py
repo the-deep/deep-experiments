@@ -36,7 +36,8 @@ class DataPreparation:
     def _create_y_data(self, excerpt_sentence_ids, input_ids, offset_mapping):
         # TODO: recheck all works
 
-        # initiliaze token labels with emoty list, to be filled iteratively with lists of len n_labels
+        # Initiliaze token labels with emoty list, to be filled iteratively
+        # with lists of len n_labels
         n_tokens = input_ids.shape[0]
         token_labels = torch.zeros(
             (n_tokens, len(self.tagname_to_tagid)), dtype=torch.long
@@ -102,6 +103,14 @@ class DataPreparation:
         processed_data = [
             self._encode_one_lead(one_lead_data) for one_lead_data in self.original_data
         ]
+        all_groundtruths = torch.cat([
+            processed_lead_data["token_labels"]
+            for processed_lead_data in processed_data
+        ])
+
+        # Get the positive proportions for each tag(dim 0)
+        tag_token_proportions =  \
+            torch.sum(all_groundtruths, dim=0) / all_groundtruths.shape[0]
 
         # stratified splitting: project-wise.
         project_ids = [lead["project_id"] for lead in processed_data]
@@ -159,5 +168,6 @@ class DataPreparation:
         self.final_outputs = {
             "train": train,
             "val": val,
-            "test": test
+            "test": test,
+            "tag_token_proportions": tag_token_proportions,
         }
