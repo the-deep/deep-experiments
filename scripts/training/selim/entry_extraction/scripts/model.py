@@ -20,6 +20,10 @@ import time
 
 
 class FocalLoss(nn.modules.loss._WeightedLoss):
+    # EPSILON is used to prevent infinity if some tag proportions are zero
+    # valued. See in the constructor
+    EPSILON = 1e-5
+
     def __init__(
         self,
         tag_token_proportions: Optional[torch.Tensor] = None,
@@ -31,63 +35,21 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
             Its shape is 1 x num_tags
         """
 
-        weight = self._compute_weight_from_proportions(tag_token_proportions)
+        weight = 1 / ((tag_token_proportions + FocalLoss.EPSILON) * 2) \
+            if tag_token_proportions is not None \
+            else None
 
         super(FocalLoss, self).__init__(weight, reduction=reduction)
         self.gamma = gamma
         self.weight = weight
 
-    @staticmethod
-    def _compute_weight_from_proportions(tag_token_proportions: Optional[torch.Tensor]):
-        """
-        tag_token_proportions: Tensor, 1 x num_tags
-
-        returns: Tensor, 2 x num_tags
-            Each column consists of loss weight for positive groundtruth(row 0) and
-            negative groundtruth(row 1) values
-
-        NOTE: loss_weight for positive predictions = num_positive_tokens / (2 * total_tokens)
-              loss_weight for negative predictions = num_negative_tokens / (2 * total_tokens)
-        """
-        if tag_token_proportions is None:
-            return tag_token_proportions
-
-        pos_neg_proportions = torch.stack([
-            tag_token_proportions,  # this is positive proportions
-            1 - tag_token_proportions  # this gives negative proportions
-        ])
-        weight = 1 / (pos_neg_proportions * 2)
-        return weight
-
-    def _get_weight_for_target(self, target: torch.Tensor):
-        """
-        Get weight for this batch based on the target.
-        Technically, if the target is 1 then we need weight corresponding to positive values.
-
-        target: (batch_size * max_tokens) x num_labels
-
-        Returns: torch.Tensor, (batch_size * max_tokens) x num_labels
-        """
-        if self.weight is None:
-            weight = None
-        else:
-            weight = torch.ones_like(target)
-            for i, token_tag_truths in enumerate(target):
-                for j, truth_value_for_tag in enumerate(token_tag_truths):
-                    if truth_value_for_tag.item():
-                        weight[i][j] = self.weight[0][j]
-                    else:
-                        weight[i][j] = self.weight[1][j]
-        return weight
-
     def forward(self, inp, target):
-        weight = self._get_weight_for_target(target)
         ce_loss = F.binary_cross_entropy_with_logits(
             inp,
             # generally target is binary, so to be on the safe side convert to float64
             target.to(torch.float64),
             reduction=self.reduction,
-            weight=weight,
+            weight=self.weight,
         )
         pt = torch.exp(-ce_loss)
         focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
