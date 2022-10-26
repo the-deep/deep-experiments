@@ -3,10 +3,12 @@ from datasets import load_dataset
 import pandas as pd
 from ast import literal_eval
 from copy import copy
-from utils import flatten
 
 # MERGING EXCERPTS AND LEAD, USED BEFORE TRAININIG
 
+def flatten(t: List[List]) -> List:
+    """flatten list of lists"""
+    return [item for sublist in t for item in sublist]
 
 def process_tag(tags: List[str], tag_section: str) -> List[str]:
     """

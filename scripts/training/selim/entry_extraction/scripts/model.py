@@ -11,7 +11,7 @@ from torch import nn
 import torch
 from torch.utils.data import DataLoader
 from transformers import AdamW, AutoTokenizer, AutoModel
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 import torch.nn.functional as F
 from data import ExtractionDataset
 from typing import List, Dict
@@ -22,24 +22,28 @@ import time
 class FocalLoss(nn.modules.loss._WeightedLoss):
     # EPSILON is used to prevent infinity if some tag proportions are zero
     # valued. See in the constructor
-    EPSILON = 1e-5
+    EPSILON = 1e-10
 
     def __init__(
         self,
         tag_token_proportions: Optional[torch.Tensor] = None,
         gamma: float = 2,
-        reduction='mean'
+        proportions_pow: float = 1,
     ):
         """
         tag_token_proportions: Contains proportions of positive tokens for each tag.
             Its shape is 1 x num_tags
         """
 
-        weight = 1 / ((tag_token_proportions + FocalLoss.EPSILON) * 2) \
-            if tag_token_proportions is not None \
+        weight = (
+            torch.pow(
+                1 / ((tag_token_proportions + FocalLoss.EPSILON) * 2), proportions_pow
+            )
+            if tag_token_proportions is not None
             else None
+        )
 
-        super(FocalLoss, self).__init__(weight, reduction=reduction)
+        super(FocalLoss, self).__init__(weight)
         self.gamma = gamma
         self.weight = weight
 
@@ -48,8 +52,8 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
             inp,
             # generally target is binary, so to be on the safe side convert to float64
             target.to(torch.float64),
-            reduction=self.reduction,
-            weight=self.weight,
+            pos_weight=self.weight,
+            reduction="none",
         )
         pt = torch.exp(-ce_loss)
         focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
@@ -87,6 +91,8 @@ class EntryExtractor(nn.Module):
             ]
         )
 
+        self.activation_function = nn.SELU()
+
     def forward(self, input_ids, attention_mask, loss_mask):
         logits = []
 
@@ -95,7 +101,9 @@ class EntryExtractor(nn.Module):
         ).last_hidden_state
 
         for separate_layer_idx in range(self.num_labels):
-            h = self.separate_layers[separate_layer_idx](hidden_state.clone())[0]
+            h = self.activation_function(
+                self.separate_layers[separate_layer_idx](hidden_state.clone())[0]
+            )
 
             cls_output = h[..., 0]
             mean_pooling = torch.mean(h, dim=-1)
@@ -106,6 +114,7 @@ class EntryExtractor(nn.Module):
 
         output = torch.stack(logits, dim=2)
         output = output[torch.where(loss_mask == 1)]
+
         return output
 
 
@@ -118,9 +127,11 @@ class TrainingExtractionModel(pl.LightningModule):
         tag_token_proportions: torch.Tensor,  # 1 x num_labels
         slice_length: int,
         extra_context_length: int,
+        proportions_pow: float,
         lr: float = 1e-4,
         adam_epsilon: float = 1e-7,
         weight_decay: float = 1e-2,
+        focal_loss_gamma: float = 2,
     ):
         """
         Args:
@@ -150,7 +161,9 @@ class TrainingExtractionModel(pl.LightningModule):
         self.adam_epsilon = adam_epsilon
         self.weight_decay = weight_decay
 
-        self.focal_loss = FocalLoss(tag_token_proportions)
+        self.focal_loss = FocalLoss(
+            tag_token_proportions, focal_loss_gamma, proportions_pow
+        )
 
     def _compute_loss(self, logits, groundtruth):
         focal_loss = self.focal_loss(logits, groundtruth)
@@ -229,9 +242,7 @@ class TrainingExtractionModel(pl.LightningModule):
         )
 
         # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
-        scheduler = ReduceLROnPlateau(
-            optimizer, "min", factor=0.5, patience=1, threshold=1e-3
-        )
+        scheduler = StepLR(optimizer, gamma=0.2, step_size=2)
 
         scheduler = {
             "scheduler": scheduler,
@@ -400,7 +411,7 @@ class LoggedExtractionModel(nn.Module):
         self.optimal_quantiles = defaultdict()
 
         # quantiles
-        quantiles = np.linspace(0.1, 0.9, 5)  # 0.1 to 0.9 with step of 0.2
+        quantiles = [0.2, 0.5, 0.8]
 
         # threshold lists for each tag
         mins = torch.min(all_leads_probas, dim=0).values.tolist()
@@ -421,7 +432,9 @@ class LoggedExtractionModel(nn.Module):
 
             gts_one_tag = sentences_groundtruths[tag_id]
             probas_one_tag = sentences_probas[tag_id]
-            thresholds_one_tag = thresholds_possibilities[tag_id]
+            thresholds_one_tag = thresholds_possibilities[tag_id][
+                1:-1
+            ]  # min and max proba predicted won't be the optimal thresholds
 
             best_fbeta_score = -1
             best_recall = -1
@@ -470,9 +483,9 @@ class LoggedExtractionModel(nn.Module):
                         best_quantile = one_quantile
                         best_threshold = one_threshold
 
-            outputs[tag_name][f"fbeta_score_{tag_name}"] = np.round(best_fbeta_score, 2)
-            outputs[tag_name][f"precision_{tag_name}"] = np.round(best_precision, 2)
-            outputs[tag_name][f"recall_{tag_name}"] = np.round(best_recall, 2)
+            outputs[tag_name][f"{tag_name}_fbeta"] = np.round(best_fbeta_score, 2)
+            outputs[tag_name][f"{tag_name}_precision"] = np.round(best_precision, 2)
+            outputs[tag_name][f"{tag_name}_recall"] = np.round(best_recall, 2)
             outputs[tag_name][f"optimal_threshold_{tag_name}"] = best_threshold
             outputs[tag_name][f"optimal_quantile_{tag_name}"] = best_quantile
 

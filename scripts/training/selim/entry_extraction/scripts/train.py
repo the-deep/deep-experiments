@@ -44,14 +44,17 @@ if __name__ == "__main__":
     parser.add_argument("--max_len", type=int, default=512)
     parser.add_argument("--extra_context_length", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=1e-4)
-    parser.add_argument("--weight_decay", type=float, default=1e-2)
+    parser.add_argument("--weight_decay", type=float, default=0.1)
     parser.add_argument("--n_epochs", type=int)
     parser.add_argument("--dataloader_num_workers", type=int, default=6)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--val_batch_size", type=int, default=32)
     parser.add_argument("--instance_type", type=str)
     parser.add_argument("--dropout", type=float, default=0.2)
-    parser.add_argument("--fbeta", type=float, default=2)
+    parser.add_argument("--fbeta", type=float, default=1.4)
+    parser.add_argument("--focal_loss_gamma", type=float, default=2)
+    parser.add_argument("--sample_percentage", type=float, default=0.1)
+    parser.add_argument("--proportions_pow", type=float, default=1)
 
     parser.add_argument("--experiment_name", type=str)
     parser.add_argument("--tracking_uri", type=str)
@@ -84,12 +87,6 @@ if __name__ == "__main__":
     val_dataset = preprocessed_data["val"]
     tag_token_proportions = preprocessed_data["tag_token_proportions"]
 
-    n_leads_per_category = {
-        "_n_leads_train": len(train_dataset),
-        "_n_leads_val": len(val_dataset),
-        "_n_leads_test": len(test_dataset),
-    }
-
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
     # Set experiment name
@@ -106,6 +103,21 @@ if __name__ == "__main__":
         training_device = "cpu"
 
     with mlflow.start_run():
+        proportions = clean_name_for_logging(
+            {
+                f"proportion_in_percentage_{tagname}": round(
+                    100 * tag_token_proportions[tag_id].item(), 2
+                )
+                for tagname, tag_id in tagname_to_tagid.items()
+            }
+        )
+        mlflow.log_params(proportions)
+
+        n_leads_per_category = {
+            "_n_leads_train": len(train_dataset),
+            "_n_leads_val": len(val_dataset),
+            "_n_leads_test": len(test_dataset),
+        }
         mlflow.log_params(n_leads_per_category)
 
         train_params = {
@@ -128,14 +140,17 @@ if __name__ == "__main__":
         model_params = {
             "epochs": args.n_epochs,
             "learning_rate": args.learning_rate,
-            "model_name": args.model_name_or_path,
-            "tokenizer_name": args.tokenizer_name_or_path,
+            "name_model": args.model_name_or_path,
+            "name_tokenizer": args.tokenizer_name_or_path,
             "instance_type": args.instance_type,
             "n_gpu": gpu_nb,
             "max_len": args.max_len,
             "dropout": args.dropout,
             "weight_decay": args.weight_decay,
             "fbeta": args.fbeta,
+            "focal_loss_gamma": args.focal_loss_gamma,
+            "__sample_percentage": args.sample_percentage,
+            "proportions_pow": args.proportions_pow,
         }
 
         mlflow.log_params(model_params)
@@ -196,6 +211,8 @@ if __name__ == "__main__":
             extra_context_length=args.extra_context_length,
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
+            focal_loss_gamma=args.focal_loss_gamma,
+            proportions_pow=args.proportions_pow,
         )
 
         training_loader = training_model._get_loaders(
