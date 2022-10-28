@@ -241,7 +241,6 @@ class TrainingExtractionModel(pl.LightningModule):
             eps=self.adam_epsilon,
         )
 
-        # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
         scheduler = StepLR(optimizer, gamma=0.2, step_size=2)
 
         scheduler = {
