@@ -105,10 +105,8 @@ class EntryExtractor(nn.Module):
                 self.separate_layers[separate_layer_idx](hidden_state.clone())[0]
             )
 
-            cls_output = h[..., 0]
             mean_pooling = torch.mean(h, dim=-1)
-
-            output = (cls_output + mean_pooling) / 2
+            output = mean_pooling
 
             logits.append(output)
 

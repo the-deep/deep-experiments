@@ -42,14 +42,12 @@ class ExtractionDataset(Dataset):
             original_lead_dset = self.dset[i]
 
             # input ids len checks with token losses etc.
-            n_trainable_input_ids = len(
-                [
-                    token_id
-                    for token_id in original_lead_dset["input_ids"]
-                    if token_id
-                    not in [self.tokenizer.cls_token_id, self.tokenizer.sep_token_id]
-                ]
-            )
+            n_trainable_input_ids = len(original_lead_dset["input_ids"])
+            """(
+                (original_lead_dset["input_ids"] != self.tokenizer.sep_token_id)
+                .sum()
+                .item()
+            )"""
 
             one_lead_sentences_offsets = all_leads_sentences_offsets[i]
             sum_sentences_offsets = sum(
@@ -57,7 +55,7 @@ class ExtractionDataset(Dataset):
                     final_offset - begin_offset
                     for begin_offset, final_offset in one_lead_sentences_offsets
                 ]
-            ).item()
+            )
 
             assert (
                 n_trainable_input_ids == sum_sentences_offsets
@@ -110,7 +108,7 @@ class ExtractionDataset(Dataset):
 
             if "sentences_boundaries" in ith_lead_data.keys():
                 final_outputs["sentences_boundaries"].append(
-                    ith_lead_data["sentences_boundaries"].clone().detach().long()
+                    ith_lead_data["sentences_boundaries"]
                 )
 
             n_tokens_one_lead = len(input_ids_one_lead)

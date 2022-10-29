@@ -100,43 +100,47 @@ def clean_name_for_logging(dict_values: Dict[str, float]) -> Dict[str, float]:
 
 def prepare_X_data(sentences: List[str], tokenizer):
 
-    sentences_boundaries = []
-
     assert type(sentences) is list, "sentences inputs are not lists !"
     encoding = tokenizer(sentences, add_special_tokens=False)
 
+    sentences_boundaries = []
     input_ids = []
-    sentence_begin_offset = 0  # because the first input id is 'cls_token_id'
+    sentence_begin_offset = 0
     loss_mask = []
 
     for sentence_ids in encoding["input_ids"]:
         if len(sentence_ids) == 0:
             sentence_ids = [tokenizer.pad_token_id]
 
-        input_ids.append(tokenizer.cls_token_id)
-        input_ids.extend(sentence_ids)
+        sentence_end_offset = sentence_begin_offset
 
-        sentence_end_offset = (
-            sentence_begin_offset + len(sentence_ids) + 1
-        )  # add 1 of the cls
+        # cls
+        input_ids.append(tokenizer.cls_token_id)
+        loss_mask.append(1)
+        sentence_end_offset += 1
+
+        # input ids
+        input_ids.extend(sentence_ids)
+        loss_mask.extend([1 for _ in range(len(sentence_ids))])
+        sentence_end_offset += len(sentence_ids)
+
+        # sep token id
+        input_ids.append(tokenizer.sep_token_id)
+        loss_mask.append(1)
+        sentence_end_offset += 1
+
         sentences_boundaries.append(
             [sentence_begin_offset, sentence_end_offset]
-        )  # because of the pythonic ways of seelcted ids in lists etc.
-        loss_mask.extend([1 for _ in range(1 + len(sentence_ids))])
+        )  # because of the pythonic ways of selected ids in lists etc.
 
-        input_ids.append(tokenizer.sep_token_id)
-        sentence_begin_offset = (
-            sentence_begin_offset + sentence_end_offset + 1
-        )  # because we add 'sep_token_id' between sentences
-        loss_mask.append(0)
+        # prepare for next one
+        sentence_begin_offset = sentence_end_offset
 
     input_ids = torch.tensor(input_ids, dtype=torch.long)
-    sentences_boundaries = torch.tensor(sentences_boundaries, dtype=torch.long)
+    loss_mask = torch.tensor(loss_mask, dtype=torch.long)
 
     attention_mask = torch.zeros_like(input_ids, dtype=torch.long)
     attention_mask[torch.where(input_ids != tokenizer.pad_token_id)] = 1
-
-    loss_mask = torch.tensor(loss_mask, dtype=torch.long)
 
     return {
         "input_ids": input_ids,
