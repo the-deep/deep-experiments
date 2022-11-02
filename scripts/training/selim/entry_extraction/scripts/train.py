@@ -259,24 +259,6 @@ if __name__ == "__main__":
         for tag_name, tag_results in val_results.items():
             mlflow.log_metrics(clean_name_for_logging(tag_results))
 
-        # This class is logged as a pickle artifact and used at inference time
-        prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
-
-        mlflow.pyfunc.log_model(
-            python_model=prediction_wrapper,
-            artifact_path="model",
-            conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[
-                __file__,
-                "model.py",
-                "data.py",
-                "inference.py",
-                "utils.py",
-                "merge_leads_excerpts.py",
-                "requirements.txt",
-            ],  # file dependencies
-        )
-
         # Generate test set results
 
         start_test_predictions = time.process_time()
@@ -302,6 +284,46 @@ if __name__ == "__main__":
                     test_set_results_generation_time / n_test_sentences, 4
                 )
             }
+        )
+
+        # This class is logged as a pickle artifact and used at inference time
+
+        # gpu model logging
+        # training is done on gpu, so no change to deploy in gpu
+        gpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
+
+        mlflow.pyfunc.log_model(
+            python_model=gpu_prediction_wrapper,
+            artifact_path="entry-extraction-gpu",
+            conda_env=get_conda_env_specs(),  # python conda dependencies
+            code_path=[
+                __file__,
+                "model.py",
+                "data.py",
+                "inference.py",
+                "utils.py",
+                "merge_leads_excerpts.py",
+                "requirements.txt",
+            ],  # file dependencies
+        )
+
+        # cpu model logging
+        logged_extraction_model.cpu()
+        cpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
+
+        mlflow.pyfunc.log_model(
+            python_model=cpu_prediction_wrapper,
+            artifact_path="entry-extraction-cpu",
+            conda_env=get_conda_env_specs(),  # python conda dependencies
+            code_path=[
+                __file__,
+                "model.py",
+                "data.py",
+                "inference.py",
+                "utils.py",
+                "merge_leads_excerpts.py",
+                "requirements.txt",
+            ],  # file dependencies
         )
 
     with open(Path(args.output_data_dir) / "test_results_predictions.json", "w") as f:

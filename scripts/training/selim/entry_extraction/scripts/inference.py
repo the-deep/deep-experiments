@@ -14,6 +14,7 @@ class EntryExtractionWrapper(mlflow.pyfunc.PythonModel):
     def load_context(self, context):
         pass
 
-    def predict(self, context, model_input):
-        predictions = self.model.get_highlights(model_input)
+    def predict(self, context, inputs):
+        sentences = inputs["return_type"].tolist()
+        predictions = self.model.get_highlights(sentences)
         return predictions

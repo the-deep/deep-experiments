@@ -376,7 +376,7 @@ class LoggedExtractionModel(nn.Module):
 
         test_loader = self._get_loaders(
             [test_dset], self.test_params, training_mode=False
-        )
+        ) #one lead
 
         probas = self._generate_probas(test_loader)
 
