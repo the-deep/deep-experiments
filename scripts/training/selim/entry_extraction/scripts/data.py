@@ -32,7 +32,7 @@ class ExtractionDataset(Dataset):
         all_leads_loss_masks = torch.cat(self.data["loss_mask"])
 
         # keep only the backpropagated loss
-        all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks == 1]
+        all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks != 0]
 
         # from raw predictions to sentences
 
@@ -42,12 +42,11 @@ class ExtractionDataset(Dataset):
             original_lead_dset = self.dset[i]
 
             # input ids len checks with token losses etc.
-            n_trainable_input_ids = len(original_lead_dset["input_ids"])
-            """(
+            n_trainable_input_ids = (
                 (original_lead_dset["input_ids"] != self.tokenizer.sep_token_id)
                 .sum()
                 .item()
-            )"""
+            )
 
             one_lead_sentences_offsets = all_leads_sentences_offsets[i]
             sum_sentences_offsets = sum(

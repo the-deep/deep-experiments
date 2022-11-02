@@ -1,7 +1,7 @@
 import sys
 
 sys.path.append(".")
-
+import multiprocessing
 import logging
 from pathlib import Path
 import os
@@ -20,6 +20,8 @@ import time
 import json
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -52,7 +54,8 @@ if __name__ == "__main__":
     parser.add_argument("--instance_type", type=str)
     parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--fbeta", type=float, default=1.4)
-    parser.add_argument("--focal_loss_gamma", type=float, default=2)
+    parser.add_argument("--tokens_focal_loss_gamma", type=float, default=2)
+    parser.add_argument("--cls_focal_loss_gamma", type=float, default=1)
     parser.add_argument("--sample_percentage", type=float, default=0.1)
     parser.add_argument("--proportions_pow", type=float, default=1)
 
@@ -86,6 +89,7 @@ if __name__ == "__main__":
     test_dataset = preprocessed_data["test"]
     val_dataset = preprocessed_data["val"]
     tag_token_proportions = preprocessed_data["tag_token_proportions"]
+    tag_cls_proportions = preprocessed_data["tag_cls_proportions"]
 
     # Set remote mlflow server
     mlflow.set_tracking_uri(args.tracking_uri)
@@ -103,15 +107,27 @@ if __name__ == "__main__":
         training_device = "cpu"
 
     with mlflow.start_run():
-        proportions = clean_name_for_logging(
+        # log token proportions
+        token_proportions = clean_name_for_logging(
             {
-                f"proportion_in_percentage_{tagname}": round(
+                f"proportion_in_percentage_{tagname}_tokens": round(
                     100 * tag_token_proportions[tag_id].item(), 2
                 )
                 for tagname, tag_id in tagname_to_tagid.items()
             }
         )
-        mlflow.log_params(proportions)
+        mlflow.log_params(token_proportions)
+
+        # log cls proportions
+        cls_proportions = clean_name_for_logging(
+            {
+                f"proportion_in_percentage_{tagname}_cls": round(
+                    100 * tag_cls_proportions[tag_id].item(), 2
+                )
+                for tagname, tag_id in tagname_to_tagid.items()
+            }
+        )
+        mlflow.log_params(cls_proportions)
 
         n_leads_per_category = {
             "_n_leads_train": len(train_dataset),
@@ -148,7 +164,8 @@ if __name__ == "__main__":
             "dropout": args.dropout,
             "weight_decay": args.weight_decay,
             "fbeta": args.fbeta,
-            "focal_loss_gamma": args.focal_loss_gamma,
+            "focal_loss_gamma_tokens": args.tokens_focal_loss_gamma,
+            "focal_loss_gamma_cls": args.cls_focal_loss_gamma,
             "__sample_percentage": args.sample_percentage,
             "proportions_pow": args.proportions_pow,
         }
@@ -207,11 +224,13 @@ if __name__ == "__main__":
             tokenizer_name=args.tokenizer_name_or_path,
             tagname_to_tagid=tagname_to_tagid,
             tag_token_proportions=tag_token_proportions,
+            tag_cls_proportions=tag_cls_proportions,
             slice_length=args.max_len,
             extra_context_length=args.extra_context_length,
             lr=args.learning_rate,
             weight_decay=args.weight_decay,
-            focal_loss_gamma=args.focal_loss_gamma,
+            tokens_focal_loss_gamma=args.tokens_focal_loss_gamma,
+            cls_focal_loss_gamma=args.cls_focal_loss_gamma,
             proportions_pow=args.proportions_pow,
         )
 

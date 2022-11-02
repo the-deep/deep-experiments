@@ -103,14 +103,26 @@ class DataPreparation:
         processed_data = [
             self._encode_one_lead(one_lead_data) for one_lead_data in self.original_data
         ]
-        all_groundtruths = torch.cat([
-            processed_lead_data["token_labels"]
-            for processed_lead_data in processed_data
-        ])
+        all_groundtruths = torch.cat(
+            [
+                processed_lead_data["token_labels"]
+                for processed_lead_data in processed_data
+            ]
+        )
 
-        # Get the positive proportions for each tag(dim 0)
-        tag_token_proportions =  \
-            torch.sum(all_groundtruths, dim=0) / all_groundtruths.shape[0]
+        loss_masks = torch.cat(
+            [processed_lead_data["loss_mask"] for processed_lead_data in processed_data]
+        )
+
+        #### Get the positive proportions for each tag(dim 0)
+
+        # tokens
+        tokens_gts = all_groundtruths[torch.where(loss_masks == 1)]
+        tag_token_proportions = torch.sum(tokens_gts, dim=0) / tokens_gts.shape[0]
+
+        # cls
+        cls_gts = all_groundtruths[torch.where(loss_masks == 2)]
+        tag_cls_proportions = torch.sum(cls_gts, dim=0) / cls_gts.shape[0]
 
         # stratified splitting: project-wise.
         project_ids = [lead["project_id"] for lead in processed_data]
@@ -170,4 +182,5 @@ class DataPreparation:
             "val": val,
             "test": test,
             "tag_token_proportions": tag_token_proportions,
+            "tag_cls_proportions": tag_cls_proportions,
         }

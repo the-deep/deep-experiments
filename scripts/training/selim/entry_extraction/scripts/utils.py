@@ -5,6 +5,7 @@ from sklearn import metrics
 import re
 import random
 import itertools
+from collections import defaultdict
 
 # fix random state
 random_state = 1234
@@ -98,7 +99,90 @@ def clean_name_for_logging(dict_values: Dict[str, float]) -> Dict[str, float]:
     }
 
 
+def get_full_outputs(
+    tag_name: str,
+    gts_one_tag: List[int],
+    best_predictions_cls: List[int],
+    best_predictions_tokens: List[int],
+    best_threshold_tokens: float,
+    best_quantile_tokens: float,
+    best_threshold_cls: float,
+    fbeta: float,
+):
+    """
+    each: List[Unique[0, 1]] of len(n_sentences)
+    """
+    full_outputs_one_tag = defaultdict()
+
+    # hyperparameters
+    full_outputs_one_tag[
+        f"_optimal_threshold_{tag_name}_tokens"
+    ] = best_threshold_tokens
+    full_outputs_one_tag[f"_optimal_quantile_{tag_name}_tokens"] = best_quantile_tokens
+    full_outputs_one_tag[f"_optimal_threshold_{tag_name}_cls"] = best_threshold_cls
+
+    # cls alone
+    results_cls = get_metric(
+        best_predictions_cls,
+        gts_one_tag,
+        fbeta,
+    )
+    for metric_name, metric_number in results_cls.items():
+        full_outputs_one_tag[f"{tag_name}_{metric_name}_cls"] = np.round(
+            metric_number, 2
+        )
+
+    # tokens alone
+    results_tokens = get_metric(
+        best_predictions_tokens,
+        gts_one_tag,
+        fbeta,
+    )
+    for metric_name, metric_number in results_tokens.items():
+        full_outputs_one_tag[f"{tag_name}_{metric_name}_tokens"] = np.round(
+            metric_number, 2
+        )
+
+    # intersection cls tokens
+    intersection_tokens_cls = [
+        1 if all([cls_pred, token_pred]) else 0
+        for cls_pred, token_pred in zip(best_predictions_cls, best_predictions_tokens)
+    ]
+    results_intersection = get_metric(
+        intersection_tokens_cls,
+        gts_one_tag,
+        fbeta,
+    )
+    for metric_name, metric_number in results_intersection.items():
+        full_outputs_one_tag[
+            f"{tag_name}_{metric_name}_intersection_tokens_cls"
+        ] = np.round(metric_number, 2)
+
+    # union cls tokens
+    union_tokens_cls = [
+        1 if any([cls_pred, token_pred]) else 0
+        for cls_pred, token_pred in zip(best_predictions_cls, best_predictions_tokens)
+    ]
+    results_union = get_metric(
+        union_tokens_cls,
+        gts_one_tag,
+        fbeta,
+    )
+    for metric_name, metric_number in results_union.items():
+        full_outputs_one_tag[f"{tag_name}_{metric_name}_union_tokens_cls"] = np.round(
+            metric_number, 2
+        )
+
+    return full_outputs_one_tag
+
+
 def prepare_X_data(sentences: List[str], tokenizer):
+    """
+    loss_mask:
+        0 for sep token id
+        2 for cls token id
+        1 for input ids
+    """
 
     assert type(sentences) is list, "sentences inputs are not lists !"
     encoding = tokenizer(sentences, add_special_tokens=False)
@@ -116,7 +200,7 @@ def prepare_X_data(sentences: List[str], tokenizer):
 
         # cls
         input_ids.append(tokenizer.cls_token_id)
-        loss_mask.append(1)
+        loss_mask.append(2)
         sentence_end_offset += 1
 
         # input ids
@@ -124,14 +208,14 @@ def prepare_X_data(sentences: List[str], tokenizer):
         loss_mask.extend([1 for _ in range(len(sentence_ids))])
         sentence_end_offset += len(sentence_ids)
 
-        # sep token id
-        input_ids.append(tokenizer.sep_token_id)
-        loss_mask.append(1)
-        sentence_end_offset += 1
-
         sentences_boundaries.append(
             [sentence_begin_offset, sentence_end_offset]
         )  # because of the pythonic ways of selected ids in lists etc.
+
+        # sep token id
+        input_ids.append(tokenizer.sep_token_id)
+        loss_mask.append(0)
+        sentence_end_offset += 1
 
         # prepare for next one
         sentence_begin_offset = sentence_end_offset

@@ -3,6 +3,7 @@ from utils import (
     get_metric,
     get_label_vote_one_sentence,
     retrieve_sentences_probas_gt,
+    get_full_outputs,
 )
 from typing import Optional
 import pytorch_lightning as pl
@@ -33,6 +34,8 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
         """
         tag_token_proportions: Contains proportions of positive tokens for each tag.
             Its shape is 1 x num_tags
+
+        returns non reduced focal loss.
         """
 
         weight = (
@@ -43,7 +46,7 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
             else None
         )
 
-        super(FocalLoss, self).__init__(weight)
+        super(FocalLoss, self).__init__(weight=weight)
         self.gamma = gamma
         self.weight = weight
 
@@ -52,11 +55,11 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
             inp,
             # generally target is binary, so to be on the safe side convert to float64
             target.to(torch.float64),
-            pos_weight=self.weight,
             reduction="none",
         )
         pt = torch.exp(-ce_loss)
-        focal_loss = ((1 - pt) ** self.gamma * ce_loss).mean()
+
+        focal_loss = ((1 - pt) ** self.gamma * ce_loss * self.weight).mean()
         return focal_loss
 
 
@@ -101,17 +104,17 @@ class EntryExtractor(nn.Module):
         ).last_hidden_state
 
         for separate_layer_idx in range(self.num_labels):
-            h = self.activation_function(
-                self.separate_layers[separate_layer_idx](hidden_state.clone())[0]
+            # not sure why we take the [..., 0] and not the mean, Benjamin does that and it works better.
+            one_layer_output = self.activation_function(
+                self.separate_layers[separate_layer_idx](hidden_state.clone())[0][
+                    ..., 0
+                ]
             )
 
-            mean_pooling = torch.mean(h, dim=-1)
-            output = mean_pooling
-
-            logits.append(output)
+            logits.append(one_layer_output)
 
         output = torch.stack(logits, dim=2)
-        output = output[torch.where(loss_mask == 1)]
+        output = output[torch.where(loss_mask != 0)]
 
         return output
 
@@ -123,13 +126,15 @@ class TrainingExtractionModel(pl.LightningModule):
         tokenizer_name: str,
         tagname_to_tagid: Dict[str, int],
         tag_token_proportions: torch.Tensor,  # 1 x num_labels
+        tag_cls_proportions: torch.Tensor,  # 1 x num_labels
         slice_length: int,
         extra_context_length: int,
         proportions_pow: float,
+        tokens_focal_loss_gamma: float,
+        cls_focal_loss_gamma: float,
         lr: float = 1e-4,
         adam_epsilon: float = 1e-7,
         weight_decay: float = 1e-2,
-        focal_loss_gamma: float = 2,
     ):
         """
         Args:
@@ -159,13 +164,12 @@ class TrainingExtractionModel(pl.LightningModule):
         self.adam_epsilon = adam_epsilon
         self.weight_decay = weight_decay
 
-        self.focal_loss = FocalLoss(
-            tag_token_proportions, focal_loss_gamma, proportions_pow
+        self.token_focal_loss = FocalLoss(
+            tag_token_proportions, tokens_focal_loss_gamma, proportions_pow
         )
-
-    def _compute_loss(self, logits, groundtruth):
-        focal_loss = self.focal_loss(logits, groundtruth)
-        return focal_loss
+        self.cls_focal_loss = FocalLoss(
+            tag_cls_proportions, cls_focal_loss_gamma, proportions_pow
+        )
 
     def forward(
         self,
@@ -193,12 +197,33 @@ class TrainingExtractionModel(pl.LightningModule):
         )
 
         mask = batch["loss_mask"]
+        backprop_mask = torch.where(mask != 0)
+
+        labels = batch["token_labels"]
+        backpropagated_labels = labels[backprop_mask]
+
+        positive_loss_mask = mask[backprop_mask]
+        cls_mask = torch.where(positive_loss_mask == 2)
+        tokens_mask = torch.where(positive_loss_mask == 1)
+
+        cls_logits = logits[cls_mask]
+        cls_labels = backpropagated_labels[cls_mask]
+
+        tokens_logits = logits[tokens_mask]
+        tokens_labels = backpropagated_labels[tokens_mask]
+
+        cls_loss = self.cls_focal_loss(cls_logits, cls_labels)
+        tokens_loss = self.token_focal_loss(tokens_logits, tokens_labels)
+
+        final_loss = 0.5 * cls_loss + tokens_loss
+
+        """mask = batch["loss_mask"]
         important_labels = batch["token_labels"]
-        important_labels = important_labels[torch.where(mask == 1)]
+        important_labels = important_labels[torch.where(mask != 0)]
 
-        loss = self._compute_loss(logits, important_labels)
+        final_loss = self._compute_loss(logits, important_labels)"""
 
-        return loss
+        return final_loss
 
     def training_step(self, batch, batch_idx):
 
@@ -279,7 +304,7 @@ class LoggedExtractionModel(nn.Module):
         self.num_labels = trained_model.num_labels
         self.tagname_to_id = trained_model.tagname_to_id
 
-        self.test_params = {"batch_size": 16, "shuffle": False, "num_workers": 0}
+        self.test_params = {"batch_size": 8, "shuffle": False, "num_workers": 0}
 
     def forward(
         self,
@@ -355,9 +380,7 @@ class LoggedExtractionModel(nn.Module):
 
         probas = self._generate_probas(test_loader)
 
-        ratios_probas_thresholds = probas / torch.tensor(
-            list(self.optimal_thresholds.values())
-        )  # divide probas tensor(n_tokens, n_labels) by threshold tensor(n_labels)
+        # divide probas tensor(n_tokens, n_labels) by threshold tensor(n_labels)
 
         initial_sentence_ids = 0
 
@@ -366,26 +389,41 @@ class LoggedExtractionModel(nn.Module):
             sent_len = sentence_end - sentence_begin
             final_sentences_ids = initial_sentence_ids + sent_len
 
-            final_outputs_one_sentence = []
+            final_outputs_one_sentence = defaultdict(list)
+
             if sent_len > 3:
-                ratios_one_sent = ratios_probas_thresholds[
-                    initial_sentence_ids:final_sentences_ids, :
-                ]
+                probas_one_sent = probas[initial_sentence_ids:final_sentences_ids, :]
+
+                ratios_one_sent_cls = probas_one_sent / torch.tensor(
+                    list(self.optimal_thresholds_cls.values())
+                )
+                ratios_one_sent_tokens = probas_one_sent / torch.tensor(
+                    list(self.optimal_thresholds_tokens.values())
+                )
 
                 for tag_name, tag_id in self.tagname_to_id.items():
-                    if (ratios_one_sent < 1).all():
-                        label_votes_one_sent = 0
-                    elif (ratios_one_sent >= 1).all():
-                        label_votes_one_sent = 1
+                    ratios_per_sent_tag_cls = ratios_one_sent_cls[:, tag_id][0].item()
+                    ratios_per_sent_tag_tokens = ratios_one_sent_tokens[:, tag_id][1:]
+
+                    # cls vote
+                    cls_vote = 1 if ratios_per_sent_tag_cls >= 1 else 0
+
+                    # tokens vote
+                    if (ratios_per_sent_tag_tokens < 1).all():
+                        tokens_vote = 0
+                    elif (ratios_per_sent_tag_tokens >= 1).all():
+                        tokens_vote = 1
                     else:
-                        label_votes_one_sent = get_label_vote_one_sentence(
-                            ratios_one_sent,
-                            self.optimal_quantiles[tag_name],
+                        tokens_vote = get_label_vote_one_sentence(
+                            ratios_per_sent_tag_tokens,
+                            self.optimal_quantiles_tokens[tag_name],
                         )
 
                     # return tagname if prediited value is 1.
-                    if label_votes_one_sent:
-                        final_outputs_one_sentence.append(tag_name)
+                    if cls_vote:
+                        final_outputs_one_sentence["cls"].append(tag_name)
+                    if tokens_vote:
+                        final_outputs_one_sentence["tokens"].append(tag_name)
 
             final_outputs.append(final_outputs_one_sentence)
 
@@ -403,9 +441,10 @@ class LoggedExtractionModel(nn.Module):
         ...
         """
 
-        outputs = defaultdict(lambda: defaultdict())
-        self.optimal_thresholds = defaultdict()
-        self.optimal_quantiles = defaultdict()
+        outputs = defaultdict()
+        self.optimal_thresholds_cls = defaultdict()
+        self.optimal_thresholds_tokens = defaultdict()
+        self.optimal_quantiles_tokens = defaultdict()
 
         # quantiles
         quantiles = [0.2, 0.5, 0.8]
@@ -433,61 +472,102 @@ class LoggedExtractionModel(nn.Module):
                 1:-1
             ]  # min and max proba predicted won't be the optimal thresholds
 
-            best_fbeta_score = -1
-            best_recall = -1
-            best_precision = -1
-            best_threshold = -1
-            best_quantile = -1
+            best_fbeta_score_cls = -1
+            best_threshold_cls = -1
+            best_predictions_cls = []
+
+            best_fbeta_score_tokens = -1
+            best_threshold_tokens = -1
+            best_quantile_tokens = -1
+            best_predictions_tokens = []
 
             for one_threshold in thresholds_one_tag:
 
-                # for probas_one_sentence, groundtruths_one_sentence in zip(pro)
+                # get ratios
+                ratios_one_tag = [
+                    proba_per_tag_sentence / one_threshold
+                    for proba_per_tag_sentence in probas_one_tag
+                ]
 
+                # get cls predictions
+                preds_per_sent_tag_cls = [
+                    1 if ratio_per_tag_sentence[0].item() >= 1 else 0
+                    for ratio_per_tag_sentence in ratios_one_tag
+                ]
+
+                # cls results
+                results_per_quantile_threshold_tag_cls = get_metric(
+                    preds_per_sent_tag_cls,
+                    gts_one_tag,
+                    fbeta,
+                )
+
+                if (
+                    results_per_quantile_threshold_tag_cls["fbeta_score"]
+                    > best_fbeta_score_cls
+                ):
+                    best_fbeta_score_cls = results_per_quantile_threshold_tag_cls[
+                        "fbeta_score"
+                    ]
+
+                    best_threshold_cls = one_threshold
+                    best_predictions_cls = preds_per_sent_tag_cls
+
+                # tokens hyperparams tuning
                 for one_quantile in quantiles:
 
-                    preds_per_sent_tag = []
+                    # tokens predictions, one threshold, one quantile
+                    preds_per_sent_tag_tokens = []
 
-                    for proba_per_tag_sentence in probas_one_tag:
-                        ratio_per_threshold_tag_sentence = (
-                            proba_per_tag_sentence / one_threshold
-                        )
-                        if (ratio_per_threshold_tag_sentence < 1).all():
-                            vote = 0
-                        elif (ratio_per_threshold_tag_sentence >= 1).all():
-                            vote = 1
+                    for ratio_per_tag_sentence in ratios_one_tag:
+
+                        ratios_tokens = ratio_per_tag_sentence[1:]
+
+                        if (ratios_tokens < 1).all():
+                            vote_tokens = 0
+                        elif (ratios_tokens >= 1).all():
+                            vote_tokens = 1
                         else:
-                            vote = get_label_vote_one_sentence(
-                                ratio_per_threshold_tag_sentence,
+                            vote_tokens = get_label_vote_one_sentence(
+                                ratios_tokens,
                                 one_quantile,
                             )
-                        preds_per_sent_tag.append(vote)
+                        preds_per_sent_tag_tokens.append(vote_tokens)
 
+                    # tokens resuts, one threshold, one quantile
                     results_per_quantile_threshold_tag = get_metric(
-                        preds_per_sent_tag,
+                        preds_per_sent_tag_tokens,
                         gts_one_tag,
                         fbeta,
                     )
 
                     if (
                         results_per_quantile_threshold_tag["fbeta_score"]
-                        > best_fbeta_score
+                        > best_fbeta_score_tokens
                     ):
-                        best_fbeta_score = results_per_quantile_threshold_tag[
+                        best_fbeta_score_tokens = results_per_quantile_threshold_tag[
                             "fbeta_score"
                         ]
-                        best_recall = results_per_quantile_threshold_tag["recall"]
-                        best_precision = results_per_quantile_threshold_tag["precision"]
-                        best_quantile = one_quantile
-                        best_threshold = one_threshold
 
-            outputs[tag_name][f"{tag_name}_fbeta"] = np.round(best_fbeta_score, 2)
-            outputs[tag_name][f"{tag_name}_precision"] = np.round(best_precision, 2)
-            outputs[tag_name][f"{tag_name}_recall"] = np.round(best_recall, 2)
-            outputs[tag_name][f"optimal_threshold_{tag_name}"] = best_threshold
-            outputs[tag_name][f"optimal_quantile_{tag_name}"] = best_quantile
+                        best_quantile_tokens = one_quantile
+                        best_threshold_tokens = one_threshold
+                        best_predictions_tokens = preds_per_sent_tag_tokens
 
-            self.optimal_thresholds[tag_name] = best_threshold
-            self.optimal_quantiles[tag_name] = best_quantile
+            # save best hyperparameters
+            self.optimal_thresholds_cls[tag_name] = best_threshold_cls
+            self.optimal_thresholds_tokens[tag_name] = best_threshold_tokens
+            self.optimal_quantiles_tokens[tag_name] = best_quantile_tokens
+
+            outputs[tag_name] = get_full_outputs(
+                tag_name,
+                gts_one_tag,
+                best_predictions_cls,
+                best_predictions_tokens,
+                best_threshold_tokens,
+                best_quantile_tokens,
+                best_threshold_cls,
+                fbeta,
+            )
 
         return outputs
 
@@ -510,7 +590,7 @@ class LoggedExtractionModel(nn.Module):
         all_leads_loss_masks = torch.cat(val_loader.dataset.data["loss_mask"])
 
         # keep only the backpropagated loss
-        all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks == 1]
+        all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks != 0]
 
         start_thresholds = time.process_time()
 
