@@ -1,7 +1,6 @@
 from utils import (
     prepare_X_data,
     get_metric,
-    get_label_vote_one_sentence,
     retrieve_sentences_probas_gt,
     get_full_outputs,
 )
@@ -20,7 +19,7 @@ from collections import defaultdict
 import time
 
 
-class FocalLoss(nn.modules.loss._WeightedLoss):
+class FocalLoss(nn.Module):
     # EPSILON is used to prevent infinity if some tag proportions are zero
     # valued. See in the constructor
     EPSILON = 1e-10
@@ -46,7 +45,7 @@ class FocalLoss(nn.modules.loss._WeightedLoss):
             else None
         )
 
-        super(FocalLoss, self).__init__(weight=weight)
+        super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.weight = weight
 
@@ -164,11 +163,19 @@ class TrainingExtractionModel(pl.LightningModule):
         self.adam_epsilon = adam_epsilon
         self.weight_decay = weight_decay
 
+        if torch.cuda.is_available():
+            self.training_device = "cuda"
+        else:
+            self.training_device = "cpu"
+
+        self.tag_token_proportions = tag_token_proportions.to(self.training_device)
+        self.tag_cls_proportions = tag_cls_proportions.to(self.training_device)
+
         self.token_focal_loss = FocalLoss(
-            tag_token_proportions, tokens_focal_loss_gamma, proportions_pow
+            self.tag_token_proportions, tokens_focal_loss_gamma, proportions_pow
         )
         self.cls_focal_loss = FocalLoss(
-            tag_cls_proportions, cls_focal_loss_gamma, proportions_pow
+            self.tag_cls_proportions, cls_focal_loss_gamma, proportions_pow
         )
 
     def forward(
@@ -215,7 +222,7 @@ class TrainingExtractionModel(pl.LightningModule):
         cls_loss = self.cls_focal_loss(cls_logits, cls_labels)
         tokens_loss = self.token_focal_loss(tokens_logits, tokens_labels)
 
-        final_loss = 0.5 * cls_loss + tokens_loss
+        final_loss = cls_loss + tokens_loss
 
         """mask = batch["loss_mask"]
         important_labels = batch["token_labels"]
@@ -376,7 +383,7 @@ class LoggedExtractionModel(nn.Module):
 
         test_loader = self._get_loaders(
             [test_dset], self.test_params, training_mode=False
-        ) #one lead
+        )  # one lead
 
         probas = self._generate_probas(test_loader)
 
@@ -403,21 +410,13 @@ class LoggedExtractionModel(nn.Module):
 
                 for tag_name, tag_id in self.tagname_to_id.items():
                     ratios_per_sent_tag_cls = ratios_one_sent_cls[:, tag_id][0].item()
-                    ratios_per_sent_tag_tokens = ratios_one_sent_tokens[:, tag_id][1:]
+                    ratios_per_sent_tag_tokens = (
+                        ratios_one_sent_tokens[:, tag_id][1:].mean().item()
+                    )
 
                     # cls vote
                     cls_vote = 1 if ratios_per_sent_tag_cls >= 1 else 0
-
-                    # tokens vote
-                    if (ratios_per_sent_tag_tokens < 1).all():
-                        tokens_vote = 0
-                    elif (ratios_per_sent_tag_tokens >= 1).all():
-                        tokens_vote = 1
-                    else:
-                        tokens_vote = get_label_vote_one_sentence(
-                            ratios_per_sent_tag_tokens,
-                            self.optimal_quantiles_tokens[tag_name],
-                        )
+                    tokens_vote = 1 if ratios_per_sent_tag_tokens >= 1 else 0
 
                     # return tagname if prediited value is 1.
                     if cls_vote:
@@ -444,10 +443,6 @@ class LoggedExtractionModel(nn.Module):
         outputs = defaultdict()
         self.optimal_thresholds_cls = defaultdict()
         self.optimal_thresholds_tokens = defaultdict()
-        self.optimal_quantiles_tokens = defaultdict()
-
-        # quantiles
-        quantiles = [0.2, 0.5, 0.8]
 
         # threshold lists for each tag
         mins = torch.min(all_leads_probas, dim=0).values.tolist()
@@ -478,7 +473,6 @@ class LoggedExtractionModel(nn.Module):
 
             best_fbeta_score_tokens = -1
             best_threshold_tokens = -1
-            best_quantile_tokens = -1
             best_predictions_tokens = []
 
             for one_threshold in thresholds_one_tag:
@@ -496,67 +490,45 @@ class LoggedExtractionModel(nn.Module):
                 ]
 
                 # cls results
-                results_per_quantile_threshold_tag_cls = get_metric(
+                results_per_threshold_tag_cls = get_metric(
                     preds_per_sent_tag_cls,
                     gts_one_tag,
                     fbeta,
                 )
 
-                if (
-                    results_per_quantile_threshold_tag_cls["fbeta_score"]
-                    > best_fbeta_score_cls
-                ):
-                    best_fbeta_score_cls = results_per_quantile_threshold_tag_cls[
-                        "fbeta_score"
-                    ]
+                if results_per_threshold_tag_cls["fbeta_score"] > best_fbeta_score_cls:
+                    best_fbeta_score_cls = results_per_threshold_tag_cls["fbeta_score"]
 
                     best_threshold_cls = one_threshold
                     best_predictions_cls = preds_per_sent_tag_cls
 
-                # tokens hyperparams tuning
-                for one_quantile in quantiles:
+                # tokens predictions, one threshold
+                preds_per_sent_tag_tokens = [
+                    1 if ratio_per_tag_sentence[1:].mean().item() >= 1 else 0
+                    for ratio_per_tag_sentence in ratios_one_tag
+                ]
 
-                    # tokens predictions, one threshold, one quantile
-                    preds_per_sent_tag_tokens = []
+                # tokens resuts, one threshold
+                results_per_threshold_tokens = get_metric(
+                    preds_per_sent_tag_tokens,
+                    gts_one_tag,
+                    fbeta,
+                )
 
-                    for ratio_per_tag_sentence in ratios_one_tag:
+                if (
+                    results_per_threshold_tokens["fbeta_score"]
+                    > best_fbeta_score_tokens
+                ):
+                    best_fbeta_score_tokens = results_per_threshold_tokens[
+                        "fbeta_score"
+                    ]
 
-                        ratios_tokens = ratio_per_tag_sentence[1:]
-
-                        if (ratios_tokens < 1).all():
-                            vote_tokens = 0
-                        elif (ratios_tokens >= 1).all():
-                            vote_tokens = 1
-                        else:
-                            vote_tokens = get_label_vote_one_sentence(
-                                ratios_tokens,
-                                one_quantile,
-                            )
-                        preds_per_sent_tag_tokens.append(vote_tokens)
-
-                    # tokens resuts, one threshold, one quantile
-                    results_per_quantile_threshold_tag = get_metric(
-                        preds_per_sent_tag_tokens,
-                        gts_one_tag,
-                        fbeta,
-                    )
-
-                    if (
-                        results_per_quantile_threshold_tag["fbeta_score"]
-                        > best_fbeta_score_tokens
-                    ):
-                        best_fbeta_score_tokens = results_per_quantile_threshold_tag[
-                            "fbeta_score"
-                        ]
-
-                        best_quantile_tokens = one_quantile
-                        best_threshold_tokens = one_threshold
-                        best_predictions_tokens = preds_per_sent_tag_tokens
+                    best_threshold_tokens = one_threshold
+                    best_predictions_tokens = preds_per_sent_tag_tokens
 
             # save best hyperparameters
             self.optimal_thresholds_cls[tag_name] = best_threshold_cls
             self.optimal_thresholds_tokens[tag_name] = best_threshold_tokens
-            self.optimal_quantiles_tokens[tag_name] = best_quantile_tokens
 
             outputs[tag_name] = get_full_outputs(
                 tag_name,
@@ -564,7 +536,6 @@ class LoggedExtractionModel(nn.Module):
                 best_predictions_cls,
                 best_predictions_tokens,
                 best_threshold_tokens,
-                best_quantile_tokens,
                 best_threshold_cls,
                 fbeta,
             )
