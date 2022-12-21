@@ -2,7 +2,7 @@ from deep_parser import TextFromFile, TextFromWeb
 from deep_parser.helpers.errors import DocumentProcessingError
 from tqdm.auto import tqdm
 from glob import glob
-import base64
+import base64, json
 from pathlib import Path
 import timeout_decorator
 from transformers.hf_argparser import HfArgumentParser
@@ -28,12 +28,14 @@ def extract(in_path, out_path):
 
     try:
         document = TextFromFile(stream=binary, ext="pdf")
-        text, other = document.extract_text()
+        text, _ = document.extract_text(output_format="list")
     except (RuntimeError, DocumentProcessingError):
         return False
 
     try:
-        open(out_path, "w").write(text)
+        #open(out_path, "w").write(text)
+        with open(out_path, "w+") as f:
+            json.dump(text, f)
     except UnicodeEncodeError:
         return False
 
@@ -64,7 +66,7 @@ def pull_pdfs(args, leads_df: pd.DataFrame):
         name = Path(in_path).name
         lead_id, project_id = name_to_id[name]
 
-        out_path = output_path / str(project_id) / f"{lead_id}.txt"
+        out_path = output_path / str(project_id) / f"{lead_id}.json"
         out_path.parent.mkdir(exist_ok=True, parents=True)
 
         work(in_path, out_path)
@@ -89,26 +91,42 @@ def pull_websites(args, leads_df: pd.DataFrame):
             continue
 
         if url.endswith(".pdf"):
-            print(f"{url} is a PDF! Skipping...")
-            continue
+            print(f"{url} is a PDF!")
+            try:
+                parser = TextFromFile(url=url, from_web=True)
+                text, _ = parser.extract_text(output_format="list")
+            except (RuntimeError, DocumentProcessingError, Exception) as e:
+                print(f"Error {e} on PDF url {url}")
+                continue
+        else:
+            try:
+                parser = TextFromWeb(url=url)
+                text = parser.extract_text(output_format="list")
+                parser.close()
+            except (RuntimeError, DocumentProcessingError, Exception) as e:
+                print(f"Error {e} on standard url {url}")
+                continue
 
         nested_dir_path = out_dir / project_id
         nested_dir_path.mkdir(exist_ok=True, parents=True)
 
-        file_path = nested_dir_path / f"{lead_id}.txt"
+        file_path = nested_dir_path / f"{lead_id}.json"
         if file_path.exists():
             continue
 
         text = None
 
-        try:
-            parser = TextFromWeb(url=url)
-            text = parser.extract_text()
-            parser.close()
-        except:
-            continue
+        #try:
+        #    parser = TextFromWeb(url=url)
+        #    text = parser.extract_text()
+        #    parser.close()
+        #except:
+        #    continue
+        
+        #open(file_path, "w").write(text)
 
-        open(file_path, "w").write(text)
+        with open(file_path, "w+") as f:
+            json.dump(text, f)
 
 
 if __name__ == "__main__":
