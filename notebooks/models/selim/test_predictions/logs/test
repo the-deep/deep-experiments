@@ -1,0 +1,1331 @@
+,test
+151,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Politics', 'Context->Security & Stability']}
+{'age': []}
+{'gender': ['Male']}
+{'severity': []}
+{'geo_location': ['Congo']}"
+192,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+329,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+435,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Lagos', 'Oyo', 'Kaduna', 'Nigeria']}"
+464,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria', 'Amman']}"
+614,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+618,"{'sectors': ['Shelter']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+623,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Idleb']}"
+645,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Humanitarian Conditions->Physical And Mental Well Being', 'Impact->Driver/Aggravating Factors']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': ['Female', 'Male']}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+650,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+801,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+833,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+897,"{'sectors': ['Nutrition']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Nigeria']}"
+913,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Teknaf', 'Pekua', 'Maheshkhali', 'Kutubdia', 'Ramu']}"
+935,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Bama']}"
+1000,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Konduga', 'Marte', 'Kukawa']}"
+1068,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Syria']}"
+1254,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+1265,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+1293,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Information And Communication->Knowledge And Info Gaps (Hum)']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+1308,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+1341,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Shock/Event->Hazard & Threats']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Niger', 'Nigeria']}"
+1457,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+1778,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+1810,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+1892,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': ['Male']}
+{'severity': []}
+{'geo_location': ['Idleb']}"
+1900,"{'sectors': ['Health']}
+{'subpillars_2d': ['Priority Needs->Expressed By Humanitarian Staff']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+1921,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Aleppo', 'Quneitra', 'Lattakia', 'Syria', 'Hama', 'Damascus', 'Rural Damascus']}"
+1986,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+2111,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Politics']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+2265,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Contact Tracing']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+2336,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+2338,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+2346,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Potiskum', 'Tarmuwa', 'Fune', 'Yusufari', 'Gujba', 'Machina', 'Fika', 'Damaturu', 'Geidam', 'Bursari', 'Gulani', 'Nguru']}"
+2378,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Vaccination']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+2658,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Shock/Event->Hazard & Threats']}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+2660,"{'sectors': ['Health']}
+{'subpillars_2d': ['Priority Interventions->Expressed By Humanitarian Staff']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+3071,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Borno', 'Kanuri']}"
+3082,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Politics', 'Context->Security & Stability']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+3099,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Aleppo']}"
+3496,"{'sectors': ['Health', 'WASH']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Girei']}"
+3637,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+3689,"{'sectors': ['Education']}
+{'subpillars_2d': ['Priority Interventions->Expressed By Humanitarian Staff']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+3820,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+3894,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Nigeria']}"
+3912,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+3915,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Testing']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Nigeria']}"
+4063,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+4091,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+4197,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': ['Female']}
+{'severity': []}
+{'geo_location': ['Syria']}"
+4312,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Aleppo', 'Rural Damascus', 'Homs', 'Dará', 'Tartous']}"
+4449,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Turkey', 'Gaziantep']}"
+4476,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': ['Infants/Toddlers (<5 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Adamawa']}"
+4674,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Damascus']}"
+4693,"{'sectors': ['Health']}
+{'subpillars_2d': ['Priority Needs->Expressed By Humanitarian Staff']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+4791,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+4851,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+4858,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+4917,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5002,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5072,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+5155,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Syria']}"
+5239,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Syria']}"
+5281,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Niger', 'Burkina Faso', 'Mali']}"
+5423,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Taraba', 'Adamawa', 'Abia', 'Kaduna', 'Ogun', 'Nigeria', 'Jigawa', 'Borno', 'Katsina']}"
+5484,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Demography']}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5521,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5563,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Environment']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Sennar']}"
+5599,"{'sectors': ['Health']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Idleb']}"
+5655,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)', 'Infants/Toddlers (<5 years old)']}
+{'gender': ['Female']}
+{'severity': []}
+{'geo_location': ['Camp 7']}"
+5660,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5691,"{'sectors': ['Health', 'WASH']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5723,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Kutupalong RC', 'Nayapara']}"
+5772,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->National Response', 'Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5894,"{'sectors': ['Health']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+5998,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+6122,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Driver/Aggravating Factors', 'Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': ['Female']}
+{'severity': ['Major']}
+{'geo_location': ['Bangladesh']}"
+6130,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+6140,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Testing']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+6230,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Older Persons (60+ years old)']}
+{'gender': ['Female', 'Male']}
+{'severity': ['Critical']}
+{'geo_location': []}"
+6251,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+6266,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': []}"
+6288,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+6314,"{'sectors': ['Education', 'Livelihoods']}
+{'subpillars_2d': ['Impact->Impact On People', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+6383,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': []}"
+6498,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Teknaf']}"
+6528,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': []}"
+6619,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Sharan', 'Bulbul', 'Dana']}"
+6645,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Sweida', 'Aleppo', 'Quneitra', 'Syria', 'Hama', 'Damascus', 'Rural Damascus', 'Homs']}"
+6859,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': ['Female']}
+{'severity': []}
+{'geo_location': []}"
+6963,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->International Response', 'Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7009,"{'sectors': ['Health']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7040,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['At Risk->Risk And Vulnerabilities', 'Impact->Driver/Aggravating Factors']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7089,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->Number Of People Reached/Response Gaps']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7230,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+7594,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+7678,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7681,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Vaccination']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['South Africa', 'Republic of the Congo', 'Zimbabwe', 'Angola', 'Malawi']}"
+7687,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': ['Male']}
+{'severity': ['Of Concern']}
+{'geo_location': ['Northeast', 'Central', 'Syria']}"
+7779,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Kinshasa']}"
+7794,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Testing']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+7808,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Colombia']}"
+7869,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+7898,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+7977,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Vaccination']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+7978,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8032,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+8034,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['El Salvador', 'Colombia', 'Peru', 'Ecuador']}"
+8103,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+8153,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Economy']}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': ['Male']}
+{'severity': []}
+{'geo_location': []}"
+8161,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Damascus', 'Syria']}"
+8191,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8284,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Impact->Driver/Aggravating Factors']}
+{'subpillars_1d': ['Context->Security & Stability']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8316,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': []}"
+8435,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Impact->Driver/Aggravating Factors', 'Impact->Impact On People', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8481,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8483,"{'sectors': ['Health']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': ['Covid-19->Vaccination']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+8512,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+8556,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': ['Information And Communication->Knowledge And Info Gaps (Pop)']}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+8557,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Security & Stability']}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Mali']}"
+8569,"{'sectors': ['Shelter']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+8739,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+8761,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Aleppo', 'Al-Hasakeh']}"
+8899,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+8913,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Security & Stability', 'Displacement->Push Factors', 'Displacement->Type/Numbers/Movements']}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Kongolo']}"
+8968,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9014,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9113,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': ['Older Persons (60+ years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9122,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9130,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Driver/Aggravating Factors']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Colombia']}"
+9201,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Damascus']}"
+9203,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Impact->Driver/Aggravating Factors', 'Impact->Impact On People', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9240,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Older Persons (60+ years old)']}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Nigeria']}"
+9312,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9340,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)', 'Older Persons (60+ years old)']}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Nigeria']}"
+9454,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Context->Demography', 'Displacement->Type/Numbers/Movements']}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+9482,"{'sectors': ['Education']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Aleppo']}"
+9626,"{'sectors': ['Logistics']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Lattakia', 'Tartous']}"
+9628,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+9635,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)', 'Children/Youth (5 to 17 years old)']}
+{'gender': ['Female']}
+{'severity': []}
+{'geo_location': []}"
+9937,"{'sectors': ['Health']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+9967,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+10031,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+10118,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Deaths']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+10263,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Restriction Measures']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+10306,"{'sectors': ['Education']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+10383,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Casualties->Dead']}
+{'age': ['Infants/Toddlers (<5 years old)']}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': ['Magumeri', 'Damboa', 'Konduga', 'Bayo', 'Gubio', 'Borno']}"
+10443,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Driver/Aggravating Factors']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+10576,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Security & Stability', 'Displacement->Push Factors', 'Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Beni']}"
+10744,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Security & Stability', 'Displacement->Push Factors', 'Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+10764,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases', 'Covid-19->Testing']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+10770,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Vaccination']}
+{'age': ['Adult (18 to 59 years old)', 'Older Persons (60+ years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+10891,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+10898,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Brazil', 'Argentina', 'Colombia', 'Mexico']}"
+10910,"{'sectors': ['Health']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+10932,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bama', 'Fufore', 'Borno', 'Uba', 'Madagali', 'Michika', 'Dikwa', 'Biu', 'Girei', 'Mobbar', 'Gombi', 'Kala', 'Hawul', 'Numan', 'Hong', 'Maiha', 'Monguno', 'Song', 'Adamawa', 'Mubi South', 'Lamurde', 'Mubi North', 'Damboa', 'Gwoza']}"
+10933,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Tartous', 'Lattakia', 'Quneitra', 'Syria']}"
+10946,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': ['Female', 'Male']}
+{'severity': []}
+{'geo_location': ['Teknaf']}"
+11017,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Displacement->Type/Numbers/Movements']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Cameroon', 'Chad', 'N’djamena']}"
+11303,"{'sectors': ['Education']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+11402,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': ['Potiskum', 'Yobe', 'Yusufari', 'Baga', 'Jakusko', 'Borno', 'Gulani', 'Nguru']}"
+11442,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': ['Older Persons (60+ years old)']}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+11480,"{'sectors': ['WASH']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards', 'Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': ['Syria']}"
+11518,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+11558,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Of Concern']}
+{'geo_location': []}"
+11571,"{'sectors': ['Livelihoods', 'Protection']}
+{'subpillars_2d': ['Humanitarian Conditions->Physical And Mental Well Being']}
+{'subpillars_1d': ['Context->Socio Cultural']}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': ['Female']}
+{'severity': ['Critical']}
+{'geo_location': []}"
+11627,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Bangladesh']}"
+11654,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Iraq', 'Syria']}"
+11663,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Vaccination', 'Information And Communication->Knowledge And Info Gaps (Hum)']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Syria']}"
+11692,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Covid-19->Cases']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Adamawa']}"
+11824,"{'sectors': ['Education']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+11851,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Major']}
+{'geo_location': []}"
+12824,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Humanitarian Conditions->Living Standards']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': ['Critical']}
+{'geo_location': []}"
+13793,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+15126,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Central African Republic', 'Adamawa', 'Nord', 'Est']}"
+15165,"{'sectors': ['Education']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': []}
+{'age': ['Children/Youth (5 to 17 years old)']}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['West', 'Littoral']}"
+15912,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Humanitarian Access->Number Of People Facing Humanitarian Access Constraints/Humanitarian Access Gaps']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+15936,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Humanitarian Access->Physical Constraints']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+15938,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Capacities & Response->International Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Hirat', 'Ghor']}"
+15970,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Juba']}"
+15997,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Priority Interventions->Expressed By Humanitarian Staff']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+16040,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['South Sudan']}"
+16066,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['Impact->Impact On Systems, Services And Networks']}
+{'subpillars_1d': ['Context->Economy']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"
+16251,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': ['Female', 'Male']}
+{'severity': []}
+{'geo_location': ['South Sudan', 'Sudan']}"
+16419,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Cameroon']}"
+16483,"{'sectors': []}
+{'subpillars_2d': []}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['South Sudan']}"
+16784,"{'sectors': ['Livelihoods']}
+{'subpillars_2d': ['Impact->Impact On People']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Mudug', 'Northeast', 'Nugaal', 'Bari']}"
+16994,"{'sectors': ['Food Security']}
+{'subpillars_2d': ['At Risk->Risk And Vulnerabilities']}
+{'subpillars_1d': []}
+{'age': ['Adult (18 to 59 years old)']}
+{'gender': ['Female', 'Male']}
+{'severity': []}
+{'geo_location': []}"
+17017,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': []}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': ['Akobo', 'Nyirol', 'Twic East', 'Nuer', 'Uror', 'Duk']}"
+17121,"{'sectors': ['Protection']}
+{'subpillars_2d': ['Capacities & Response->National Response']}
+{'subpillars_1d': ['Context->Legal & Policy', 'Context->Politics']}
+{'age': []}
+{'gender': []}
+{'severity': []}
+{'geo_location': []}"

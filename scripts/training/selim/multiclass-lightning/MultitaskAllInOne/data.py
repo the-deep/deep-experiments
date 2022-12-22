@@ -63,19 +63,16 @@ class CustomDataset(Dataset):
             # "token_type_ids": torch.tensor(token_type_ids, dtype=torch.long),
         }
 
-        targets = None
         if self.targets:
             target_indices = [
                 self.tagname_to_tagid[target]
                 for target in self.targets[index]
                 if target in self.tagname_to_tagid
             ]
-            targets = np.zeros(len(self.tagname_to_tagid), dtype=int)
-            targets[target_indices] = 1
+            targets_one_index = np.zeros(len(self.tagname_to_tagid), dtype=int)
+            targets_one_index[target_indices] = 1
 
-            encoded["targets"] = (
-                torch.tensor(targets, dtype=float) if targets is not None else None
-            )
+            encoded["targets"] = torch.tensor(targets_one_index, dtype=float)
             encoded["entry_id"] = self.entry_ids[index]
 
         return encoded

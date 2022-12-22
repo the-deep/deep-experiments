@@ -3,7 +3,7 @@ import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
-from utils import get_tagname_to_id, get_loss_alphas
+from utils import get_tagname_to_id, get_tags_proportions
 from TransformerModel import TrainingTransformer, LoggedTransformerModel
 from MLPModel import TrainingMLP, LoggedMLPModel
 
@@ -17,6 +17,8 @@ def train_model(
     train_params,
     val_params,
     gpu_nb: int,
+    loss_gamma: float,
+    proportions_pow: float,
     training_type: str,  # in ['transformer', 'MLP']
     BACKBONE_NAME: str = None,
     TOKENIZER_NAME: str = None,
@@ -81,16 +83,17 @@ def train_model(
         targets_list = train_dataset["y"]
 
     tagname_to_tagid = get_tagname_to_id(targets_list)
-    loss_alphas = get_loss_alphas(tagname_to_tagid, targets_list)
+    tags_proportions = get_tags_proportions(tagname_to_tagid, targets_list)
 
     if training_type == "Transformer":
         model = TrainingTransformer(
             model_name_or_path=BACKBONE_NAME,
             tokenizer_name_or_path=TOKENIZER_NAME,
             tagname_to_tagid=tagname_to_tagid,
-            loss_alphas=loss_alphas,
+            tags_proportions=tags_proportions,
+            loss_gamma=loss_gamma,
+            proportions_pow=proportions_pow,
             val_params=val_params,
-            gpus=gpu_nb,
             plugin="deepspeed_stage_3_offload",
             accumulate_grad_batches=1,
             max_epochs=MAX_EPOCHS,
@@ -107,8 +110,9 @@ def train_model(
         model = TrainingMLP(
             val_params=val_params,
             tagname_to_tagid=tagname_to_tagid,
-            loss_alphas=loss_alphas,
-            gpus=gpu_nb,
+            tags_proportions=tags_proportions,
+            loss_gamma=loss_gamma,
+            proportions_pow=proportions_pow,
             plugin="deepspeed_stage_3_offload",
             accumulate_grad_batches=1,
             max_epochs=MAX_EPOCHS,

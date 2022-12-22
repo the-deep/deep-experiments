@@ -26,7 +26,7 @@ class MLPArchitecture(torch.nn.Module):
         super().__init__()
 
         self.dropout = torch.nn.Dropout(dropout_rate)
-        self.activation_function = torch.nn.ELU()
+        self.activation_function = torch.nn.SELU()
         self.normalization = torch.nn.BatchNorm1d(transformer_output_length)
 
         self.n_tasks = len(ids_each_level)
@@ -38,7 +38,8 @@ class MLPArchitecture(torch.nn.Module):
         )
 
     def forward(self, input):
-        output = self.mid_layer(input)
+        output = self.activation_function(input)
+        output = self.mid_layer(output)
         output = self.dropout(output)
         output = self.activation_function(output)
         output = self.normalization(output)
@@ -54,9 +55,10 @@ class TrainingMLP(pl.LightningModule):
     def __init__(
         self,
         val_params,
-        gpus: int,
         tagname_to_tagid,
-        loss_alphas,
+        tags_proportions,
+        loss_gamma,
+        proportions_pow,
         learning_rate: float = 1e-5,
         adam_epsilon: float = 1e-7,
         weight_decay: float = 0.1,
@@ -83,12 +85,12 @@ class TrainingMLP(pl.LightningModule):
 
         self.training_device = training_device
 
-        self.loss_alphas = loss_alphas
-
-        if gpus >= 1:
-            self.loss_alphas = self.loss_alphas.to(torch.device("cuda:0"))
-
-        self.Focal_loss = FocalLoss(alphas=self.loss_alphas)
+        self.loss = FocalLoss(
+            tag_token_proportions=tags_proportions,
+            gamma=loss_gamma,
+            proportions_pow=proportions_pow,
+            device=self.training_device,
+        )
         # self.only_backpropagate_pos = only_backpropagate_pos
 
     def forward(self, inputs):
@@ -97,7 +99,7 @@ class TrainingMLP(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch["X"])
-        train_loss = self.Focal_loss(outputs, batch["y"], weighted=True)
+        train_loss = self.loss(outputs, batch["y"])
 
         self.log(
             "train_loss",
@@ -111,7 +113,7 @@ class TrainingMLP(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         outputs = self(batch["X"])
-        val_loss = self.Focal_loss(outputs, batch["y"], weighted=False)
+        val_loss = self.loss(outputs, batch["y"])
         self.log(
             "val_loss",
             val_loss,
@@ -163,6 +165,7 @@ class LoggedMLPModel(torch.nn.Module):
         self.trained_architecture = trained_model.model
         self.tagname_to_tagid = trained_model.tagname_to_tagid
         self.val_params = trained_model.val_params
+        self.val_params["num_workers"] = 0
 
     def forward(self, inputs):
         output = self.trained_architecture(inputs)
@@ -187,9 +190,6 @@ class LoggedMLPModel(torch.nn.Module):
 
         def sigmoid(x):
             return 1 / (1 + np.exp(-x))
-
-        if testing:
-            self.val_params["num_workers"] = 0
 
         validation_loader = self.get_loaders(
             validation_dataset,
@@ -314,7 +314,7 @@ class LoggedMLPModel(torch.nn.Module):
 
         self.optimal_thresholds = optimal_thresholds_dict
 
-        return {
+        self.optimal_scores = {
             "precision": optimal_precision_scores,
             "recall": optimal_recall_scores,
             "f_beta_scores": optimal_f_beta_scores,

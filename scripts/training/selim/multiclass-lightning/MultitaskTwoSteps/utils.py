@@ -1,5 +1,6 @@
 from ast import literal_eval
 import random
+from string import punctuation
 import numpy as np
 import pandas as pd
 import re
@@ -8,15 +9,7 @@ import warnings
 from typing import Dict, List, Union, Tuple
 from collections import Counter
 import torch
-
-import nltk
-
-nltk.download("stopwords")
-nltk.download("wordnet")
-nltk.download("omw-1.4")
-from nltk.corpus import stopwords
-
-stop_words = set(stopwords.words())
+from transformers import AutoTokenizer
 
 warnings.filterwarnings("ignore")
 
@@ -36,7 +29,7 @@ def map_id_layer_to_level(ids_each_level) -> Dict[int, int]:
 
 def beta_score(precision: float, recall: float, f_beta: Union[int, float]) -> float:
     """get beta score from precision and recall"""
-    return (1 + f_beta ** 2) * precision * recall / ((f_beta ** 2) * precision + recall)
+    return (1 + f_beta**2) * precision * recall / ((f_beta**2) * precision + recall)
 
 
 def clean_name_for_logging(
@@ -224,7 +217,7 @@ def stats_train_test(
     return ratio_negative_positive
 
 
-def get_loss_alphas(
+def get_tags_proportions(
     tagname_to_tagid: Dict[str, int], targets_list: List[str]
 ) -> torch.Tensor:
     """get alphas for BCE weighted loss"""
@@ -246,9 +239,7 @@ def compute_weights(number_data_classes: List[int], n_tot: int) -> List[float]:
     OUTPUT:
     list of weights used for training
     """
-    return [
-        1 - (number_data_class / n_tot) for number_data_class in number_data_classes
-    ]
+    return [number_data_class / n_tot for number_data_class in number_data_classes]
 
 
 def get_flat_labels(column_of_columns, tag_to_id: Dict[str, int], nb_subtags: int):
@@ -343,16 +334,8 @@ def delete_punctuation(text: str) -> str:
         # "?",
     ]
     for punct in to_be_cleaned_punctuations:
-        clean_text = clean_text.replace(punct, "")
+        clean_text = clean_text.replace(punct, "").replace("...", ".")
     return clean_text.rstrip().lstrip()
-
-
-def RepresentsInt(s):
-    try:
-        int(s)
-        return True
-    except ValueError:
-        return False
 
 
 def preprocess_one_sentence(sentence):
@@ -360,6 +343,13 @@ def preprocess_one_sentence(sentence):
     function to preprocess one_sentence:
         - lower and remove punctuation
     """
+
+    def RepresentsInt(s):
+        try:
+            int(s)
+            return True
+        except ValueError:
+            return False
 
     if type(sentence) is not str:
         sentence = str(sentence)
@@ -370,68 +360,57 @@ def preprocess_one_sentence(sentence):
     for word in words:
         # keep clean words and remove hyperlinks
         bool_word_not_empty_string = word != ""
-        bool_word_not_stop_word = word.lower() not in stop_words
 
-        if bool_word_not_empty_string and bool_word_not_stop_word:
+        # TODO: treat better stop words for no bias
+        # bool_word_not_stop_word = word.lower() not in stop_words
 
-            if word.isdigit():
-                appended_word = "^"
+        if bool_word_not_empty_string:  # and bool_word_not_stop_word:
 
-            elif word_is_country(word):
-                appended_word = "`"
+            # TODO: better number preprocessing
+            # if word.isdigit():
+            #    appended_word = "^"
 
-            else:
-                appended_word = word
+            # TODO: location preprocessing
+            # elif word_is_location(word):
+            #    appended_word = "`"
+
+            appended_word = word
 
             new_words.append(appended_word)
 
     return " ".join(new_words).rstrip().lstrip()
 
 
-def word_is_country(word):
-    """relevant countries based on the list of projects we have"""
-    relevant_countries_list = [
-        "ukr",
-        "afgh",
-        "sudan",
-        "turk",
-        "rdc",
-        "burkina",
-        "faso",
-        "congo",
-        "colomb",
-        "somali",
-        "camero",
-        "peru",
-        "libi",
-        "liby",
-        "chile",
-        "ecuad",
-        "salvad",
-        "banglad",
-        "syr",
-        "ghana",
-        "venezue",
-        "brazil",
-        "bresil",
-        "brasil",
-        "argen",
-        "philip",
-        "niger",
-        "tunis",
-        "chad",
-        "argenti",
-        "ghana",
-        "franc",
-        "ital",
-        "german",
-        "americ",
-    ]
-    return any([one_country in word.lower() for one_country in relevant_countries_list])
+def get_n_tokens(
+    text: List[str], tokenizer_name: str, batch_size_tokenizer: int = 128
+) -> np.ndarray:
+    """
+    get number of tokens after tokeniziation for excerpts.
+    """
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
+    masks = []
+    for i in range(0, len(text), batch_size_tokenizer):
 
-def preprocess_text(text: str) -> str:
-    clean_text = copy(text)
-    clean_text = delete_punctuation(clean_text)
-    clean_text = preprocess_one_sentence(clean_text)
-    return clean_text
+        one_batch = text[i : i + batch_size_tokenizer]
+
+        masks.append(
+            tokenizer(
+                one_batch,
+                None,
+                truncation=False,
+                add_special_tokens=True,
+                padding="max_length",
+                return_token_type_ids=False,
+            )["attention_mask"]
+        )
+
+    lengths = np.array(
+        [
+            np.sum(np.array(one_mask) == 1)
+            for masks_sublist in masks
+            for one_mask in masks_sublist
+        ]
+    )
+
+    return lengths

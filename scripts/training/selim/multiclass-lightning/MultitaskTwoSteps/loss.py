@@ -1,28 +1,46 @@
 from torch import nn
 import torch.nn.functional as F
+import torch
+from typing import Optional
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, alphas, gamma=0.2):
-        super(FocalLoss, self).__init__()
-        self.alphas = alphas
-        self.gamma = gamma
+    # EPSILON is used to prevent infinity if some tag proportions are zero
+    # valued. See in the constructor
+    EPSILON = 1e-10
 
-    def forward(self, outputs, targets, weighted: bool):
-        if weighted:
-            BCE_loss = F.binary_cross_entropy_with_logits(
-                outputs, targets, reduction="mean", pos_weight=self.alphas
-            )
-        else:
-            BCE_loss = F.binary_cross_entropy_with_logits(
-                outputs, targets, reduction="mean"
-            )
+    def __init__(
+        self,
+        tag_token_proportions: torch.Tensor,
+        device: str,
+        gamma: float = 2,
+        proportions_pow: float = 1,
+    ):
         """
-        #TODO: finish implementing and testing focal loss
-        pt = torch.exp(-BCE_loss)
-        row_loss = ((1 - pt) ** self.gamma) * BCE_loss
-        row_mean = torch.mean(row_loss, 0)
+        tag_token_proportions: Contains proportions of positive tokens for each tag.
+            Its shape is 1 x num_tags
+        """
+        super(FocalLoss, self).__init__()
 
-        F_loss = torch.dot(row_mean, self.alphas)"""
+        weight = (
+            torch.pow(
+                1 / ((tag_token_proportions + FocalLoss.EPSILON) * 2), proportions_pow
+            )
+            if tag_token_proportions is not None
+            else None
+        )
 
-        return BCE_loss
+        self.gamma = gamma
+        self.weight = weight.to(device=device)
+
+    def forward(self, inp, target):
+        ce_loss = F.binary_cross_entropy_with_logits(
+            inp,
+            # generally target is binary, so to be on the safe side convert to float64
+            target.to(torch.float64),
+            reduction="none",
+        )
+        pt = torch.exp(-ce_loss)
+
+        focal_loss = ((1 - pt) ** self.gamma * ce_loss * self.weight).mean()
+        return focal_loss

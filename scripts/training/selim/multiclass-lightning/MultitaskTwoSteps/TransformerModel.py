@@ -81,7 +81,7 @@ class TransformerArchitecture(torch.nn.Module):
             ]
         )
 
-        self.activation_function = nn.ELU()
+        self.activation_function = nn.SELU()
 
     def forward(self, inputs):
 
@@ -151,9 +151,10 @@ class TrainingTransformer(pl.LightningModule):
         model_name_or_path: str,
         tokenizer_name_or_path: str,
         val_params: Dict[str, float],
-        gpus: int,
         tagname_to_tagid,
-        loss_alphas,
+        tags_proportions,
+        loss_gamma,
+        proportions_pow,
         n_freezed_layers: int,
         learning_rate: float = 1e-5,
         adam_epsilon: float = 1e-7,
@@ -169,6 +170,7 @@ class TrainingTransformer(pl.LightningModule):
         self.lr = learning_rate
         self.weight_decay = weight_decay
         self.adam_epsilon = adam_epsilon
+        self.transformer_output_length = output_length
 
         self.tagname_to_tagid = tagname_to_tagid
         self.ids_each_level = get_first_level_ids(self.tagname_to_tagid)
@@ -185,12 +187,12 @@ class TrainingTransformer(pl.LightningModule):
 
         self.training_device = training_device
 
-        self.loss_alphas = loss_alphas
-
-        if gpus >= 1:
-            self.loss_alphas = self.loss_alphas.to(torch.device("cuda:0"))
-
-        self.Focal_loss = FocalLoss(alphas=self.loss_alphas)
+        self.loss = FocalLoss(
+            tag_token_proportions=tags_proportions,
+            gamma=loss_gamma,
+            proportions_pow=proportions_pow,
+            device=self.training_device,
+        )
 
     def forward(self, inputs):
         output = self.model(inputs)
@@ -198,7 +200,7 @@ class TrainingTransformer(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         outputs = self(batch)
-        train_loss = self.Focal_loss(outputs, batch["targets"], weighted=True)
+        train_loss = self.loss(outputs, batch["targets"])
 
         self.log(
             "train_loss",
@@ -212,7 +214,7 @@ class TrainingTransformer(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         outputs = self(batch)
-        val_loss = self.Focal_loss(outputs, batch["targets"], weighted=False)
+        val_loss = self.loss(outputs, batch["targets"])
         self.log(
             "val_loss",
             val_loss,
@@ -268,6 +270,7 @@ class LoggedTransformerModel(torch.nn.Module):
         self.tokenizer = trained_model.tokenizer
         self.tagname_to_tagid = trained_model.tagname_to_tagid
         self.max_len = trained_model.max_len
+        self.transformer_output_length = trained_model.transformer_output_length
         self.val_params = trained_model.val_params
         self.val_params["num_workers"] = 0
 
@@ -289,7 +292,7 @@ class LoggedTransformerModel(torch.nn.Module):
         2) postprocess them to output an output compatible with what we want in the inference
         """
 
-        validation_loader = self.get_loaders(
+        test_loader = self.get_loaders(
             dataset,
             self.val_params,
         )
@@ -301,27 +304,28 @@ class LoggedTransformerModel(torch.nn.Module):
 
         self.to(testing_device)
 
-        backbone_outputs = []
-
         with torch.no_grad():
-            for batch in tqdm(
-                validation_loader,
-                total=len(validation_loader.dataset) // validation_loader.batch_size,
-            ):
 
-                logits = self(
+            backbone_outputs = [
+                self(
                     {
                         "ids": batch["ids"].to(testing_device),
                         "mask": batch["mask"].to(testing_device),
                         "return_transformer_only": True,
                     }
                 ).cpu()
-
-                backbone_outputs.append(logits)
+                for batch in tqdm(
+                    test_loader,
+                    total=len(test_loader.dataset) // test_loader.batch_size,
+                )
+            ]
 
         backbone_outputs = torch.cat(backbone_outputs, dim=0)
 
         return backbone_outputs
+
+
+# TODO: clean all.
 
 
 class CustomDataset(Dataset):
@@ -358,6 +362,61 @@ class CustomDataset(Dataset):
         self.tagname_to_tagid = tagname_to_tagid
         self.tagid_to_tagname = list(tagname_to_tagid.keys())
         self.max_len = max_len
+
+    def _delete_context(text: str) -> str:
+        if text[0] == "[":
+            n_strings = len(text)
+            hook_end = 0
+            while text[hook_end] != "]" and hook_end < 50:
+                hook_end += 1
+                if hook_end == (n_strings - 1):
+                    return text
+
+            if hook_end < 70:
+                return text[(hook_end + 1) :].lstrip()
+            else:
+                return text.lstrip()
+
+        else:
+            return text.lstrip()
+
+    def _clean_lgbt_words(text: str) -> str:
+        def lgbt_in_word(word):
+            return "lgbt" in word.lower() or "lgtb" in word.lower()
+
+        def get_one_lgbt_token(word):
+            if word[-1] in punctuation and word[-1] != "+":
+                final_punct = word[-1]
+                word = word[:-1]
+            else:
+                final_punct = ""
+
+            return ("lgbt" + final_punct).rstrip()
+
+        clean_text = copy(text)
+        if lgbt_in_word(clean_text):
+            clean_text = clean_text.replace(" +", "+")
+            words = clean_text.split(" ")
+            output_text = " ".join(
+                [
+                    one_word
+                    if not lgbt_in_word(one_word)
+                    else get_one_lgbt_token(one_word)
+                    for one_word in words
+                ]
+            )
+            return output_text
+
+        else:
+            return text
+
+    def _preprocess_text(text: str) -> str:
+        clean_text = copy(text)
+        clean_text = delete_context(clean_text)
+        # clean_text = delete_punctuation(clean_text)
+        clean_text = clean_lgbt_words(clean_text)
+        # clean_text = preprocess_one_sentence(clean_text)
+        return clean_text
 
     def encode_example(self, excerpt_text: str, index=None, as_batch: bool = False):
 

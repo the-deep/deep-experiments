@@ -19,18 +19,18 @@ class Model(torch.nn.Module):
         self.l0 = AutoModel.from_pretrained(model_name_or_path)
         self.pool = Pooling(word_embedding_dimension=output_length, pooling_mode="cls")
 
-        self.LayerNorm_backbone = torch.nn.LayerNorm(output_length)
-        self.LayerNorm_specific_hidden = torch.nn.LayerNorm(dim_hidden_layer)
+        #self.LayerNorm_backbone = torch.nn.LayerNorm(output_length)
+        self.LayerNorm_specific_hidden = torch.nn.LayerNorm(output_length)
 
         self.dropout = torch.nn.Dropout(dropout_rate)
 
-        self.specific_hidden_layer = [
+        """self.specific_hidden_layer = [
             torch.nn.Linear(output_length, dim_hidden_layer) for _ in ids_each_level
         ]
-        self.specific_hidden_layer = torch.nn.ModuleList(self.specific_hidden_layer)
+        self.specific_hidden_layer = torch.nn.ModuleList(self.specific_hidden_layer)"""
 
         self.output_layer = [
-            torch.nn.Linear(dim_hidden_layer, len(id_one_level))
+            torch.nn.Linear(output_length, len(id_one_level))
             for id_one_level in ids_each_level
         ]
         self.output_layer = torch.nn.ModuleList(self.output_layer)

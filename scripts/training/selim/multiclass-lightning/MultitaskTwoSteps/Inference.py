@@ -14,6 +14,8 @@ import sys
 sys.path.append(".")
 
 import mlflow
+from ast import literal_eval
+from utils import flatten
 
 
 class ClassificationInference(mlflow.pyfunc.PythonModel):
@@ -30,61 +32,155 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
     def predict(self, context, inputs):
 
         input_sentences = inputs["excerpt"].tolist()
-        input_ids = inputs["entry_id"].tolist()
         n_entries = len(input_sentences)
         return_type = inputs["return_type"].values[0]
-        interpretability_bool = inputs["return_type"].values[0]
 
         if return_type == "default_analyis":
-            af_id = inputs["analyis_framework_id"].values[0]
 
-            if af_id in self.models.keys():
-                final_id = af_id
-            else:
-                final_id = "all"
+            output_backbone_embeddings_bool = inputs[
+                "output_backbone_embeddings"
+            ].values[0]
+            return_prediction_labels_bool = inputs["return_prediction_labels"].values[0]
+            interpretability_bool = inputs["interpretability"].values[0]
 
-            output_backbone = self.models["backbone"].get_transformer_outputs(
+            outputs = {}
+
+            outputs_backbone = self.models["backbone"].get_transformer_outputs(
                 input_sentences
             )
-            X_MLPs = {"X": output_backbone}
 
-            predictions = self.models[final_id].custom_predict(X_MLPs, testing=True)
+            if output_backbone_embeddings_bool:
+                # parameters retrieved from models
+                transformer_output_length = self.models[
+                    "backbone"
+                ].transformer_output_length
+                tot_labels_names = self.models["backbone"].tagname_to_tagid.keys()
+                possible_task_names = list(
+                    set([item.split("->")[0] for item in tot_labels_names])
+                )
+                possible_pooling_types = ["cls", "mean_pooling"]
+                n_possible_pooling_types = len(possible_pooling_types)
 
-            outputs = {
-                "raw_predictions": predictions,
-                "thresholds": self.models[final_id].optimal_thresholds,
-            }
+                # retured embedding is of the form [task1_cls_pooling, task1_mean_pooling, task2_cls_pooling, task2_mean_pooling ....]
+
+                # parameters retried from call
+                embedding_pooling_type = literal_eval(inputs["pooling_type"].values[0])
+                embedding_finetuned_task = literal_eval(
+                    inputs["finetuned_task"].values[0]
+                )
+
+                # sanity check for pooling types
+                for one_pooling_type in embedding_pooling_type:
+                    assert (
+                        one_pooling_type in possible_pooling_types
+                    ), f"'embedding_pooling_type' must be in {possible_pooling_types}"
+
+                # sanity check for finetuned tasks
+                for one_task in embedding_finetuned_task:
+                    assert (
+                        one_task in possible_task_names
+                    ), f"'embedding_finetuned_task' must be in {possible_task_names}"
+
+                # id of chosen pooling types in pooling possiblities
+                to_be_returned_pooling_ids = [
+                    i
+                    for i, type in enumerate(possible_pooling_types)
+                    if type in embedding_pooling_type
+                ]
+
+                # id of chosen finetuned tasks in pooling possiblities
+                to_be_returned_task_ids = [
+                    i
+                    for i, type in enumerate(possible_task_names)
+                    if type in embedding_finetuned_task
+                ]
+
+                # well locate embedding ids
+                to_be_returned_ids = [
+                    i * n_possible_pooling_types + j
+                    for i in to_be_returned_pooling_ids
+                    for j in to_be_returned_task_ids
+                ]
+                to_be_returned_embedding_ids = flatten(
+                    [
+                        [id_tmp for id_tmp in range(id, id + transformer_output_length)]
+                        for id in to_be_returned_ids
+                    ]
+                )
+
+                try:
+
+                    returned_embedding = outputs_backbone[
+                        :, to_be_returned_embedding_ids
+                    ]
+                except Exception:
+                    print("ids", to_be_returned_ids)
+                    print("embedding_ids", to_be_returned_embedding_ids)
+
+                embeddings_return_type = inputs["embeddings_return_type"].values[0]
+                possible_returning_types = ["list", "array"]
+                assert (
+                    embeddings_return_type in possible_returning_types
+                ), f"'embeddings_return_type' parameter must be in {possible_returning_types}"
+
+                if embeddings_return_type == "list":
+                    returned_embedding = returned_embedding.tolist()
+                else:
+                    returned_embedding = returned_embedding.numpy()
+
+                outputs["output_backbone"] = returned_embedding
+
+            if return_prediction_labels_bool or interpretability_bool:
+                af_id = inputs["analyis_framework_id"].values[0]
+                if af_id in self.models.keys():
+                    final_id = af_id
+                else:
+                    final_id = "all"
+
+                X_MLPs = {"X": outputs_backbone}
+                predictions = self.models[final_id].custom_predict(X_MLPs, testing=True)
+
+            if return_prediction_labels_bool:
+                outputs["raw_predictions"] = predictions
+                outputs["thresholds"] = self.models[final_id].optimal_thresholds
 
             if interpretability_bool:
-                prediction_specific_label_ids = inputs[
-                    "prediction_specific_label_ids"
-                ].tolist()
-                interpretability_results = {}
+                ratio_interpreted_labels = inputs["ratio_interpreted_labels"].values[0]
+                attribution_type = inputs["attribution_type"].values[0]
+
+                ATTRIBUTION_TYPES = [
+                    "Layer DeepLift",
+                    "Layer Integrated Gradients",
+                ]
+                assert (
+                    attribution_type in ATTRIBUTION_TYPES
+                ), f"'attribution_type' parameter must be in {ATTRIBUTION_TYPES}"
+
+                interpretability_results = []
+                cls_explainer = MultiLabelClassificationExplainer(
+                    self.models["backbone"], attribution_type
+                )
 
                 for i in range(n_entries):
-                    cls_explainer = MultiLabelClassificationExplainer(
-                        self.models["backbone"]
-                    )
+                    predictions_one_sentence = [
+                        label
+                        for label, ratio in predictions[i].items()
+                        if ratio > ratio_interpreted_labels
+                    ]
                     one_sentence = input_sentences[i]
-                    one_entry_id = input_ids[i]
-                    if prediction_specific_label_ids[0] is None:
-                        prediction_one_entry = predictions[i]
-                        final_predictions = [
-                            label
-                            for label, ratio in prediction_one_entry.items()
-                            if ratio >= 1
-                        ]
+                    if len(predictions_one_sentence) > 0:
                         attributions_one_entry = cls_explainer(
-                            one_sentence, final_predictions
+                            one_sentence, predictions_one_sentence
                         )
                     else:
-                        attributions_one_entry = cls_explainer(
-                            one_sentence, prediction_specific_label_ids[i]
-                        )
-                    interpretability_results[one_entry_id] = attributions_one_entry
-                return interpretability_results
+                        attributions_one_entry = {}
+
+                    interpretability_results.append(attributions_one_entry)
+
+                outputs["interpretability_results"] = interpretability_results
 
             return outputs
+
         else:
             processing_function = inputs["processing_function"].values[0]
             kwargs = inputs["kwargs"].values[0]

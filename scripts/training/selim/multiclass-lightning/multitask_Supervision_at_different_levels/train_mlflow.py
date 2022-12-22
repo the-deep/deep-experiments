@@ -166,61 +166,56 @@ if __name__ == "__main__":
             testing_excerpt = test_df_col["excerpt"]
             groundtruth_column = test_df_col[column]
 
-            iter_nb = 0
-            while best_score < 0.7 and iter_nb < args.nb_repetitions:
+            train_df, val_df = preprocess_df(
+                whole_df, column, multiclass_bool, keep_neg_examples
+            )
 
-                train_df, val_df = preprocess_df(
-                    whole_df, column, multiclass_bool, keep_neg_examples
-                )
+            if len(train_df) > 150_000:
+                dropout_column = 0.3
+                weight_decay_col = 0.01
+                dim_hidden_layer = 128
+            else: 
+                dropout_column = 0.4
+                weight_decay_col = 0.02
+                dim_hidden_layer = 64
 
-                if len(train_df) > 150_000:
-                    dropout_column = 0.3
-                    weight_decay_col = 0.01
-                    dim_hidden_layer = 128
-                else: 
-                    dropout_column = 0.4
-                    weight_decay_col = 0.02
-                    dim_hidden_layer = 64
+            model_trainer = CustomTrainer(
+                train_dataset=train_df,
+                val_dataset=val_df,
+                MODEL_DIR=args.model_dir,
+                MODEL_NAME=args.model_name,
+                TOKENIZER_NAME=args.tokenizer_name,
+                training_column=column,
+                gpu_nb=gpu_nb,
+                train_params=train_params,
+                val_params=val_params,
+                MAX_EPOCHS=args.epochs,
+                dropout_rate=dropout_column,
+                weight_decay=weight_decay_col,
+                learning_rate=args.learning_rate,
+                max_len=args.max_len,
+                warmup_steps=args.warmup_steps,
+                output_length=args.output_length,
+                multiclass_bool=multiclass_bool,
+                training_device=training_device,
+                beta_f1=args.beta_f1,
+                dim_hidden_layer=dim_hidden_layer
+            )
 
-                model_trainer = CustomTrainer(
-                    train_dataset=train_df,
-                    val_dataset=val_df,
-                    MODEL_DIR=args.model_dir,
-                    MODEL_NAME=args.model_name,
-                    TOKENIZER_NAME=args.tokenizer_name,
-                    training_column=column,
-                    gpu_nb=gpu_nb,
-                    train_params=train_params,
-                    val_params=val_params,
-                    MAX_EPOCHS=args.epochs,
-                    dropout_rate=dropout_column,
-                    weight_decay=weight_decay_col,
-                    learning_rate=args.learning_rate,
-                    max_len=args.max_len,
-                    warmup_steps=args.warmup_steps,
-                    output_length=args.output_length,
-                    multiclass_bool=multiclass_bool,
-                    training_device=training_device,
-                    beta_f1=args.beta_f1,
-                    dim_hidden_layer=dim_hidden_layer
-                )
+            model = model_trainer.train_model()
+            model_score = model.val_f1_score
 
-                model = model_trainer.train_model()
-                model_score = model.val_f1_score
+            mlflow.log_metric(
+                f"{args.beta_f1}_f1_score_{column}", model_score
+            )
+            mlflow.log_param(f'lr_{column}', model.hparams.learning_rate)
+            mlflow.log_metrics(
+                clean_name_for_logging(model.optimal_thresholds)
+            )
 
-                mlflow.log_metric(
-                    f"{args.beta_f1}_f1_score_{column}_iter{iter_nb + 1}", model_score
-                )
-                mlflow.log_param(f'lr_{column}_iter{iter_nb + 1}', model.hparams.learning_rate)
-                mlflow.log_metrics(
-                    clean_name_for_logging(model.optimal_thresholds)
-                )
+            pyfunc_prediction_wrapper.add_model(model, column)
 
-                if model_score > best_score:
-                    best_score = model_score
-                    pyfunc_prediction_wrapper.add_model(model, column)
-
-                iter_nb += 1
+        pyfunc_prediction_wrapper.add_model(model, column)
 
         try:
             mlflow.pyfunc.log_model(
@@ -243,16 +238,30 @@ if __name__ == "__main__":
         except Exception as e:
             logging.info("pyfunc", e)
 
-    raw_predictions = {}
+    #testing
+    ukraine_excerpts_bool = test_df.ukraine_excerpt
+    test_excerpts = test_df[~ukraine_excerpts_bool]["excerpt"]
+    ukraine_excerpts = test_df[ukraine_excerpts_bool]["excerpt"]
+
+    raw_predictions_test_set = {}
+    raw_predictions_ukraine_df = {}
     for tag_name, trained_model in pyfunc_prediction_wrapper.models.items():
 
-        predictions_one_model = trained_model.custom_predict(
-            test_df["excerpt"], testing=True
-        )
-        raw_predictions[tag_name] = predictions_one_model
+        if len(test_excerpts)>0:
+            predictions_one_model = trained_model.custom_predict(
+                test_excerpts, testing=True
+            )
+            raw_predictions_test_set[tag_name] = predictions_one_model
+
+        if len(ukraine_excerpts)>0:
+            predictions_one_model = trained_model.custom_predict(
+                ukraine_excerpts, testing=True
+            )
+            raw_predictions_ukraine_df[tag_name] = predictions_one_model
 
     outputs = {
-        "preds": raw_predictions,
+        "preds_test_set": raw_predictions_test_set,
+        'preds_ukraine_df': raw_predictions_ukraine_df,
         "thresholds": pyfunc_prediction_wrapper.thresholds,
     }
 

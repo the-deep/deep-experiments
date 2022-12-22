@@ -102,7 +102,6 @@ def preprocess_df(
 
     NB: work with ids because the augmented sentences have the same entry_id as the original ones
     """
-
     # rename column to 'target' to be able to work on it generically
     dataset = (
         df[["entry_id", "excerpt", column_name]]
@@ -110,6 +109,9 @@ def preprocess_df(
         .dropna()
         .copy()
     )
+
+    bool_augmented_data = dataset.entry_id==0
+
 
     dataset["target"] = dataset.target.apply(lambda x: clean_rows(x))
 
@@ -130,15 +132,18 @@ def preprocess_df(
         }
     else:
         ratios = {
-            "train": 0.85,
-            "val": 0.15,
+            "train": 0.82,
+            "val": 0.18,
         }
 
     train_pos_entries, val_pos_entries = custom_stratified_train_test_split(
-        dataset, ratios
+        dataset[~bool_augmented_data], ratios
     )
 
     df_train = dataset[dataset.entry_id.isin(train_pos_entries)]
+    df_train = pd.concat(
+        [df_train, dataset[bool_augmented_data]]
+    )
     df_val = dataset[dataset.entry_id.isin(val_pos_entries)]
 
     return df_train, df_val
