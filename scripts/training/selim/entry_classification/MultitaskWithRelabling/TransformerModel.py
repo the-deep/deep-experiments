@@ -4,16 +4,19 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from typing import Dict
+from typing import Dict, List
 from transformers import AdamW, AutoTokenizer, AutoModel
 from data import ExcerptsDataset
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
+from sklearn.preprocessing import MultiLabelBinarizer
 
 from utils import (
     _flatten,
     get_tag_id_to_layer_id,
     get_first_level_ids,
+    _get_parent_tags,
+    _postprocess_predictions_one_excerpt,
 )
 from loss import FocalLoss
 from pooling import Pooling
@@ -272,6 +275,27 @@ class LoggedTransformerModel(torch.nn.Module):
         self.transformer_output_length = trained_model.transformer_output_length
         self.val_params = trained_model.val_params
         self.val_params["num_workers"] = 0
+        self.parent_tags = _get_parent_tags(list(self.tagname_to_tagid.keys()))
+
+        self.single_label_tags: List[List[str]] = [
+            [
+                "secondary_tags->severity->Critical issue",
+                "secondary_tags->severity->Issue of concern",
+                "secondary_tags->severity->Minor issue",
+                "secondary_tags->severity->Severe issue",
+            ],
+            [
+                "secondary_tags->Non displaced->Host",
+                "secondary_tags->Non displaced->Non host",
+            ],
+            [
+                "secondary_tags->Gender->All",
+                "secondary_tags->Gender->Female",
+                "secondary_tags->Gender->Male",
+            ],
+        ]
+
+        self.all_postprocessed_labels = _flatten(self.single_label_tags)
 
     def forward(self, inputs):
         output = self.trained_architecture(inputs)
@@ -363,3 +387,22 @@ class LoggedTransformerModel(torch.nn.Module):
 
             else:
                 return probabilities_dict
+
+    def generate_test_predictions(self, entries: List[str]):
+
+        model_outputs = self.custom_predict(
+            entries,
+            return_transformer_only=False,
+            hypertuning_threshold=False,
+        )
+        postprocessed_outputs = [
+            _postprocess_predictions_one_excerpt(
+                one_raw_pred,
+                self.all_postprocessed_labels,
+                self.single_label_tags,
+                self.parent_tags,
+            )
+            for one_raw_pred in model_outputs
+        ]
+
+        return postprocessed_outputs

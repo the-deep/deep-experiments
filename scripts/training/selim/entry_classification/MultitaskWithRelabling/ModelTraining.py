@@ -1,15 +1,19 @@
 import os
-import torch
+import pandas as pd
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
-from utils import get_tagname_to_id, get_tags_proportions, hypertune_threshold
+from utils import (
+    get_tagname_to_id,
+    get_tags_proportions,
+    hypertune_threshold,
+    create_train_val_df,
+)
 from TransformerModel import TrainingTransformer, LoggedTransformerModel
 
 
 def train_model(
-    train_dataset,
-    val_dataset,
+    train_val_dataset: pd.DataFrame,
     MODEL_DIR: str,
     MODEL_NAME: str,
     dropout_rate: float,
@@ -33,6 +37,8 @@ def train_model(
     """
     function to train one model
     """
+
+    train_dataset, val_dataset = create_train_val_df(train_val_dataset)
 
     if not os.path.exists(MODEL_DIR):
         os.makedirs(MODEL_DIR)

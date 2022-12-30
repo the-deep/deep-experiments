@@ -12,7 +12,8 @@ from typing import Dict, List, Union, Tuple
 from collections import Counter, defaultdict
 import torch
 from transformers import AutoTokenizer
-from sklearn import metrics
+from sklearn.metrics import precision_recall_fscore_support
+from sklearn.preprocessing import MultiLabelBinarizer
 
 warnings.filterwarnings("ignore")
 
@@ -35,22 +36,21 @@ def beta_score(precision: float, recall: float, f_beta: Union[int, float]) -> fl
     return (1 + f_beta**2) * precision * recall / ((f_beta**2) * precision + recall)
 
 
-def clean_name_for_logging(
-    dict_values: Dict[str, float], context: str, af_id: int = None
-) -> Dict[str, float]:
+def clean_str_for_logging(text: str):
+    return re.sub("[^0-9a-zA-Z]+", "_", copy(text))
+
+
+def clean_results_for_logging(results: Dict[str, Dict[str, float]]) -> Dict[str, float]:
     """clean names and prepare them for logging"""
 
-    def get_new_name(name: str, context: str, af_id: int = None):
-        # clean regex
-        claned_name = re.sub("[^0-9a-zA-Z]+", "_", name)
-        if af_id is None:
-            return f"{context}_{claned_name}"
-        else:
-            return f"{context}_{claned_name}_{af_id}"
+    final_mlflow_outputs = {}
+    for tagname, tagresults in results.items():
+        for metric, score in tagresults.items():
+            mlflow_name = f"{metric}_{tagname}"
+            mlflow_name = clean_str_for_logging(mlflow_name)
+            final_mlflow_outputs[mlflow_name] = score
 
-    return {
-        get_new_name(key, context, af_id): value for key, value in dict_values.items()
-    }
+    return final_mlflow_outputs
 
 
 def get_tagname_to_id(target) -> Dict[str, int]:
@@ -429,17 +429,16 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
             max(0.01, max(preds_one_column)), 2
         )  # so no value equal to 0
 
-        thresholds_list = np.round(np.linspace(max_proba, min_proba, 101), 2)
+        thresholds_list = np.round(np.linspace(max_proba, min_proba, 21), 2)
 
         f_beta_scores = []
         precision_scores = []
         recall_scoress = []
         for thresh_tmp in thresholds_list:
-            score = get_metric(
-                preds_one_column,
-                y_true[:, j],
+            score = get_metrics(
+                np.array(preds_one_column > thresh_tmp).astype(int),
+                np.array(y_true[:, j]),
                 f_beta,
-                thresh_tmp,
             )
             f_beta_scores.append(score["f_beta_score"])
             precision_scores.append(score["precision"])
@@ -481,21 +480,32 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
     return optimal_thresholds_dict, optimal_scores
 
 
-def get_metric(preds, groundtruth, f_beta, threshold_tmp):
-    columns_logits = np.array(preds)
-    column_pred = np.array(columns_logits > threshold_tmp).astype(int)
+def generate_results(model, entries: List[str], groundtruth: List[List[str]]):
+    predictions = model.generate_test_predictions(entries)
+    mlb = MultiLabelBinarizer(list(model.tagname_to_tagid.keys()))
 
-    precision = metrics.precision_score(
-        groundtruth,
-        column_pred,
-        average="binary",
+    binary_outputs_predictions = mlb.fit_transform(predictions)
+    binary_outputs_groundtruth = mlb.fit_transform(groundtruth)
+
+    tot_scores = {}
+
+    for tagname, tagid in model.tagname_to_tagid.items():
+        predictions_one_tag = binary_outputs_predictions[:, tagid]
+        groundtruths_one_tag = binary_outputs_groundtruth[:, tagid]
+
+        scores_one_tag = get_metrics(predictions_one_tag, groundtruths_one_tag)
+
+        tot_scores[tagname] = scores_one_tag
+
+    return tot_scores
+
+
+def get_metrics(preds, groundtruth, f_beta=1):
+
+    precision, recall, f_beta_score, _ = precision_recall_fscore_support(
+        groundtruth, preds, average="binary", beta=f_beta
     )
-    recall = metrics.recall_score(
-        groundtruth,
-        column_pred,
-        average="binary",
-    )
-    f_beta_score = beta_score(precision, recall, f_beta)
+
     return {
         "precision": np.round(precision, 3),
         "recall": np.round(recall, 3),
@@ -540,11 +550,18 @@ def _get_labled_unlabled_data(
     train_val_data_labeled["target"] = train_val_data_labeled["target"].apply(
         lambda x: [tag for tag in x if tag in tags_with_same_projects]
     )
-    # TODO: take care of translation for train val labeled
+    # take care of translation for train val labeled
     train_val_data_labeled = _create_df_with_translations(train_val_data_labeled.copy())
 
     # train val data: to be relabeled
     train_val_data_one_tag_non_labeled = train_val_df[~mask_labeled_projects].copy()
+
+    if len(train_val_data_one_tag_non_labeled) > 0:
+        train_val_data_one_tag_non_labeled[
+            "excerpt"
+        ] = train_val_data_one_tag_non_labeled.apply(
+            lambda x: x[x["original_language"]], axis=1
+        )
 
     # test set for results generation
     test_data_one_tag_labeled = test_df[
@@ -561,7 +578,7 @@ def _get_labled_unlabled_data(
     )
 
 
-def _create_stratified_train_test_df(all_data: pd.DataFrame):
+def _create_stratified_train_test_df(all_data: pd.DataFrame, sample_data: bool = False):
     train_val_df = pd.DataFrame()
     test_df = pd.DataFrame()
 
@@ -586,6 +603,199 @@ def _create_stratified_train_test_df(all_data: pd.DataFrame):
                 data_one_project[data_one_project.entry_id.isin(test_ids_one_project)],
             ]
         )
-    test_df["excerpt"] = test_df.apply(lambda x: x[x["original_language"]], axis=1)
+
+    if len(test_df) > 0:
+        test_df["excerpt"] = test_df.apply(lambda x: x[x["original_language"]], axis=1)
+
+    if sample_data:
+        train_val_df = train_val_df.sample(n=200)
+        test_df = test_df.sample(n=10)
 
     return train_val_df, test_df
+
+
+def _get_parent_tags(all_tags: List[str]):
+
+    # from mapping sheet
+    parent_tags = defaultdict(list)
+    parent_tags.update(
+        {
+            "secondary_tags->Age->12-17 years old": [
+                "secondary_tags->Age-><18 years old",
+                "secondary_tags->Age->5-17 years old",
+            ],
+            "secondary_tags->Age->5-11 years old": [
+                "secondary_tags->Age-><18 years old",
+                "secondary_tags->Age->5-17 years old",
+            ],
+            "secondary_tags->Age->18-24 years old": [
+                "secondary_tags->Age->18-59 years old"
+            ],
+            "secondary_tags->Age->25-59 years old": [
+                "secondary_tags->Age->18-59 years old"
+            ],
+            "secondary_tags->Age->5-17 years old": [
+                "secondary_tags->Age-><18 years old"
+            ],
+            "secondary_tags->Age-><5 years old": ["secondary_tags->Age-><18 years old"],
+            "secondary_tags->Displaced->In transit": [
+                "secondary_tags->Displaced->Others of concern"
+            ],
+            "secondary_tags->Displaced->Irregular": [
+                "secondary_tags->Displaced->Migrants"
+            ],
+            "secondary_tags->Displaced->Regular": [
+                "secondary_tags->Displaced->Migrants"
+            ],
+            "secondary_tags->Displaced->Pendular": [
+                "secondary_tags->Displaced->Migrants"
+            ],
+        }
+    )
+
+    for tag in all_tags:
+        if "secondary_tags->Displaced" in tag:
+            parent_tags[tag].append("first_level_tags->Affected->Displaced")
+        elif "secondary_tags->Non displaced" in tag:
+            parent_tags[tag].append("first_level_tags->Affected->Non displaced")
+        elif any(
+            [kw in tag for kw in ["subpillars_2d", "subpillars_1d", "subsectors"]]
+        ):
+            parent_kw = "->".join(tag.replace("sub", "").split("->")[:-1])
+            parent_kw = f"first_level_tags->{parent_kw}"
+            parent_tags[tag].append(parent_kw)
+
+    return parent_tags
+
+
+def _tag_is_valid(tag: str, tags_results: str, parent_tags: Dict[str, List[str]]):
+    """
+    tag: each prediction
+    tags_results: all predictions
+    parent tags: all parents of each tag need to be there to validate tag
+    """
+    if tag not in parent_tags:
+        return True
+    else:
+        tag_parents = parent_tags[tag]
+        if all([one_parent_tag in tags_results for one_parent_tag in tag_parents]):
+            return True
+        else:
+            return False
+
+
+def _get_final_demographic_groups(demographic_group_tags: List[str]):
+
+    if len(demographic_group_tags) == 0:
+        return []
+
+    potprocessed_demographic_groups = []
+    gender_tag = [tag for tag in demographic_group_tags if "Gender" in tag]
+    assert len(gender_tag) <= 1, "problem in tags postprocessing"
+
+    if len(gender_tag) == 0:
+        final_gender_tag = "secondary_tags->Gender->All"
+    else:
+        final_gender_tag = gender_tag[0]
+
+    age_tags = [tag for tag in demographic_group_tags if "Gender" in tag]
+    if len(age_tags) == 0:
+        potprocessed_demographic_groups.append(
+            f"secondary_tags->Demographic Groups->{final_gender_tag.capitalize()}"
+        )
+    else:
+        potprocessed_demographic_groups.extend(
+            [
+                f"secondary_tags->Demographic Groups->{final_gender_tag.capitalize()} - {one_age.capitalize()}"
+                for one_age in age_tags
+            ]
+        )
+
+    return potprocessed_demographic_groups
+
+
+def _postprocess_predictions_one_excerpt(
+    tag_results: Dict[str, float],
+    all_postprocessed_labels: List[str],
+    single_label_tags: List[List[str]],
+    parent_tags: Dict[str, List[str]],
+):
+    """
+    tag_results: Dict[str: tag name, float: ratio of predictions]
+    single_label_tags: groups of labels to be treated
+    all_postprocessed_labels: flatened single_label_tags
+    """
+    tmp_outputs = {
+        tag: proportion
+        for tag, proportion in tag_results.items()
+        if tag not in all_postprocessed_labels
+    }
+    for one_tags_list in single_label_tags:
+        output_one_list = {
+            tag: proportion
+            for tag, proportion in tag_results.items()
+            if tag in one_tags_list
+        }
+        if len(output_one_list) > 0:
+            output_one_list = max(output_one_list, key=output_one_list.get)
+            tmp_outputs.update({output_one_list: tag_results[output_one_list]})
+
+    tmp_outputs = [
+        tag
+        for tag, prediction_ratio in tmp_outputs.items()
+        if prediction_ratio >= 1 or "severity" in tag
+    ]
+    tmp_outputs = [
+        tag for tag in tmp_outputs if _tag_is_valid(tag, tmp_outputs, parent_tags)
+    ]
+    final_outputs = [
+        tag for tag in tmp_outputs if all([kw not in tag for kw in ["Age", "Gender"]])
+    ]
+    demographic_group_outputs = [
+        tag for tag in tmp_outputs if all([kw in tag for kw in ["Age", "Gender"]])
+    ]
+    final_outputs.extend(_get_final_demographic_groups(demographic_group_outputs))
+
+    return tag_results
+
+
+def _get_sectors_non_sectors_grouped_tags(grouped_tags: List[List[str]]):
+    non_sector_groups, sector_groups = [], []
+    sectors_kw = "first_level_tags->sectors"
+    cross_tag_name = "first_level_tags->sectors->Cross"
+
+    for one_group_tags in grouped_tags:
+        one_group_non_sectors, one_group_sectors = [], []
+        for one_tag in one_group_tags:
+            if one_tag != cross_tag_name:
+                if sectors_kw in one_tag:
+                    one_group_sectors.append(one_tag)
+                else:
+                    one_group_non_sectors.append(one_tag)
+
+        if len(one_group_non_sectors) > 0:
+            non_sector_groups.append(one_group_non_sectors)
+        if len(one_group_sectors) > 0:
+            sector_groups.append(one_group_sectors)
+
+    return sector_groups, non_sector_groups
+
+
+def _update_final_labels_dict(
+    train_val_data_labeled: pd.DataFrame,
+    final_predictions_unlabled_train_val: List[List[str]],
+    train_val_data_non_labeled: pd.DataFrame,
+    train_val_final_labels: Dict[str, List[str]],
+):
+
+    # update with groundtruths labels
+    for i, row in train_val_data_labeled.iterrows():
+        train_val_final_labels[row["entry_id"]].extend(row["target"])
+
+    # update with newly labeled data
+    for i in range(len(final_predictions_unlabled_train_val)):
+        train_val_final_labels[train_val_data_non_labeled.iloc[i]["entry_id"]].extend(
+            final_predictions_unlabled_train_val[i]
+        )
+
+    return train_val_final_labels

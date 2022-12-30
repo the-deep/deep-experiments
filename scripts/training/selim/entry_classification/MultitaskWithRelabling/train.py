@@ -20,15 +20,17 @@ import torch
 from collections import defaultdict
 import pandas as pd
 import numpy as np
-from typing import Dict
+from typing import Dict, List
 from utils import (
     preprocess_df,
-    clean_name_for_logging,
+    clean_str_for_logging,
+    clean_results_for_logging,
     get_n_tokens,
-    create_train_val_df,
     _get_labled_unlabled_data,
     _create_stratified_train_test_df,
-    _create_df_with_translations,
+    _update_final_labels_dict,
+    generate_results,
+    _get_sectors_non_sectors_grouped_tags,
 )
 
 
@@ -39,6 +41,37 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 # logging.getLogger().setLevel(logging.DEBUG)
+
+
+def train_test_relabel(
+    train_val_data_labeled: pd.DataFrame,
+    train_val_data_one_tag_non_labeled: pd.DataFrame,
+    test_data_one_tag_labeled: pd.DataFrame,
+    classification_transformer_name,
+):
+    transformer_model = train_model(
+        MODEL_NAME=classification_transformer_name,
+        train_val_dataset=train_val_data_labeled,
+        hypertune_threshold_bool=True,
+        **model_args,
+    )
+
+    # Generate predictions and results on labeled test set
+    test_set_results = generate_results(
+        transformer_model,
+        test_data_one_tag_labeled.excerpt.tolist(),
+        test_data_one_tag_labeled["target"].tolist(),
+    )
+
+    final_mlflow_results = clean_results_for_logging(test_set_results)
+    mlflow.log_metrics(final_mlflow_results)
+
+    # predictions on unlabeled train val df
+    final_predictions_unlabled_train_val = transformer_model.generate_test_predictions(
+        train_val_data_one_tag_non_labeled.excerpt
+    )
+
+    return final_predictions_unlabled_train_val
 
 
 if __name__ == "__main__":
@@ -149,6 +182,26 @@ if __name__ == "__main__":
             "min_entries_per_proj": args.min_entries_per_proj,
         }
 
+        model_args = {
+            "MODEL_DIR": args.model_dir,
+            "BACKBONE_NAME": args.model_name,
+            "TOKENIZER_NAME": args.tokenizer_name,
+            "f_beta": args.f_beta,
+            "max_len": args.max_len,
+            "n_freezed_layers": args.n_freezed_layers,
+            "MAX_EPOCHS": args.epochs,
+            "dropout_rate": args.dropout,
+            "weight_decay": args.weight_decay,
+            "learning_rate": args.learning_rate,
+            "output_length": args.output_length,
+            "loss_gamma": args.loss_gamma,
+            "proportions_pow": args.proportions_pow,
+            "gpu_nb": gpu_nb,
+            "train_params": train_params_transformer,
+            "val_params": val_params_transformer,
+            "training_device": training_device,
+        }
+
         mlflow.log_params(params)
         mlflow.log_param("train_batch_size", args.train_batch_size)
 
@@ -159,6 +212,12 @@ if __name__ == "__main__":
         all_data, projects_list_per_tag, grouped_tags = preprocess_df(
             all_data, args.min_entries_per_proj
         )
+        sector_groups, non_sector_groups = _get_sectors_non_sectors_grouped_tags(
+            grouped_tags
+        )
+        mlflow.log_metrics(
+            {"n_groups_for relabling": len(sector_groups) + len(non_sector_groups)}
+        )
 
         # Stratified splitting project-wise
         train_val_df, test_df = _create_stratified_train_test_df(all_data)
@@ -167,26 +226,89 @@ if __name__ == "__main__":
             n_tokens = get_n_tokens(train_val_df.excerpt.tolist())
             train_val_df = train_val_df.iloc[n_tokens <= int(args.max_len * 1.5)]
 
-        # final format for training
-        train_val_df = _create_df_with_translations(train_val_df)
-
         ###############################     Apply Relabling     ###############################
+
+        well_labeled_examples = []
 
         # Dict[int: entry_id, List[str]: final tags]
         train_val_final_labels = defaultdict(list)
 
-        # TODO: Cross relabling: treat sectors first hen others
-        ...
+        ###### sector groups
+        for tags_with_same_projects in sector_groups:
 
-        for tags_with_same_projects in grouped_tags:
+            projects_list_one_same_tags_set = projects_list_per_tag[
+                tags_with_same_projects[0]
+            ]
+
+            cross_tag_name = "first_level_tags->sectors->Cross"
+
+            mask_cross_in_target = train_val_df.target.apply(
+                lambda x: cross_tag_name in x
+            )
+            cross_train_val_df = train_val_df[mask_cross_in_target].copy()
+            non_cross_train_val_df = train_val_df[~mask_cross_in_target].copy()
+            non_cross_test_df = test_df[
+                test_df.target.apply(lambda x: cross_tag_name not in x)
+            ].copy()
+
+            (
+                train_val_data_labeled,
+                train_val_data_non_labeled,
+                test_data_labeled,
+            ) = _get_labled_unlabled_data(
+                non_cross_train_val_df,
+                non_cross_test_df,
+                projects_list_one_same_tags_set,
+                tags_with_same_projects,
+            )
+
+            train_val_data_non_labeled = pd.concat(
+                [train_val_data_non_labeled, cross_train_val_df]
+            )
+
+            n_labeled = train_val_data_labeled.entry_id.nunique()
+            n_non_labeled = train_val_data_non_labeled.entry_id.nunique()
+
+            ratio_unlabeled_labeled = n_non_labeled / n_labeled
+
+            # no relabling if less than 10% of the data is not labeled
+            if ratio_unlabeled_labeled > 0.1:
+                # classification model name
+                classification_transformer_name = (
+                    f"model_{clean_str_for_logging('_'.join(tags_with_same_projects))}"
+                )
+
+                final_predictions_unlabled_train_val = train_test_relabel(
+                    train_val_data_labeled,
+                    train_val_data_non_labeled,
+                    test_data_labeled,
+                    classification_transformer_name,
+                )
+            else:
+                final_predictions_unlabled_train_val = [
+                    [] for _ in range(n_non_labeled)
+                ]
+                well_labeled_examples.extend(tags_with_same_projects)
+
+            # update with labels
+            train_val_final_labels = _update_final_labels_dict(
+                train_val_data_labeled,
+                final_predictions_unlabled_train_val,
+                train_val_data_non_labeled,
+                train_val_final_labels,
+            )
+
+        ###### non sector groups
+        for tags_with_same_projects in non_sector_groups:
+
             projects_list_one_same_tags_set = projects_list_per_tag[
                 tags_with_same_projects[0]
             ]
 
             (
                 train_val_data_labeled,
-                train_val_data_one_tag_non_labeled,
-                test_data_one_tag_labeled,
+                train_val_data_non_labeled,
+                test_data_labeled,
             ) = _get_labled_unlabled_data(
                 train_val_df,
                 test_df,
@@ -196,71 +318,35 @@ if __name__ == "__main__":
 
             # classification model name
             classification_transformer_name = (
-                f"model_{clean_name_for_logging('_'.join(tags_with_same_projects))}"
+                f"model_{clean_str_for_logging('_'.join(tags_with_same_projects))}"
             )
 
-            train_df_one_tag, val_df_one_tag = create_train_val_df(
-                train_val_data_labeled
+            # no relabling if less than 10% of the data is not labeled
+            if ratio_unlabeled_labeled > 0.1:
+                # classification model name
+                classification_transformer_name = (
+                    f"model_{clean_str_for_logging('_'.join(tags_with_same_projects))}"
+                )
+
+                final_predictions_unlabled_train_val = train_test_relabel(
+                    train_val_data_labeled,
+                    train_val_data_non_labeled,
+                    test_data_labeled,
+                    classification_transformer_name,
+                )
+            else:
+                final_predictions_unlabled_train_val = [
+                    [] for _ in range(n_non_labeled)
+                ]
+                well_labeled_examples.extend(tags_with_same_projects)
+
+            # update with labels
+            train_val_final_labels = _update_final_labels_dict(
+                train_val_data_labeled,
+                final_predictions_unlabled_train_val,
+                train_val_data_non_labeled,
+                train_val_final_labels,
             )
-
-            transformer_model = train_model(
-                train_dataset=train_df_one_tag,
-                val_dataset=val_df_one_tag,
-                MODEL_DIR=args.model_dir,
-                MODEL_NAME=classification_transformer_name,
-                BACKBONE_NAME=args.model_name,
-                TOKENIZER_NAME=args.tokenizer_name,
-                gpu_nb=gpu_nb,
-                loss_gamma=args.loss_gamma,
-                proportions_pow=args.proportions_pow,
-                train_params=train_params_transformer,
-                val_params=val_params_transformer,
-                MAX_EPOCHS=args.epochs,
-                dropout_rate=args.dropout,
-                weight_decay=args.weight_decay,
-                learning_rate=args.learning_rate,
-                output_length=args.output_length,
-                training_device=training_device,
-                f_beta=args.f_beta,
-                max_len=args.max_len,
-                n_freezed_layers=args.n_freezed_layers,
-                hypertune_threshold_bool=True,
-            )
-
-            # generate predictions on labeled test set
-            predictions_one_tag_test_data = transformer_model.custom_predict(
-                test_data_one_tag_labeled.excerpt,
-                return_transformer_only=False,
-                hypertuning_threshold=False,
-            )
-
-            # TODO: results on test set
-            ...
-
-            # predictions on unlabeled train val df
-            predictions_one_tag_unlabeled_excerpts = transformer_model.custom_predict(
-                train_val_data_one_tag_non_labeled.excerpt,  # TODO: excerpt here or languages mean or what
-                return_transformer_only=False,
-                hypertuning_threshold=False,
-            )
-
-            # TODO: final results unlabeled df + one final results per entry_id
-            ...
-
-            # TODO: postprocessing: not including one tag if parent not there + take care of specific case of demographic groups
-            ...
-
-            final_predictions_unlabled_train_val = ...
-
-            # update with groundtruths labels
-            for i, row in train_val_data_labeled.iterrows():
-                train_val_final_labels[row["entry_id"]].extend(row["target"])
-
-            # update with newly labeled data
-            for i in range(len(final_predictions_unlabled_train_val)):
-                train_val_final_labels[
-                    train_val_data_one_tag_non_labeled.iloc[i]["entry_id"]
-                ].extend(final_predictions_unlabled_train_val[i])
 
         final_labels_df = pd.DataFrame(
             list(
@@ -285,36 +371,44 @@ if __name__ == "__main__":
 
         ###############################  train backbone model   ###############################
 
-        train_df, val_df = create_train_val_df(train_val_df)
-
         TRANSFORMER_MODEL_NAME = "all_tags_transformer_model"
 
         transformer_model = train_model(
-            train_dataset=train_df,
-            val_dataset=val_df,
-            MODEL_DIR=args.model_dir,
             MODEL_NAME=TRANSFORMER_MODEL_NAME,
-            BACKBONE_NAME=args.model_name,
-            TOKENIZER_NAME=args.tokenizer_name,
-            gpu_nb=gpu_nb,
-            loss_gamma=args.loss_gamma,
-            proportions_pow=args.proportions_pow,
-            train_params=train_params_transformer,
-            val_params=val_params_transformer,
-            MAX_EPOCHS=args.epochs,
-            dropout_rate=args.dropout,
-            weight_decay=args.weight_decay,
-            learning_rate=args.learning_rate,
-            output_length=args.output_length,
-            training_device=training_device,
-            f_beta=args.f_beta,
-            max_len=args.max_len,
-            n_freezed_layers=args.n_freezed_layers,
-            hypertune_threshold_bool=False,
+            train_val_dataset=train_val_data_labeled,
+            hypertune_threshold_bool=True,
+            **model_args,
         )
 
         Transformer_model_path = str(Path(args.model_dir) / TRANSFORMER_MODEL_NAME)
         mlflow.log_param("transformer_model_path", Transformer_model_path)
+
+        # Generate predictions and results on labeled test set
+        test_set_results = generate_results(
+            transformer_model,
+            test_df.excerpt.tolist(),
+            train_val_df["target"].tolist(),
+        )
+
+        final_mlflow_results = clean_results_for_logging(test_set_results)
+        mlflow.log_metrics(
+            {
+                tagname: tagresults
+                for tagname, tagresults in final_mlflow_results.items()
+                if tagname in well_labeled_examples
+            }
+        )
+
+        # log what was relabeled and what was not
+        for tagname in list(transformer_model.tagname_to_tagid.keys()):
+            if tagname in well_labeled_examples:
+                mlflow.log_metrics(
+                    {f"_Relabled_{clean_str_for_logging(tagname)}": False}
+                )
+            else:
+                mlflow.log_metrics(
+                    {f"_Relabled_{clean_str_for_logging(tagname)}": True}
+                )
 
         # a deepcopy of the returned model is needed in order not to have pickling issues during logging
         # logged_model = copy.deepcopy(transformer_model)
