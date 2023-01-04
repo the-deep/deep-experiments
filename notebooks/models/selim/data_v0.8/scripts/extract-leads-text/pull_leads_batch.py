@@ -47,7 +47,7 @@ def save_object(text: dict, project_id: int, lead_id: int):
 def extract_pdf(url, project_id, lead_id):
     try:
         parser = TextFromFile(url=url, from_web=True)
-        text, _ = parser.extract_text_multi(output_format="list")
+        text, _ = parser.extract_text(output_format="list")
         save_object(text=text, project_id=project_id, lead_id=lead_id)
         print(f"project-id: {project_id}, lead-id: {lead_id}, type: pdf. correctly processed")
     except TimeoutError:
