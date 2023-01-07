@@ -4,8 +4,9 @@ import boto3
 import timeout_decorator
 import pandas as pd
 
+from func_timeout import FunctionTimedOut
 from deep_parser import TextFromFile, TextFromWeb
-from deep_parser.helpers.errors import DocumentProcessingError
+from deep_parser.helpers.errors import DocumentProcessingError, ContentTypeError
 
 BUCKET_NAME: str = "pulled-leads"
 DATAFRAME_BUCKET_PATH: str = "projects-leads-urls/projects_leads_urls.csv"
@@ -50,7 +51,7 @@ def extract_pdf(url, project_id, lead_id):
         text, _ = parser.extract_text(output_format="list")
         save_object(text=text, project_id=project_id, lead_id=lead_id)
         print(f"project-id: {project_id}, lead-id: {lead_id}, type: pdf. correctly processed")
-    except TimeoutError:
+    except (TimeoutError, FunctionTimedOut):
         raise TimeoutError
     except (RuntimeError, DocumentProcessingError, Exception) as e:
         raise e
@@ -68,13 +69,11 @@ def extract_website(url, project_id, lead_id):
     except (RuntimeError, DocumentProcessingError, Exception) as e:
         raise e
     
-
-#@timeout_decorator.timeout(5 * 60, use_signals=False)
 def pull_websites(leads_df: pd.DataFrame):
 
     print("###################### Start pulling websites data.")
-    
-    for (project_id, lead_id), group in list(leads_df.groupby(["project_id", "lead_id"])):
+
+    for (project_id, lead_id), group in list(leads_df.groupby(["project_id", "lead_id"]))[::-1]:
         
         project_id, lead_id = str(int(project_id)), str(int(lead_id))
 
@@ -103,6 +102,13 @@ def pull_websites(leads_df: pd.DataFrame):
         else:
             try:
                 extract_website(url, project_id, lead_id)
+            except ContentTypeError:
+                print(f"ContentType error: project-id: {project_id}, lead-id: {lead_id}")
+                try:
+                    extract_pdf(url, project_id, lead_id)
+                except Exception as e:
+                    print(f"Error: {e}. project-id: {project_id}, lead-id: {lead_id}")
+                    continue
             except TimeoutError:
                 print(f"Timeout error. project-id: {project_id}, lead-id: {lead_id}")
             except (RuntimeError, DocumentProcessingError, Exception) as e:
