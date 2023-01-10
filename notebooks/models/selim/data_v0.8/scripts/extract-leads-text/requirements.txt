@@ -1,0 +1,5 @@
+pandas
+boto3
+botocore
+timeout_decorator
+func-timeout
