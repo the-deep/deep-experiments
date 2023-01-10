@@ -7,9 +7,8 @@ from tqdm import tqdm
 from typing import Dict, List
 from transformers import AdamW, AutoTokenizer, AutoModel
 from data import ExcerptsDataset
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 import numpy as np
-from sklearn.preprocessing import MultiLabelBinarizer
 
 from utils import (
     _flatten,
@@ -188,6 +187,7 @@ class TrainingTransformer(pl.LightningModule):
         self.val_params = val_params
 
         self.training_device = training_device
+        self.tags_proportions = tags_proportions
 
         self.loss = FocalLoss(
             tag_token_proportions=tags_proportions,
@@ -238,10 +238,7 @@ class TrainingTransformer(pl.LightningModule):
             eps=self.adam_epsilon,
         )
 
-        # scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
-        scheduler = ReduceLROnPlateau(
-            optimizer, "min", factor=0.5, patience=1, threshold=1e-3
-        )
+        scheduler = StepLR(optimizer, step_size=1, gamma=0.7)
 
         scheduler = {
             "scheduler": scheduler,
@@ -276,6 +273,7 @@ class LoggedTransformerModel(torch.nn.Module):
         self.val_params = trained_model.val_params
         self.val_params["num_workers"] = 0
         self.parent_tags = _get_parent_tags(list(self.tagname_to_tagid.keys()))
+        self.tags_proportions = trained_model.tags_proportions
 
         self.single_label_tags: List[List[str]] = [
             [
@@ -353,56 +351,59 @@ class LoggedTransformerModel(torch.nn.Module):
                 ).cpu()
                 logit_predictions.append(logits)
 
-        logit_predictions = torch.cat(logit_predictions, dim=0)
+        if len(logit_predictions) > 0:
+            logit_predictions = torch.cat(logit_predictions, dim=0)
+        else:
+            logit_predictions = torch.tensor([])
+
         if return_transformer_only:
             return logit_predictions
 
         else:
             logit_predictions = torch.sigmoid(logit_predictions)
 
-            target_list = list(self.tagname_to_tagid.keys())
-            probabilities_dict = []
-            # postprocess predictions
-            for i in range(logit_predictions.shape[0]):
-
-                # Return predictions
-                row_logits = logit_predictions[i, :]
-
-                # Return probabilities
-                probabilities_item_dict = {}
-                for j in range(logit_predictions.shape[1]):
-                    if hypertuning_threshold:
-                        probabilities_item_dict[target_list[j]] = row_logits[j].item()
-                    else:
-                        probabilities_item_dict[target_list[j]] = (
-                            row_logits[j].item()
-                            / self.optimal_thresholds[target_list[j]]
-                        )
-
-                probabilities_dict.append(probabilities_item_dict)
-
             if hypertuning_threshold:
                 y_true = np.concatenate(y_true)
-                return logit_predictions, y_true, probabilities_dict
+                return logit_predictions, y_true
 
             else:
-                return probabilities_dict
+                thresholds = np.array(list(self.optimal_thresholds.values()))
+                final_predictions = logit_predictions.numpy() / thresholds
 
-    def generate_test_predictions(self, entries: List[str]):
+                outputs = [
+                    {
+                        tagname: final_predictions[i, tagid]
+                        for tagname, tagid in self.tagname_to_tagid.items()
+                    }
+                    for i in range(logit_predictions.shape[0])
+                ]
+                # postprocess predictions
+
+                return outputs
+
+    def generate_test_predictions(
+        self, entries: List[str], apply_postprocessing: bool = True
+    ):
 
         model_outputs = self.custom_predict(
             entries,
             return_transformer_only=False,
             hypertuning_threshold=False,
         )
-        postprocessed_outputs = [
-            _postprocess_predictions_one_excerpt(
-                one_raw_pred,
-                self.all_postprocessed_labels,
-                self.single_label_tags,
-                self.parent_tags,
-            )
-            for one_raw_pred in model_outputs
-        ]
 
+        if apply_postprocessing:
+            postprocessed_outputs = [
+                _postprocess_predictions_one_excerpt(
+                    one_raw_pred,
+                    self.all_postprocessed_labels,
+                    self.single_label_tags,
+                    self.parent_tags,
+                )
+                for one_raw_pred in model_outputs
+            ]
+        else:
+            postprocessed_outputs = [
+                [tagname for tagname, tagratio in one_raw_pred.items() if tagratio >= 1]
+                for one_raw_pred in model_outputs
+            ]
         return postprocessed_outputs

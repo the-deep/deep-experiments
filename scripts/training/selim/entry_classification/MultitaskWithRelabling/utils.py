@@ -12,12 +12,13 @@ from typing import Dict, List, Union, Tuple
 from collections import Counter, defaultdict
 import torch
 from transformers import AutoTokenizer
-from sklearn.metrics import precision_recall_fscore_support
-from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 
 warnings.filterwarnings("ignore")
 
 # GENERAL UTIL FUNCTIONS
+
+languages = ["en", "fr", "es", "pt"]
 
 
 def map_id_layer_to_level(ids_each_level) -> Dict[int, int]:
@@ -31,26 +32,30 @@ def map_id_layer_to_level(ids_each_level) -> Dict[int, int]:
     return dict_layers
 
 
-def beta_score(precision: float, recall: float, f_beta: Union[int, float]) -> float:
-    """get beta score from precision and recall"""
-    return (1 + f_beta**2) * precision * recall / ((f_beta**2) * precision + recall)
-
-
-def clean_str_for_logging(text: str):
+def _clean_str_for_logging(text: str):
     return re.sub("[^0-9a-zA-Z]+", "_", copy(text))
 
 
-def clean_results_for_logging(results: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+def _clean_results_for_logging(
+    results: Dict[str, Dict[str, float]], prefix: str = ""
+) -> Dict[str, float]:
     """clean names and prepare them for logging"""
 
     final_mlflow_outputs = {}
     for tagname, tagresults in results.items():
         for metric, score in tagresults.items():
-            mlflow_name = f"{metric}_{tagname}"
-            mlflow_name = clean_str_for_logging(mlflow_name)
+            mlflow_name = f"{metric}_{tagname}_{prefix}"
+            mlflow_name = _clean_str_for_logging(mlflow_name)
             final_mlflow_outputs[mlflow_name] = score
 
     return final_mlflow_outputs
+
+
+def _clean_thresholds_for_logging(thresholds: Dict[str, float]):
+    return {
+        f"threshold_{_clean_str_for_logging(tagname)}": tagthreshold
+        for tagname, tagthreshold in thresholds.items()
+    }
 
 
 def get_tagname_to_id(target) -> Dict[str, int]:
@@ -137,10 +142,9 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
     # rename column to 'target' to be able to work on it generically
     all_data = df.copy()
 
-    # only unprotected leads for training
-    all_data = all_data[all_data.confidentiality == "unprotected"]
+    all_data = all_data[all_data.original_language.isin(languages)]
 
-    all_data["nlp_tags"] = all_data["nlp_tags"].apply(_custom_eval)
+    all_data["target"] = all_data["target"].apply(_custom_eval)
 
     # drop duplicate entries
     all_data = all_data.groupby("en", as_index=False).agg(
@@ -148,7 +152,7 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
             "fr": lambda x: list(x)[0],
             "es": lambda x: list(x)[0],
             "pt": lambda x: list(x)[0],
-            "nlp_tags": lambda x: list(
+            "target": lambda x: list(
                 set.intersection(*map(set, list(x)))
             ),  # only elements in common between duplicates
             "original_language": lambda x: list(x)[0],
@@ -161,7 +165,7 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
 
     # delete entries with too many tags (sectors and subpillars): noise
     all_data = all_data[
-        all_data["nlp_tags"].apply(
+        all_data["target"].apply(
             lambda x: len(
                 [
                     item
@@ -182,7 +186,7 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
         all_data.groupby("project_id", as_index=False)
         .agg(
             {
-                "nlp_tags": lambda x: list(set(_flatten(list(x)))),
+                "target": lambda x: list(set(_flatten(list(x)))),
                 "entry_id": lambda x: len(list(x)),
             }
         )
@@ -194,9 +198,9 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
     # keep only data with enough projects
     all_data = all_data[all_data.project_id.isin(project_tags_df.project_id.tolist())]
 
-    project_tags_dict = dict(zip(project_tags_df.project_id, project_tags_df.nlp_tags))
+    project_tags_dict = dict(zip(project_tags_df.project_id, project_tags_df.target))
 
-    all_nlp_tags = list(set(_flatten(project_tags_df["nlp_tags"])))
+    all_target = list(set(_flatten(project_tags_df["target"])))
 
     # Dict[str: tags, List[int]: projects list]
     projects_list_per_tag = {
@@ -205,7 +209,7 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
             for proj, tags_per_proj in project_tags_dict.items()
             if tag in tags_per_proj
         ]
-        for tag in all_nlp_tags
+        for tag in all_target
     }
 
     grouped_tags = {k: str(v) for k, v in projects_list_per_tag.items()}
@@ -216,9 +220,11 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
     # List[List[str]: each sublist has exactly the same project_ids]
     grouped_tags = list(tmp_dict.values())
 
-    all_data.rename(columns={"nlp_tags": "target"}, inplace=True)
-
-    return all_data, projects_list_per_tag, grouped_tags
+    return (
+        all_data,
+        projects_list_per_tag,
+        grouped_tags,
+    )
 
 
 def create_train_val_df(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -274,7 +280,7 @@ def stats_train_test(
 
 
 def get_tags_proportions(
-    tagname_to_tagid: Dict[str, int], targets_list: List[str]
+    tagname_to_tagid: Dict[str, int], targets_list: List[List[str]]
 ) -> torch.Tensor:
     """get alphas for BCE weighted loss"""
     counts = dict(Counter(_flatten(targets_list)))
@@ -367,7 +373,7 @@ def get_relevant_labels(target_column, min_kept_ratio: float = 0.02) -> List[str
     return relevant_labels
 
 
-def get_n_tokens(
+def _get_n_tokens(
     text: List[str], tokenizer_name: str, batch_size_tokenizer: int = 128
 ) -> np.ndarray:
     """
@@ -409,31 +415,29 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
     2) without being an aberrant value
     """
 
-    logit_predictions, y_true, _ = model.custom_predict(
+    logit_predictions, y_true = model.custom_predict(
         val_data,
         return_transformer_only=False,
         hypertuning_threshold=True,
     )
 
     optimal_thresholds_dict = {}
-    optimal_f_beta_scores = {}
-    optimal_precision_scores = {}
-    optimal_recall_scores = {}
+    optimal_scores = defaultdict(dict)
 
     for j in range(logit_predictions.shape[1]):
         preds_one_column = logit_predictions[:, j]
         min_proba = np.round(
-            max(0.01, min(preds_one_column)), 2
+            max(0.01, min(preds_one_column)), 3
         )  # so no value equal to 0
         max_proba = np.round(
-            max(0.01, max(preds_one_column)), 2
+            max(0.01, max(preds_one_column)), 3
         )  # so no value equal to 0
 
-        thresholds_list = np.round(np.linspace(max_proba, min_proba, 21), 2)
+        thresholds_list = np.round(np.linspace(max_proba, min_proba, 21), 3)
 
         f_beta_scores = []
         precision_scores = []
-        recall_scoress = []
+        recall_scores = []
         for thresh_tmp in thresholds_list:
             score = get_metrics(
                 np.array(preds_one_column > thresh_tmp).astype(int),
@@ -442,20 +446,23 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
             )
             f_beta_scores.append(score["f_beta_score"])
             precision_scores.append(score["precision"])
-            recall_scoress.append(score["recall"])
+            recall_scores.append(score["recall"])
 
         max_threshold = 0.01
         best_f_beta_score = -1
         best_recall = -1
         best_precision = -1
 
-        for i in range(2, len(f_beta_scores) - 2):
+        for i in range(1, len(f_beta_scores) - 1):
 
-            f_beta_score_mean = np.mean(f_beta_scores[i - 2 : i + 2])
-            precision_score_mean = np.mean(precision_scores[i - 2 : i + 2])
-            recall_score_mean = np.mean(recall_scoress[i - 2 : i + 2])
+            f_beta_score_mean = np.mean(f_beta_scores[i - 1 : i + 2])
+            precision_score_mean = np.mean(precision_scores[i - 1 : i + 2])
+            recall_score_mean = np.mean(recall_scores[i - 1 : i + 2])
 
-            if f_beta_score_mean >= best_f_beta_score:
+            if (
+                f_beta_score_mean >= best_f_beta_score
+                and abs(recall_score_mean - precision_score_mean) < 0.4
+            ):
 
                 best_f_beta_score = f_beta_score_mean
                 best_recall = recall_score_mean
@@ -465,31 +472,40 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
 
         tag_name = list(model.tagname_to_tagid.keys())[j]
 
-        optimal_f_beta_scores[tag_name] = best_f_beta_score
-        optimal_precision_scores[tag_name] = best_precision
-        optimal_recall_scores[tag_name] = best_recall
+        optimal_scores[tag_name]["f_beta_score"] = best_f_beta_score
+        optimal_scores[tag_name]["precision"] = best_precision
+        optimal_scores[tag_name]["recall"] = best_recall
 
         optimal_thresholds_dict[tag_name] = max_threshold
-
-    optimal_scores = {
-        "precision": optimal_precision_scores,
-        "recall": optimal_recall_scores,
-        "f_beta_scores": optimal_f_beta_scores,
-    }
 
     return optimal_thresholds_dict, optimal_scores
 
 
-def generate_results(model, entries: List[str], groundtruth: List[List[str]]):
-    predictions = model.generate_test_predictions(entries)
-    mlb = MultiLabelBinarizer(list(model.tagname_to_tagid.keys()))
+def generate_results(
+    predictions: List[List[str]],
+    groundtruth: List[List[str]],
+    tagname_to_tagid: Dict[str, int],
+):
 
-    binary_outputs_predictions = mlb.fit_transform(predictions)
-    binary_outputs_groundtruth = mlb.fit_transform(groundtruth)
+    n_entries = len(predictions)
+    n_tags = len(tagname_to_tagid)
+    binary_outputs_predictions = np.zeros((n_entries, n_tags))
+    binary_outputs_groundtruth = np.zeros((n_entries, n_tags))
+
+    for i in range(n_entries):
+        preds_one_entry = set(predictions[i])
+        groundtruth_one_entry = set(groundtruth[i])
+
+        for tagname, tagid in tagname_to_tagid.items():
+            if tagname in preds_one_entry:
+                binary_outputs_predictions[i, tagid] = 1
+
+            if tagname in groundtruth_one_entry:
+                binary_outputs_groundtruth[i, tagid] = 1
 
     tot_scores = {}
 
-    for tagname, tagid in model.tagname_to_tagid.items():
+    for tagname, tagid in tagname_to_tagid.items():
         predictions_one_tag = binary_outputs_predictions[:, tagid]
         groundtruths_one_tag = binary_outputs_groundtruth[:, tagid]
 
@@ -506,10 +522,23 @@ def get_metrics(preds, groundtruth, f_beta=1):
         groundtruth, preds, average="binary", beta=f_beta
     )
 
+    confusion_results = confusion_matrix(groundtruth, preds, labels=[0, 1])
+    n_test_set_excerpts = sum(sum(confusion_results))
+    accuracy = (confusion_results[0, 0] + confusion_results[1, 1]) / n_test_set_excerpts
+    sensitivity = confusion_results[0, 0] / (
+        confusion_results[0, 0] + confusion_results[0, 1]
+    )
+    specificity = confusion_results[1, 1] / (
+        confusion_results[1, 0] + confusion_results[1, 1]
+    )
+
     return {
         "precision": np.round(precision, 3),
         "recall": np.round(recall, 3),
         "f_beta_score": np.round(f_beta_score, 3),
+        "accuracy": np.round(accuracy, 3),
+        "sensitivity": np.round(sensitivity, 3),
+        "specificity": np.round(specificity, 3),
     }
 
 
@@ -517,7 +546,7 @@ def _create_df_with_translations(df: pd.DataFrame):
 
     full_data = df.copy()
     augmented_data = pd.DataFrame()
-    languages = ["en", "fr", "es", "pt"]
+
     for one_lang in languages:
         one_lang_df = (
             full_data[["entry_id", one_lang]]
@@ -533,6 +562,67 @@ def _create_df_with_translations(df: pd.DataFrame):
     )
 
     return augmented_data
+
+
+def _create_df_with_chosen_translations(data: pd.DataFrame):
+    df = data.copy()
+
+    targets_list = df["target"].tolist()
+    tagname_to_tagid = get_tagname_to_id(targets_list)
+    proportions = get_tags_proportions(tagname_to_tagid, targets_list)
+    tags_proportions = {
+        tagname: proportions[tagid].item()
+        for tagname, tagid in tagname_to_tagid.items()
+    }
+
+    min_prop = np.quantile(proportions, 0.75)
+
+    underrepresented_tags = [
+        tagname for tagname, prop in tags_proportions.items() if prop < min_prop
+    ]
+
+    mask_df_contains_underrepresented_tag = df.target.apply(
+        lambda x: any(tag in underrepresented_tags for tag in x)
+    )
+
+    df_with_low_entries = df[mask_df_contains_underrepresented_tag]
+    augmented_df_with_low_entries = _create_df_with_translations(df_with_low_entries)
+
+    df_without_low_entries = df[~mask_df_contains_underrepresented_tag]
+    df_without_low_entries["excerpt"] = df_without_low_entries.apply(
+        lambda x: _get_excerpt_without_augmentation(x),
+        axis=1,
+    )
+
+    return pd.concat([augmented_df_with_low_entries, df_without_low_entries])[
+        ["entry_id", "project_id", "target", "excerpt"]
+    ]
+
+
+def _get_excerpt_without_augmentation(row: pd.Series):
+    return (
+        row[row["original_language"]]
+        if row["original_language"] in languages
+        else row["en"]
+    )
+
+
+def _undersample_df(
+    df: pd.DataFrame,
+    tags_proportions: Dict[str, float],
+):
+    max_prop = 10 * np.median(list(tags_proportions.values()))
+    overrepresented_tags = [
+        tagname for tagname, prop in tags_proportions.items() if prop > max_prop
+    ]
+
+    mask_df_contains_overrepresented_tag = df.target.apply(
+        lambda x: all(tag in overrepresented_tags for tag in x)
+    )
+
+    undersampled_df = df[~mask_df_contains_overrepresented_tag]
+
+    return undersampled_df
 
 
 def _get_labled_unlabled_data(
@@ -551,7 +641,7 @@ def _get_labled_unlabled_data(
         lambda x: [tag for tag in x if tag in tags_with_same_projects]
     )
     # take care of translation for train val labeled
-    train_val_data_labeled = _create_df_with_translations(train_val_data_labeled.copy())
+    train_val_data_labeled = _create_df_with_chosen_translations(train_val_data_labeled)
 
     # train val data: to be relabeled
     train_val_data_one_tag_non_labeled = train_val_df[~mask_labeled_projects].copy()
@@ -579,6 +669,7 @@ def _get_labled_unlabled_data(
 
 
 def _create_stratified_train_test_df(all_data: pd.DataFrame, sample_data: bool = False):
+    all_data = all_data[all_data.original_language.isin(["en", "fr", "pt", "es"])]
     train_val_df = pd.DataFrame()
     test_df = pd.DataFrame()
 
@@ -756,18 +847,18 @@ def _postprocess_predictions_one_excerpt(
     ]
     final_outputs.extend(_get_final_demographic_groups(demographic_group_outputs))
 
-    return tag_results
+    return final_outputs
 
 
 def _get_sectors_non_sectors_grouped_tags(grouped_tags: List[List[str]]):
     non_sector_groups, sector_groups = [], []
     sectors_kw = "first_level_tags->sectors"
-    cross_tag_name = "first_level_tags->sectors->Cross"
+    not_relabled_kwords = ["cross", "covid-19", "severity"]
 
     for one_group_tags in grouped_tags:
         one_group_non_sectors, one_group_sectors = [], []
         for one_tag in one_group_tags:
-            if one_tag != cross_tag_name:
+            if all([one_kw not in one_tag.lower() for one_kw in not_relabled_kwords]):
                 if sectors_kw in one_tag:
                     one_group_sectors.append(one_tag)
                 else:
@@ -799,3 +890,166 @@ def _update_final_labels_dict(
         )
 
     return train_val_final_labels
+
+
+def _proportion_false_negatives(
+    train_val_data_labeled: pd.DataFrame,
+    train_val_data_non_labeled: pd.DataFrame,
+):
+    if len(train_val_data_non_labeled) > 0:
+        n_ids_train_val_labeled = train_val_data_labeled.entry_id.nunique()
+        n_pos_examples_train_val_labeled = train_val_data_labeled.target.apply(
+            lambda x: len(x) > 0
+        ).sum()
+        prop_pos_examples_train_val_labeled = (
+            n_pos_examples_train_val_labeled / n_ids_train_val_labeled
+        )
+
+        n_ids_train_val_non_labeled = train_val_data_non_labeled.entry_id.nunique()
+        estimated_false_negatives = (
+            prop_pos_examples_train_val_labeled * n_ids_train_val_non_labeled
+        )
+
+        tot_train_val = n_ids_train_val_labeled + n_ids_train_val_non_labeled
+
+        final_prop = estimated_false_negatives / tot_train_val
+    else:
+        final_prop = -1
+
+    return final_prop
+
+
+def _get_new_sectors_tags(
+    row: pd.Series,
+    cross_targets: Dict[int, List[str]],
+    non_trained_data: Dict[
+        int, Dict[int, List[str]]
+    ],  # {project_id: {entry_id: targets: List[str]}}
+    projects_list_per_tag: Dict[str, List[int]],
+    sector_tags: List[str],
+):
+
+    row_id = row.entry_id
+    row_project = row.project_id
+    row_target_non_sectors = [
+        item for item in row["target"] if "first_level_tags->sectors->" not in item
+    ]
+    original_sector_labels = [
+        item
+        for item in row["target"]
+        if "first_level_tags->sectors->" in item and "Cross" not in item
+    ]
+    if row_id in cross_targets:
+        sector_labels = cross_targets[row_id]
+    elif row_project in non_trained_data:
+
+        relabled_sector_labels = non_trained_data[row_project][row_id]
+        sector_labels = []
+        for one_sector in sector_tags:
+            if (
+                row_project in projects_list_per_tag[one_sector]
+                and one_sector in original_sector_labels
+            ):
+                sector_labels.append(one_sector)
+            elif one_sector in relabled_sector_labels:
+                sector_labels.append(one_sector)
+
+    else:
+        sector_labels = original_sector_labels
+
+    return list(set(sector_labels + row_target_non_sectors))
+
+
+def _get_new_subsectors_tags(
+    row: pd.Series,
+    sector_name: str,
+    predictions: Dict[int, List[str]],
+):
+    # predictions: dict entry_id to predicted target
+    row_target = row["target"]
+    row_id = row["entry_id"]
+    final_predictions = copy(row_target)
+    if row_id in predictions and sector_name in row_target:
+        entry_predictions = predictions[row_id]
+        final_predictions.extend(entry_predictions)
+
+    return list(set(final_predictions))
+
+
+def _generate_test_set_results(
+    transformer_model,
+    test_data: pd.DataFrame,
+    projects_list_per_tag: Dict[str, List[int]],
+):
+    # Generate predictions and results on labeled test set
+    final_results = {}
+    test_df = test_data.copy()
+    test_df["predictions"] = transformer_model.generate_test_predictions(
+        test_df.excerpt.tolist(), apply_postprocessing=False
+    )
+
+    # generic results: no sectors, no subsectors
+    test_set_results_non_sectors = generate_results(
+        test_df["predictions"].tolist(),
+        test_df.target.tolist(),
+        transformer_model.tagname_to_tagid,
+    )
+    test_set_results_non_sectors = {
+        tagname: tagresults
+        for tagname, tagresults in test_set_results_non_sectors.items()
+        if "sectors" not in tagname
+    }
+    final_results.update(test_set_results_non_sectors)
+
+    # sectors results: no cross
+    non_cross_test_df = test_df[
+        test_df.target.apply(lambda x: "first_level_tags->sectors->Cross" not in x)
+    ].copy()
+    test_set_results_sectors = generate_results(
+        non_cross_test_df["predictions"].tolist(),
+        non_cross_test_df.target.tolist(),
+        transformer_model.tagname_to_tagid,
+    )
+    test_set_results_sectors = {
+        tagname: tagresults
+        for tagname, tagresults in test_set_results_non_sectors.items()
+        if "first_level_tags->sectors" in tagname
+        and "first_level_tags->sectors->Cross" != tagname
+    }
+    final_results.update(test_set_results_sectors)
+
+    # subsectors
+    for name, projects in projects_list_per_tag.items():
+        if "subsector" in name:
+            test_df_one_subsector = test_df[test_df.project_id.isin(projects)]
+            if len(test_df_one_subsector) > 0:
+                results_one_subsector = generate_results(
+                    test_df_one_subsector["predictions"].tolist(),
+                    test_df_one_subsector.target.tolist(),
+                    transformer_model.tagname_to_tagid,
+                )
+                results_one_subsector = {
+                    tagname: tagresults
+                    for tagname, tagresults in test_set_results_non_sectors.items()
+                    if name == tagname
+                }
+                final_results.update(results_one_subsector)
+
+    return final_results
+
+
+def _get_results_df_from_dict(
+    final_results: Dict[str, Dict[str, float]], proportions: Dict[str, float]
+):
+    results_as_df = pd.DataFrame.from_dict(final_results, orient="index")
+    metrics_list = list(results_as_df.columns)
+    results_as_df["tag"] = results_as_df.index
+    results_as_df.sort_values(by=["tag"], inplace=True, ascending=True)
+    results_as_df["positive_examples_proportion"] = [
+        proportions[one_tag] for one_tag in results_as_df["tag"]
+    ]
+
+    ordered_columns = ["tag"] + metrics_list + ["positive_examples_proportion"]
+    results_as_df = results_as_df[ordered_columns]
+
+    return results_as_df

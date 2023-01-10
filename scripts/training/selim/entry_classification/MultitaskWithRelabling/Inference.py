@@ -15,7 +15,7 @@ sys.path.append(".")
 
 import mlflow
 from ast import literal_eval
-from utils import flatten
+from utils import _flatten
 
 
 class ClassificationInference(mlflow.pyfunc.PythonModel):
@@ -95,7 +95,7 @@ class ClassificationInference(mlflow.pyfunc.PythonModel):
                     for i in to_be_returned_pooling_ids
                     for j in to_be_returned_task_ids
                 ]
-                to_be_returned_embedding_ids = flatten(
+                to_be_returned_embedding_ids = _flatten(
                     [
                         [id_tmp for id_tmp in range(id, id + transformer_output_length)]
                         for id in to_be_returned_ids
