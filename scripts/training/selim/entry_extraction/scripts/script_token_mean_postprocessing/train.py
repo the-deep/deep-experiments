@@ -14,7 +14,7 @@ import pytorch_lightning as pl
 from ast import literal_eval
 from model import TrainingExtractionModel, LoggedExtractionModel
 from inference import EntryExtractionWrapper
-from utils import clean_name_for_logging
+from utils import clean_name_for_logging, hypertune_threshold
 from prepare_data_for_training_job import DataPreparation
 import time
 import json
@@ -38,6 +38,134 @@ def get_conda_env_specs():
     return default_env
 
 
+def _train_model():
+    MODEL_NAME = "transformer_model"
+    MODEL_DIR = args.model_dir
+    if not os.path.exists(MODEL_DIR):
+        os.makedirs(MODEL_DIR)
+
+    early_stopping_callback = EarlyStopping(
+        monitor="val_loss",
+        patience=1 + args.n_epochs // 3,
+        mode="min",
+    )
+
+    checkpoint_callback_params = {
+        "save_top_k": 1,
+        "verbose": True,
+        "monitor": "val_loss",
+        "mode": "min",
+    }
+
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=MODEL_DIR, filename=MODEL_NAME, **checkpoint_callback_params
+    )
+
+    trainer = pl.Trainer(
+        logger=None,
+        callbacks=[early_stopping_callback, checkpoint_callback],
+        # enable_progress_bar=True,
+        profiler="simple",
+        # log_gpu_memory=True,
+        # weights_summary=None,
+        gpus=gpu_nb,
+        # precision=16,
+        accumulate_grad_batches=1,
+        max_epochs=args.n_epochs,
+        gradient_clip_val=1,
+        gradient_clip_algorithm="norm",
+        # strategy="deepspeed_stage_3"
+        # overfit_batches=1,
+        # limit_predict_batches=2,
+        # limit_test_batches=2,
+        # fast_dev_run=True,
+        # limit_train_batches=1,
+        # limit_val_batches=1,
+        # limit_test_batches: Union[int, float] = 1.0,
+    )
+
+    training_model = TrainingExtractionModel(
+        backbone_name=args.model_name_or_path,
+        tokenizer_name=args.tokenizer_name_or_path,
+        tagname_to_tagid=tagname_to_tagid,
+        tag_token_proportions=tag_token_proportions,
+        tag_cls_proportions=tag_cls_proportions,
+        slice_length=args.max_len,
+        extra_context_length=args.extra_context_length,
+        lr=args.learning_rate,
+        weight_decay=args.weight_decay,
+        tokens_focal_loss_gamma=args.tokens_focal_loss_gamma,
+        cls_focal_loss_gamma=args.cls_focal_loss_gamma,
+        proportions_pow=args.proportions_pow,
+    )
+
+    training_loader = training_model._get_loaders(
+        train_dataset, train_params, training_mode=True
+    )
+    val_loader = training_model._get_loaders(
+        val_dataset, val_params, training_mode=True
+    )
+
+    trainer.fit(training_model, training_loader, val_loader)
+
+    # new model, used for logging, torch.nn.Module type
+    # avoids logging errors
+    training_model.eval()
+    training_model.freeze()
+
+    logged_extraction_model = LoggedExtractionModel(training_model)
+
+    (
+        val_results,
+        optimal_thresholds_cls,
+        optimal_thresholds_tokens,
+    ) = hypertune_threshold(logged_extraction_model, val_loader, args.fbeta)
+    logged_extraction_model.optimal_thresholds_cls = optimal_thresholds_cls
+    logged_extraction_model.optimal_thresholds_tokens = optimal_thresholds_tokens
+
+    return logged_extraction_model
+
+
+def _log_models():
+    # gpu model logging
+    # training is done on gpu, so no change to deploy in gpu
+    gpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
+
+    mlflow.pyfunc.log_model(
+        python_model=gpu_prediction_wrapper,
+        artifact_path="entry-extraction-gpu",
+        conda_env=get_conda_env_specs(),  # python conda dependencies
+        code_path=[
+            __file__,
+            "model.py",
+            "data.py",
+            "inference.py",
+            "utils.py",
+            "merge_leads_excerpts.py",
+            "requirements.txt",
+        ],  # file dependencies
+    )
+
+    # cpu model logging
+    logged_extraction_model.cpu()
+    cpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
+
+    mlflow.pyfunc.log_model(
+        python_model=cpu_prediction_wrapper,
+        artifact_path="entry-extraction-cpu",
+        conda_env=get_conda_env_specs(),  # python conda dependencies
+        code_path=[
+            __file__,
+            "model.py",
+            "data.py",
+            "inference.py",
+            "utils.py",
+            "merge_leads_excerpts.py",
+            "requirements.txt",
+        ],  # file dependencies
+    )
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -56,7 +184,6 @@ if __name__ == "__main__":
     parser.add_argument("--fbeta", type=float, default=1.4)
     parser.add_argument("--tokens_focal_loss_gamma", type=float, default=2)
     parser.add_argument("--cls_focal_loss_gamma", type=float, default=1)
-    parser.add_argument("--sample_percentage", type=float, default=0.1)
     parser.add_argument("--proportions_pow", type=float, default=1)
 
     parser.add_argument("--experiment_name", type=str)
@@ -110,24 +237,24 @@ if __name__ == "__main__":
         # log token proportions
         token_proportions = clean_name_for_logging(
             {
-                f"proportion_in_percentage_{tagname}_tokens": round(
+                f"__proportion_in_percentage_{tagname}_tokens": round(
                     100 * tag_token_proportions[tag_id].item(), 2
                 )
                 for tagname, tag_id in tagname_to_tagid.items()
             }
         )
-        mlflow.log_params(token_proportions)
+        mlflow.log_metrics(token_proportions)
 
         # log cls proportions
         cls_proportions = clean_name_for_logging(
             {
-                f"proportion_in_percentage_{tagname}_cls": round(
+                f"__proportion_in_percentage_{tagname}_cls": round(
                     100 * tag_cls_proportions[tag_id].item(), 2
                 )
                 for tagname, tag_id in tagname_to_tagid.items()
             }
         )
-        mlflow.log_params(cls_proportions)
+        mlflow.log_metrics(cls_proportions)
 
         n_leads_per_category = {
             "_n_leads_train": len(train_dataset),
@@ -166,7 +293,6 @@ if __name__ == "__main__":
             "fbeta": args.fbeta,
             "focal_loss_gamma_tokens": args.tokens_focal_loss_gamma,
             "focal_loss_gamma_cls": args.cls_focal_loss_gamma,
-            "__sample_percentage": args.sample_percentage,
             "proportions_pow": args.proportions_pow,
         }
 
@@ -174,90 +300,7 @@ if __name__ == "__main__":
 
         # train model using pytorch lightning
 
-        MODEL_NAME = "transformer_model"
-        MODEL_DIR = args.model_dir
-        if not os.path.exists(MODEL_DIR):
-            os.makedirs(MODEL_DIR)
-
-        early_stopping_callback = EarlyStopping(
-            monitor="val_loss",
-            patience=1 + args.n_epochs // 3,
-            mode="min",
-        )
-
-        checkpoint_callback_params = {
-            "save_top_k": 1,
-            "verbose": True,
-            "monitor": "val_loss",
-            "mode": "min",
-        }
-
-        checkpoint_callback = ModelCheckpoint(
-            dirpath=MODEL_DIR, filename=MODEL_NAME, **checkpoint_callback_params
-        )
-
-        trainer = pl.Trainer(
-            logger=None,
-            callbacks=[early_stopping_callback, checkpoint_callback],
-            # enable_progress_bar=True,
-            profiler="simple",
-            # log_gpu_memory=True,
-            # weights_summary=None,
-            gpus=gpu_nb,
-            # precision=16,
-            accumulate_grad_batches=1,
-            max_epochs=args.n_epochs,
-            gradient_clip_val=1,
-            gradient_clip_algorithm="norm",
-            # strategy="deepspeed_stage_3"
-            # overfit_batches=1,
-            # limit_predict_batches=2,
-            # limit_test_batches=2,
-            # fast_dev_run=True,
-            # limit_train_batches=1,
-            # limit_val_batches=1,
-            # limit_test_batches: Union[int, float] = 1.0,
-        )
-
-        training_model = TrainingExtractionModel(
-            backbone_name=args.model_name_or_path,
-            tokenizer_name=args.tokenizer_name_or_path,
-            tagname_to_tagid=tagname_to_tagid,
-            tag_token_proportions=tag_token_proportions,
-            tag_cls_proportions=tag_cls_proportions,
-            slice_length=args.max_len,
-            extra_context_length=args.extra_context_length,
-            lr=args.learning_rate,
-            weight_decay=args.weight_decay,
-            tokens_focal_loss_gamma=args.tokens_focal_loss_gamma,
-            cls_focal_loss_gamma=args.cls_focal_loss_gamma,
-            proportions_pow=args.proportions_pow,
-        )
-
-        training_loader = training_model._get_loaders(
-            train_dataset, train_params, training_mode=True
-        )
-        val_loader = training_model._get_loaders(
-            val_dataset, val_params, training_mode=True
-        )
-
-        trainer.fit(training_model, training_loader, val_loader)
-
-        # new model, used for logging, torch.nn.Module type
-        # avoids logging errors
-        training_model.eval()
-        training_model.freeze()
-
-        logged_extraction_model = LoggedExtractionModel(training_model)
-
-        val_results, times = logged_extraction_model.hypertune_threshold(
-            val_loader, args.fbeta
-        )
-        mlflow.log_metrics(times)
-
-        # log tag results
-        for tag_name, tag_results in val_results.items():
-            mlflow.log_metrics(clean_name_for_logging(tag_results))
+        logged_extraction_model = _train_model()
 
         # Generate test set results
 
@@ -287,44 +330,7 @@ if __name__ == "__main__":
         )
 
         # This class is logged as a pickle artifact and used at inference time
-
-        # gpu model logging
-        # training is done on gpu, so no change to deploy in gpu
-        gpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
-
-        mlflow.pyfunc.log_model(
-            python_model=gpu_prediction_wrapper,
-            artifact_path="entry-extraction-gpu",
-            conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[
-                __file__,
-                "model.py",
-                "data.py",
-                "inference.py",
-                "utils.py",
-                "merge_leads_excerpts.py",
-                "requirements.txt",
-            ],  # file dependencies
-        )
-
-        # cpu model logging
-        logged_extraction_model.cpu()
-        cpu_prediction_wrapper = EntryExtractionWrapper(logged_extraction_model)
-
-        mlflow.pyfunc.log_model(
-            python_model=cpu_prediction_wrapper,
-            artifact_path="entry-extraction-cpu",
-            conda_env=get_conda_env_specs(),  # python conda dependencies
-            code_path=[
-                __file__,
-                "model.py",
-                "data.py",
-                "inference.py",
-                "utils.py",
-                "merge_leads_excerpts.py",
-                "requirements.txt",
-            ],  # file dependencies
-        )
+        _log_models()
 
     with open(Path(args.output_data_dir) / "test_results_predictions.json", "w") as f:
         json.dump(results_test_set, f)

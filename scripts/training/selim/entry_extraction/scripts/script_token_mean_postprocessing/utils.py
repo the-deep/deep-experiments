@@ -296,3 +296,147 @@ def retrieve_sentences_probas_gt(
             initial_sentence_ids = final_sentences_ids
 
     return sentences_probas, sentences_groundtruths
+
+
+def _get_final_thresholds(
+    all_leads_probas: torch.Tensor,
+    all_leads_groundtruths: torch.Tensor,
+    all_leads_sentences_offsets: torch.Tensor,
+    tagname_to_id: Dict[str, int],
+    leads_nb: List[int],
+    fbeta: float,
+):
+    """
+    ...
+    """
+
+    outputs = defaultdict()
+    optimal_thresholds_cls = defaultdict()
+    optimal_thresholds_tokens = defaultdict()
+
+    # threshold lists for each tag
+    mins = torch.min(all_leads_probas, dim=0).values.tolist()
+    maxs = torch.max(all_leads_probas, dim=0).values.tolist()
+    thresholds_possibilities = [
+        np.round(np.linspace(min, max, 10), 3) for (min, max) in list(zip(mins, maxs))
+    ]
+
+    sentences_probas, sentences_groundtruths = retrieve_sentences_probas_gt(
+        all_leads_probas,
+        all_leads_groundtruths,
+        all_leads_sentences_offsets,
+        leads_nb,
+    )
+
+    for tag_name, tag_id in tagname_to_id.items():
+
+        gts_one_tag = sentences_groundtruths[tag_id]
+        probas_one_tag = sentences_probas[tag_id]
+        thresholds_one_tag = thresholds_possibilities[tag_id][
+            1:-1
+        ]  # min and max proba predicted won't be the optimal thresholds
+
+        best_fbeta_score_cls = -1
+        best_threshold_cls = -1
+        best_predictions_cls = []
+
+        best_fbeta_score_tokens = -1
+        best_threshold_tokens = -1
+        best_predictions_tokens = []
+
+        for one_threshold in thresholds_one_tag:
+
+            # get ratios
+            ratios_one_tag = [
+                proba_per_tag_sentence / one_threshold
+                for proba_per_tag_sentence in probas_one_tag
+            ]
+
+            # get cls predictions
+            preds_per_sent_tag_cls = [
+                1 if ratio_per_tag_sentence[0].item() >= 1 else 0
+                for ratio_per_tag_sentence in ratios_one_tag
+            ]
+
+            # cls results
+            results_per_threshold_tag_cls = get_metric(
+                preds_per_sent_tag_cls,
+                gts_one_tag,
+                fbeta,
+            )
+
+            if results_per_threshold_tag_cls["fbeta_score"] > best_fbeta_score_cls:
+                best_fbeta_score_cls = results_per_threshold_tag_cls["fbeta_score"]
+
+                best_threshold_cls = one_threshold
+                best_predictions_cls = preds_per_sent_tag_cls
+
+            # tokens predictions, one threshold
+            preds_per_sent_tag_tokens = [
+                1 if ratio_per_tag_sentence[1:].mean().item() >= 1 else 0
+                for ratio_per_tag_sentence in ratios_one_tag
+            ]
+
+            # tokens resuts, one threshold
+            results_per_threshold_tokens = get_metric(
+                preds_per_sent_tag_tokens,
+                gts_one_tag,
+                fbeta,
+            )
+
+            if results_per_threshold_tokens["fbeta_score"] > best_fbeta_score_tokens:
+                best_fbeta_score_tokens = results_per_threshold_tokens["fbeta_score"]
+
+                best_threshold_tokens = one_threshold
+                best_predictions_tokens = preds_per_sent_tag_tokens
+
+        # save best hyperparameters
+        optimal_thresholds_cls[tag_name] = best_threshold_cls
+        optimal_thresholds_tokens[tag_name] = best_threshold_tokens
+
+        outputs[tag_name] = get_full_outputs(
+            tag_name,
+            gts_one_tag,
+            best_predictions_cls,
+            best_predictions_tokens,
+            best_threshold_tokens,
+            best_threshold_cls,
+            fbeta,
+        )
+
+    return outputs, optimal_thresholds_cls, optimal_thresholds_tokens
+
+
+def hypertune_threshold(model, val_loader, fbeta):
+    """
+    ...
+    """
+
+    # len equals to the number of leads not to the number os rows
+    all_leads_sentences_offsets = val_loader.dataset.data["sentences_boundaries"]
+
+    # len equals to number of rows
+    all_leads_probas = model._generate_probas(val_loader)
+
+    all_leads_groundtruths = torch.cat(val_loader.dataset.data["token_labels"])
+    all_leads_loss_masks = torch.cat(val_loader.dataset.data["loss_mask"])
+
+    # keep only the backpropagated loss
+    all_leads_groundtruths = all_leads_groundtruths[all_leads_loss_masks != 0]
+
+    # from raw predictions to sentences
+
+    (
+        val_results,
+        optimal_thresholds_cls,
+        optimal_thresholds_tokens,
+    ) = _get_final_thresholds(
+        all_leads_probas,
+        all_leads_groundtruths,
+        all_leads_sentences_offsets,
+        tagname_to_id=model.tagname_to_id,
+        leads_nb=val_loader.dataset.data["leads_nb"],
+        fbeta=fbeta,
+    )
+
+    return val_results, optimal_thresholds_cls, optimal_thresholds_tokens
