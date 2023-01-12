@@ -18,16 +18,19 @@ from copy import copy
 import torch
 from collections import defaultdict
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 from utils import (
-    preprocess_df,
+    _preprocess_df,
     _clean_str_for_logging,
     _clean_results_for_logging,
     _clean_thresholds_for_logging,
     _create_stratified_train_test_df,
-    generate_results,
-    _get_sectors_non_sectors_grouped_tags,
+    _generate_results,
     _generate_test_set_results,
     _get_results_df_from_dict,
+    _get_bar_colour,
+    _get_handles,
 )
 
 from models_training import train_model, _relabel_sectors, _relabel_subsectors
@@ -39,6 +42,82 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 # logging.getLogger().setLevel(logging.DEBUG)
+
+
+def _generate_visualization(results_df: pd.DataFrame):
+
+    tags = results_df["tag"]
+    level_0_tags = list(set([item.split("->")[0] for item in tags]))
+
+    handles = _get_handles()
+
+    for one_level_0 in level_0_tags:
+        results_df_one_level_0 = (
+            results_df[results_df.tag.apply(lambda x: x.split("->")[0] == one_level_0)]
+            .copy()
+            .sort_values(by="f_score", ascending=False)
+        )
+        results_df_one_level_0["level_1"] = results_df_one_level_0["tag"].apply(
+            lambda x: x.split("->")[1]
+        )
+        results_df_one_level_0["level_2"] = results_df_one_level_0["tag"].apply(
+            lambda x: x.split("->")[2]
+        )
+        all_level_1 = list(set(list(results_df_one_level_0["level_1"])))
+
+        fig, axes = plt.subplots(
+            len(all_level_1), 1, sharex=True, figsize=(20, 14), facecolor="white"
+        )
+
+        ordered_level_1 = (
+            results_df_one_level_0.copy()
+            .groupby("level_1", as_index=False)
+            .agg({"level_2": lambda x: len(list(x))})
+            .sort_values(by="level_2", ascending=False)
+            .level_1.tolist()
+        )
+
+        for i, one_level_1 in enumerate(ordered_level_1):
+
+            level_2_tags_df = results_df_one_level_0[
+                results_df_one_level_0.level_1 == one_level_1
+            ]
+
+            custom_palette = {}
+            for _, row in level_2_tags_df.iterrows():
+                score = row["f_score"]
+                tagname = row["level_2"]
+                custom_palette[tagname] = _get_bar_colour(score)
+
+            axes[i].set_title(f"{one_level_1}", fontsize=14)
+            # plt.gcf().autofmt_xdate()
+            # axes[i].xaxis.set_visible(False)
+            axes[i].xaxis.set_tick_params(labelsize=11)
+            # axes[i].xaxis.set_title(labelsize='large')
+            axes[i].set_xlim([0, 0.9])
+            axes[i].yaxis.set_tick_params(labelsize=11)
+            # axes[i].axvline(x=0.5)
+            sns.barplot(
+                ax=axes[i],
+                y=level_2_tags_df["level_2"],
+                x=level_2_tags_df["f_score"],
+                palette=custom_palette,
+            ).set(xlabel=None)
+            plt.subplots_adjust(hspace=0.5)
+            plt.xlabel("f1 score", fontsize=14)
+
+        fig.suptitle(f"{one_level_0} results for each separate tag", fontsize=18)
+
+        lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
+        lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
+        fig.legend(
+            lines, labels, handles=handles, fontsize=12, loc=4, bbox_to_anchor=(0.9, 0)
+        )
+
+        plt.savefig(
+            Path(args.output_data_dir) / f"results_visualization_{one_level_0}.png",
+            bbox_inches="tight",
+        )
 
 
 def train_test(
@@ -54,7 +133,7 @@ def train_test(
     )
 
     # Generate predictions and results on labeled test set
-    test_set_results = generate_results(
+    test_set_results = _generate_results(
         transformer_model,
         test_data_one_tag_labeled.excerpt.tolist(),
         test_data_one_tag_labeled["target"].tolist(),
@@ -87,6 +166,7 @@ def _log_results():
     results_as_df.to_csv(
         Path(args.output_data_dir) / "test_set_results.csv", index=None
     )
+    return results_as_df
 
 
 def _log_models():
@@ -163,6 +243,7 @@ if __name__ == "__main__":
     parser.add_argument("--proportions_pow", type=float, default=1)
     parser.add_argument("--min_entries_per_proj", type=int, default=300)
     parser.add_argument("--relabling_min_ratio", type=float, default=0.05)
+    parser.add_argument("--apply_relabling", type=str, default="true")
 
     # Data, model, and output directories
     parser.add_argument(
@@ -234,6 +315,7 @@ if __name__ == "__main__":
             "_relabling_min_ratio": args.relabling_min_ratio,
             "_loss_gamma": args.loss_gamma,
             "_proportions_pow": args.proportions_pow,
+            "_apply_relabling": args.apply_relabling,
         }
 
         model_args = {
@@ -263,20 +345,20 @@ if __name__ == "__main__":
 
         # pull data
         all_data = pd.read_pickle(f"{args.training_dir}/train.pickle")
-        all_data, projects_list_per_tag, grouped_tags = preprocess_df(
+        all_data, projects_list_per_tag, grouped_tags = _preprocess_df(
             all_data, args.min_entries_per_proj
-        )  # TODO: change this, no grouped tags
-        sector_groups, non_sector_groups = _get_sectors_non_sectors_grouped_tags(
-            grouped_tags
         )
 
         # Stratified splitting project-wise
         train_val_df, test_df = _create_stratified_train_test_df(all_data)
 
         ###############################     Apply Relabling     ###############################
+        if args.apply_relabling == "true":
+            train_val_df, projects_all_sectors = _relabel_sectors(
+                train_val_df, projects_list_per_tag, model_args
+            )
 
-        train_val_df = _relabel_sectors(train_val_df, projects_list_per_tag, model_args)
-        train_val_df = _relabel_subsectors(train_val_df, model_args)
+            train_val_df = _relabel_subsectors(train_val_df, model_args)
 
         ###############################  train backbone model   ###############################
 
@@ -306,8 +388,10 @@ if __name__ == "__main__":
         mlflow.log_param("transformer_model_path", Transformer_model_path)
 
         final_results = _generate_test_set_results(
-            transformer_model, test_df, projects_list_per_tag
+            transformer_model, test_df, projects_list_per_tag, projects_all_sectors
         )
 
-        _log_results()
+        results_as_df = _log_results()
         _log_models()
+
+        _generate_visualization(results_as_df)

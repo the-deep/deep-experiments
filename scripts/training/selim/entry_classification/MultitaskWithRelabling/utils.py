@@ -13,6 +13,7 @@ from collections import Counter, defaultdict
 import torch
 from transformers import AutoTokenizer
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
+import matplotlib.patches as mpatches
 
 warnings.filterwarnings("ignore")
 
@@ -131,7 +132,7 @@ def _custom_stratified_ids_split(
     return _flatten(train_ids), _flatten(val_ids)
 
 
-def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
+def _preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
     """
     main preprocessing function:
     1) get positive entries using the porportions of train test split
@@ -212,18 +213,9 @@ def preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
         for tag in all_target
     }
 
-    grouped_tags = {k: str(v) for k, v in projects_list_per_tag.items()}
-    tmp_dict = defaultdict(list)
-    for k, v in grouped_tags.items():
-        tmp_dict[v].append(k)
-
-    # List[List[str]: each sublist has exactly the same project_ids]
-    grouped_tags = list(tmp_dict.values())
-
     return (
         all_data,
         projects_list_per_tag,
-        grouped_tags,
     )
 
 
@@ -444,7 +436,7 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
                 np.array(y_true[:, j]),
                 f_beta,
             )
-            f_beta_scores.append(score["f_beta_score"])
+            f_beta_scores.append(score["f_score"])
             precision_scores.append(score["precision"])
             recall_scores.append(score["recall"])
 
@@ -481,7 +473,7 @@ def hypertune_threshold(model, val_data, f_beta: float = 0.8):
     return optimal_thresholds_dict, optimal_scores
 
 
-def generate_results(
+def _generate_results(
     predictions: List[List[str]],
     groundtruth: List[List[str]],
     tagname_to_tagid: Dict[str, int],
@@ -518,7 +510,7 @@ def generate_results(
 
 def get_metrics(preds, groundtruth, f_beta=1):
 
-    precision, recall, f_beta_score, _ = precision_recall_fscore_support(
+    precision, recall, f_score, _ = precision_recall_fscore_support(
         groundtruth, preds, average="binary", beta=f_beta
     )
 
@@ -535,7 +527,7 @@ def get_metrics(preds, groundtruth, f_beta=1):
     return {
         "precision": np.round(precision, 3),
         "recall": np.round(recall, 3),
-        "f_beta_score": np.round(f_beta_score, 3),
+        "f_score": np.round(f_score, 3),
         "accuracy": np.round(accuracy, 3),
         "sensitivity": np.round(sensitivity, 3),
         "specificity": np.round(specificity, 3),
@@ -980,6 +972,7 @@ def _generate_test_set_results(
     transformer_model,
     test_data: pd.DataFrame,
     projects_list_per_tag: Dict[str, List[int]],
+    projects_all_sectors: List[int],
 ):
     # Generate predictions and results on labeled test set
     final_results = {}
@@ -1002,17 +995,18 @@ def _generate_test_set_results(
     final_results.update(test_set_results_non_sectors)
 
     # sectors results: no cross
-    non_cross_test_df = test_df[
-        test_df.target.apply(lambda x: "first_level_tags->sectors->Cross" not in x)
+    sectors_test_df = test_df[
+        (test_df.target.apply(lambda x: "first_level_tags->sectors->Cross" not in x))
+        & (test_df.project_id.isin(projects_all_sectors))
     ].copy()
     test_set_results_sectors = generate_results(
-        non_cross_test_df["predictions"].tolist(),
-        non_cross_test_df.target.tolist(),
+        sectors_test_df["predictions"].tolist(),
+        sectors_test_df.target.tolist(),
         transformer_model.tagname_to_tagid,
     )
     test_set_results_sectors = {
         tagname: tagresults
-        for tagname, tagresults in test_set_results_non_sectors.items()
+        for tagname, tagresults in test_set_results_sectors.items()
         if "first_level_tags->sectors" in tagname
         and "first_level_tags->sectors->Cross" != tagname
     }
@@ -1030,7 +1024,7 @@ def _generate_test_set_results(
                 )
                 results_one_subsector = {
                     tagname: tagresults
-                    for tagname, tagresults in test_set_results_non_sectors.items()
+                    for tagname, tagresults in results_one_subsector.items()
                     if name == tagname
                 }
                 final_results.update(results_one_subsector)
@@ -1053,3 +1047,34 @@ def _get_results_df_from_dict(
     results_as_df = results_as_df[ordered_columns]
 
     return results_as_df
+
+
+def _get_bar_colour(q: float):
+    if q < 0.3:
+        palette_colour_code = "#90e0ef"
+    elif q < 0.6:
+        palette_colour_code = "#0077b6"
+    else:
+        palette_colour_code = "#03045e"
+    return palette_colour_code
+
+
+def _get_handles():
+    usually_reliable_tags = mpatches.Patch(
+        color="#03045e", label="strong results (f1 score > 0.6)"
+    )
+    fairly_reliable_tags = mpatches.Patch(
+        color="#0077b6", label="challenging results (0.3 < f1 score < 0.6"
+    )
+    not_usually_reliable_tags = mpatches.Patch(
+        color="#90e0ef", label="room for improvement results (f1 score < 0.3)"
+    )
+
+    # unreliable_tags = mpatches.Patch(color='#caf0f8', label='unreliable tags')
+    handles = [
+        usually_reliable_tags,
+        fairly_reliable_tags,
+        not_usually_reliable_tags,
+    ]
+
+    return handles

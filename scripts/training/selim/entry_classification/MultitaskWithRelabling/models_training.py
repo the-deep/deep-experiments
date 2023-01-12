@@ -252,7 +252,7 @@ def _relabel_sectors(
         axis=1,
     )
 
-    return train_val_df
+    return train_val_df, projects_all_sectors
 
 
 def _relabel_subsectors(df: pd.DataFrame, model_args: Dict):
