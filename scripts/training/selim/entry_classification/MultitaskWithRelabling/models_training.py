@@ -51,12 +51,8 @@ def train_model(
     """
     function to train one model
     """
-    models_trainining_dataset, threshold_tuning_dataset = create_train_val_df(
-        train_val_dataset
-    )
-    train_dataset, val_dataset = create_train_val_df(models_trainining_dataset)
+    train_dataset, val_dataset = create_train_val_df(train_val_dataset)
 
-    threshold_tuning_dataset = _create_df_with_translations(threshold_tuning_dataset)
     val_dataset = _create_df_with_translations(val_dataset)
 
     # train specific preprocessing
@@ -147,7 +143,7 @@ def train_model(
     if hypertune_threshold_bool:
         # hypertune decision boundary thresholds for each label
         optimal_thresholds_dict, optimal_scores = hypertune_threshold(
-            returned_model, threshold_tuning_dataset, f_beta
+            returned_model, val_dataset, f_beta
         )
         returned_model.optimal_scores = optimal_scores
         returned_model.optimal_thresholds = optimal_thresholds_dict
@@ -159,7 +155,9 @@ def train_model(
 
 
 def _relabel_sectors(
-    df: pd.DataFrame, projects_list_per_tag: Dict[str, List[int]], model_args: Dict
+    df: pd.DataFrame,
+    projects_list_per_tag: Dict[str, List[int]],
+    model_args: Dict,
 ):
     # sectors relabling
 
@@ -183,6 +181,7 @@ def _relabel_sectors(
         if "first_level_tags->sectors->" in k and "Cross" not in k
     }
     projects_all_sectors = set.intersection(*map(set, list(sector_projects.values())))
+
     non_trained_projects = list(
         set(train_val_df.project_id.tolist()) - projects_all_sectors
     )
@@ -252,7 +251,7 @@ def _relabel_sectors(
         axis=1,
     )
 
-    return train_val_df, projects_all_sectors
+    return train_val_df
 
 
 def _relabel_subsectors(df: pd.DataFrame, model_args: Dict):

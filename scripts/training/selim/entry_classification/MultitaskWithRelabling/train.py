@@ -1,12 +1,6 @@
 import os
 
-# setting tokenizers parallelism to false adds robustness when dploying the model
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-# dill import needs to be kept for more robustness in multimodel serialization
-import dill
-
-dill.extend(True)
-
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 import multiprocessing
@@ -159,14 +153,10 @@ def _log_results():
     with open(Path(args.output_data_dir) / "test_set_results.json", "w") as fp:
         json.dump(final_results, fp)
 
-    # get results df
-    results_as_df = _get_results_df_from_dict(final_results, proportions)
-
     # save results df
     results_as_df.to_csv(
         Path(args.output_data_dir) / "test_set_results.csv", index=None
     )
-    return results_as_df
 
 
 def _log_models():
@@ -345,7 +335,7 @@ if __name__ == "__main__":
 
         # pull data
         all_data = pd.read_pickle(f"{args.training_dir}/train.pickle")
-        all_data, projects_list_per_tag, grouped_tags = _preprocess_df(
+        all_data, projects_list_per_tag = _preprocess_df(
             all_data, args.min_entries_per_proj
         )
 
@@ -354,7 +344,7 @@ if __name__ == "__main__":
 
         ###############################     Apply Relabling     ###############################
         if args.apply_relabling == "true":
-            train_val_df, projects_all_sectors = _relabel_sectors(
+            train_val_df = _relabel_sectors(
                 train_val_df, projects_list_per_tag, model_args
             )
 
@@ -388,10 +378,12 @@ if __name__ == "__main__":
         mlflow.log_param("transformer_model_path", Transformer_model_path)
 
         final_results = _generate_test_set_results(
-            transformer_model, test_df, projects_list_per_tag, projects_all_sectors
+            transformer_model, test_df, projects_list_per_tag
         )
 
-        results_as_df = _log_results()
+        results_as_df = _get_results_df_from_dict(final_results, proportions)
+
+        _log_results()
         _log_models()
 
         _generate_visualization(results_as_df)

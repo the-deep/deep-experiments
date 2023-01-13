@@ -508,7 +508,10 @@ def _generate_results(
     return tot_scores
 
 
-def get_metrics(preds, groundtruth, f_beta=1):
+def get_metrics(preds: List[int], groundtruth: List[int], f_beta=1):
+    """
+    metrics for one tag
+    """
 
     precision, recall, f_score, _ = precision_recall_fscore_support(
         groundtruth, preds, average="binary", beta=f_beta
@@ -888,6 +891,9 @@ def _proportion_false_negatives(
     train_val_data_labeled: pd.DataFrame,
     train_val_data_non_labeled: pd.DataFrame,
 ):
+    """
+    Estimate proportion of false positives in dataset.
+    """
     if len(train_val_data_non_labeled) > 0:
         n_ids_train_val_labeled = train_val_data_labeled.entry_id.nunique()
         n_pos_examples_train_val_labeled = train_val_data_labeled.target.apply(
@@ -957,6 +963,13 @@ def _get_new_subsectors_tags(
     sector_name: str,
     predictions: Dict[int, List[str]],
 ):
+    """
+    After generating predictions, integrate them in final labels
+    Only include predictions of subsectors in sectors that have been already tagged
+    Example:
+        prediction is 'subsectors->Wash->Vector Control'
+        We only include it if there is the tag 'first_level_tags->sectors->Wash'
+    """
     # predictions: dict entry_id to predicted target
     row_target = row["target"]
     row_id = row["entry_id"]
@@ -972,8 +985,13 @@ def _generate_test_set_results(
     transformer_model,
     test_data: pd.DataFrame,
     projects_list_per_tag: Dict[str, List[int]],
-    projects_all_sectors: List[int],
 ):
+    """
+    Generate test set results
+    1- Generate predictions and results on labeled test set
+    2- Get results on test set of project that contain the tag (to avoid having false negatives)
+    For sector tags: No entries where there is 'Cross'.
+    """
     # Generate predictions and results on labeled test set
     final_results = {}
     test_df = test_data.copy()
@@ -981,53 +999,26 @@ def _generate_test_set_results(
         test_df.excerpt.tolist(), apply_postprocessing=False
     )
 
-    # generic results: no sectors, no subsectors
-    test_set_results_non_sectors = generate_results(
-        test_df["predictions"].tolist(),
-        test_df.target.tolist(),
-        transformer_model.tagname_to_tagid,
-    )
-    test_set_results_non_sectors = {
-        tagname: tagresults
-        for tagname, tagresults in test_set_results_non_sectors.items()
-        if "sectors" not in tagname
-    }
-    final_results.update(test_set_results_non_sectors)
-
-    # sectors results: no cross
-    sectors_test_df = test_df[
-        (test_df.target.apply(lambda x: "first_level_tags->sectors->Cross" not in x))
-        & (test_df.project_id.isin(projects_all_sectors))
-    ].copy()
-    test_set_results_sectors = generate_results(
-        sectors_test_df["predictions"].tolist(),
-        sectors_test_df.target.tolist(),
-        transformer_model.tagname_to_tagid,
-    )
-    test_set_results_sectors = {
-        tagname: tagresults
-        for tagname, tagresults in test_set_results_sectors.items()
-        if "first_level_tags->sectors" in tagname
-        and "first_level_tags->sectors->Cross" != tagname
-    }
-    final_results.update(test_set_results_sectors)
-
-    # subsectors
     for name, projects in projects_list_per_tag.items():
-        if "subsector" in name:
-            test_df_one_subsector = test_df[test_df.project_id.isin(projects)]
-            if len(test_df_one_subsector) > 0:
-                results_one_subsector = generate_results(
-                    test_df_one_subsector["predictions"].tolist(),
-                    test_df_one_subsector.target.tolist(),
-                    transformer_model.tagname_to_tagid,
+        test_df_one_tag = test_df[test_df.project_id.isin(projects)].copy()
+        if "first_level_tags->sector" not in name:
+            test_df_one_tag = test_df_one_tag[
+                test_df_one_tag.target.apply(
+                    lambda x: "first_level_tags->sectors->Cross" not in x
                 )
-                results_one_subsector = {
-                    tagname: tagresults
-                    for tagname, tagresults in results_one_subsector.items()
-                    if name == tagname
-                }
-                final_results.update(results_one_subsector)
+            ]
+        if len(test_df_one_tag) > 0:
+            results_one_tag = _generate_results(
+                test_df_one_tag["predictions"].tolist(),
+                test_df_one_tag.target.tolist(),
+                transformer_model.tagname_to_tagid,
+            )
+            results_one_tag = {
+                tagname: tagresults
+                for tagname, tagresults in results_one_tag.items()
+                if name == tagname
+            }
+            final_results.update(results_one_tag)
 
     return final_results
 
@@ -1035,6 +1026,10 @@ def _generate_test_set_results(
 def _get_results_df_from_dict(
     final_results: Dict[str, Dict[str, float]], proportions: Dict[str, float]
 ):
+    """
+    input: Dict: {tagname: {metric: score}}
+    output: results as a dataframe and mean outputs of each tag
+    """
     results_as_df = pd.DataFrame.from_dict(final_results, orient="index")
     metrics_list = list(results_as_df.columns)
     results_as_df["tag"] = results_as_df.index
@@ -1043,13 +1038,30 @@ def _get_results_df_from_dict(
         proportions[one_tag] for one_tag in results_as_df["tag"]
     ]
 
+    # get mean results
+    mean_results_df = results_as_df.copy()
+    mean_results_df["tag"] = mean_results_df["tag"].apply(
+        lambda x: "mean->" + "->".join(x.split("->")[:-1])
+    )
+    mean_results_df = mean_results_df.groupby("tag", as_index=False).agg(
+        {metric: lambda x: np.mean(list(x)) for metric in metrics_list}
+    )
+    mean_results_df["positive_examples_proportion"] = "-"
+    results_as_df = pd.concat([results_as_df, mean_results_df])
+
     ordered_columns = ["tag"] + metrics_list + ["positive_examples_proportion"]
     results_as_df = results_as_df[ordered_columns]
 
     return results_as_df
 
 
+######################## VIZUALIZATION ##############################
+
+
 def _get_bar_colour(q: float):
+    """
+    different colour code depending on score.
+    """
     if q < 0.3:
         palette_colour_code = "#90e0ef"
     elif q < 0.6:
@@ -1060,6 +1072,9 @@ def _get_bar_colour(q: float):
 
 
 def _get_handles():
+    """
+    handles, used for tag results colors visualization
+    """
     usually_reliable_tags = mpatches.Patch(
         color="#03045e", label="strong results (f1 score > 0.6)"
     )
