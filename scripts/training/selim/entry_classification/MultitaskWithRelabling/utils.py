@@ -194,10 +194,20 @@ def _preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
         .rename(columns={"entry_id": "n_entries"})
     )
 
-    project_tags_df = project_tags_df[project_tags_df.n_entries > min_entries_per_proj]
+    project_used_for_training = project_tags_df[
+        project_tags_df.n_entries > min_entries_per_proj
+    ].project_id.tolist()
+    projects_for_out_of_context_testing = list(
+        set(project_tags_df.project_id.tolist()) - set(project_used_for_training)
+    )
+
+    out_of_context_test_data = all_data[
+        (all_data.project_id.isin(projects_for_out_of_context_testing)) & (all_data.original_language.isin(languages))
+    ]
+    out_of_context_test_data['excerpt'] = out_of_context_test_data.apply(lambda x: x[x["original_language"]], axis=1)
 
     # keep only data with enough projects
-    all_data = all_data[all_data.project_id.isin(project_tags_df.project_id.tolist())]
+    all_data = all_data[all_data.project_id.isin(project_used_for_training)]
 
     project_tags_dict = dict(zip(project_tags_df.project_id, project_tags_df.target))
 
@@ -213,10 +223,7 @@ def _preprocess_df(df: pd.DataFrame, min_entries_per_proj: int) -> pd.DataFrame:
         for tag in all_target
     }
 
-    return (
-        all_data,
-        projects_list_per_tag,
-    )
+    return (all_data, projects_list_per_tag, out_of_context_test_data)
 
 
 def create_train_val_df(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -538,6 +545,9 @@ def get_metrics(preds: List[int], groundtruth: List[int], f_beta=1):
 
 
 def _create_df_with_translations(df: pd.DataFrame):
+    """
+    create final df, with translations
+    """
 
     full_data = df.copy()
     augmented_data = pd.DataFrame()
@@ -560,6 +570,12 @@ def _create_df_with_translations(df: pd.DataFrame):
 
 
 def _create_df_with_chosen_translations(data: pd.DataFrame):
+    """
+    not including all ranslations, but a way to balance data:
+        too represented tags: deleting excerpts (undersampling)
+        midrepresented tags: no translation
+        underrepresented tags: full translation
+    """
     df = data.copy()
 
     targets_list = df["target"].tolist()
@@ -1035,7 +1051,7 @@ def _get_results_df_from_dict(
     results_as_df["tag"] = results_as_df.index
     results_as_df.sort_values(by=["tag"], inplace=True, ascending=True)
     results_as_df["positive_examples_proportion"] = [
-        proportions[one_tag] for one_tag in results_as_df["tag"]
+        proportions[one_tag].item() for one_tag in results_as_df["tag"]
     ]
 
     # get mean results
@@ -1050,7 +1066,9 @@ def _get_results_df_from_dict(
     results_as_df = pd.concat([results_as_df, mean_results_df])
 
     ordered_columns = ["tag"] + metrics_list + ["positive_examples_proportion"]
-    results_as_df = results_as_df[ordered_columns]
+    results_as_df = results_as_df[ordered_columns].round(
+        {col: 3 for col in ordered_columns if col != "tag"}
+    )
 
     return results_as_df
 

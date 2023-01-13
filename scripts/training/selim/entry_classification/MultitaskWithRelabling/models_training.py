@@ -148,8 +148,6 @@ def train_model(
         returned_model.optimal_scores = optimal_scores
         returned_model.optimal_thresholds = optimal_thresholds_dict
 
-    # mlflow.log_metrics(_clean_results_for_logging(optimal_scores, prefix="val"))
-
     # move model to cpu for deployment
     return returned_model
 
@@ -195,6 +193,7 @@ def _relabel_sectors(
         MODEL_NAME=model_name,
         train_val_dataset=train_val_data_labeled,
         hypertune_threshold_bool=True,
+        f_beta=0.5,
         **model_args,
     )
 
@@ -292,6 +291,7 @@ def _relabel_subsectors(df: pd.DataFrame, model_args: Dict):
                 MODEL_NAME=one_sector_with_subsectors,
                 train_val_dataset=df_one_sector_with_subsectors,
                 hypertune_threshold_bool=True,
+                f_beta=0.5,
                 **model_args,
             )
 

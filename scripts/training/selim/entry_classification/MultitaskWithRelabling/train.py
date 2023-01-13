@@ -8,6 +8,7 @@ import argparse
 import json
 from pathlib import Path
 import mlflow
+from typing import Dict
 from copy import copy
 import torch
 from collections import defaultdict
@@ -38,7 +39,9 @@ logging.basicConfig(level=logging.INFO)
 # logging.getLogger().setLevel(logging.DEBUG)
 
 
-def _generate_visualization(results_df: pd.DataFrame):
+def _generate_visualization(
+    results_df: pd.DataFrame, context_type: str, relabling_str: str
+):
 
     tags = results_df["tag"]
     level_0_tags = list(set([item.split("->")[0] for item in tags]))
@@ -100,7 +103,12 @@ def _generate_visualization(results_df: pd.DataFrame):
             plt.subplots_adjust(hspace=0.5)
             plt.xlabel("f1 score", fontsize=14)
 
-        fig.suptitle(f"{one_level_0} results for each separate tag", fontsize=18)
+        fig.suptitle(
+            f"{one_level_0} results for each separate tag {context_type} {relabling_str}".replace(
+                "_", " "
+            ),
+            fontsize=18,
+        )
 
         lines_labels = [ax.get_legend_handles_labels() for ax in fig.axes]
         lines, labels = [sum(lol, []) for lol in zip(*lines_labels)]
@@ -109,7 +117,10 @@ def _generate_visualization(results_df: pd.DataFrame):
         )
 
         plt.savefig(
-            Path(args.output_data_dir) / f"results_visualization_{one_level_0}.png",
+            Path(args.output_data_dir)
+            / f"results_visualization_{one_level_0}_{context_type}_{relabling_str}.png".replace(
+                " ", "_"
+            ),
             bbox_inches="tight",
         )
 
@@ -141,21 +152,30 @@ def train_test(
     return transformer_model, test_set_results
 
 
-def _log_results():
+def _log_results(
+    final_results_dict: Dict,
+    final_results_df: pd.DataFrame,
+    context_type: str,
+    relabling_str: str,
+):
     # log results
-    mlflow.log_metrics(_clean_results_for_logging(final_results, prefix="test"))
-    # log thresholds
     mlflow.log_metrics(
-        _clean_thresholds_for_logging(transformer_model.optimal_thresholds)
+        _clean_results_for_logging(final_results_dict, prefix=context_type)
     )
 
     # save results dict
-    with open(Path(args.output_data_dir) / "test_set_results.json", "w") as fp:
-        json.dump(final_results, fp)
+    with open(
+        Path(args.output_data_dir)
+        / f"test_set_results_{context_type}_{relabling_str}.json".replace(" ", "_"),
+        "w",
+    ) as fp:
+        json.dump(final_results_dict, fp)
 
     # save results df
-    results_as_df.to_csv(
-        Path(args.output_data_dir) / "test_set_results.csv", index=None
+    final_results_df.to_csv(
+        Path(args.output_data_dir)
+        / f"test_set_results_{context_type}_{relabling_str}.csv".replace(" ", "_"),
+        index=None,
     )
 
 
@@ -311,7 +331,6 @@ if __name__ == "__main__":
         model_args = {
             "BACKBONE_NAME": args.model_name,
             "TOKENIZER_NAME": args.tokenizer_name,
-            "f_beta": args.f_beta,
             "max_len": args.max_len,
             "n_freezed_layers": args.n_freezed_layers,
             "MAX_EPOCHS": args.epochs,
@@ -335,12 +354,14 @@ if __name__ == "__main__":
 
         # pull data
         all_data = pd.read_pickle(f"{args.training_dir}/train.pickle")
-        all_data, projects_list_per_tag = _preprocess_df(
-            all_data, args.min_entries_per_proj
-        )
+        (
+            trainable_data,
+            projects_list_per_tag,
+            out_of_context_test_data,
+        ) = _preprocess_df(all_data, args.min_entries_per_proj)
 
         # Stratified splitting project-wise
-        train_val_df, test_df = _create_stratified_train_test_df(all_data)
+        train_val_df, test_df = _create_stratified_train_test_df(trainable_data)
 
         ###############################     Apply Relabling     ###############################
         if args.apply_relabling == "true":
@@ -358,6 +379,7 @@ if __name__ == "__main__":
             MODEL_NAME=TRANSFORMER_MODEL_NAME,
             train_val_dataset=train_val_df,
             hypertune_threshold_bool=True,
+            f_beta=1,
             **model_args,
         )
         proportions = copy(transformer_model.tags_proportions)
@@ -377,13 +399,37 @@ if __name__ == "__main__":
         )
         mlflow.log_param("transformer_model_path", Transformer_model_path)
 
-        final_results = _generate_test_set_results(
-            transformer_model, test_df, projects_list_per_tag
+        # log thresholds
+        mlflow.log_metrics(
+            _clean_thresholds_for_logging(transformer_model.optimal_thresholds)
         )
 
-        results_as_df = _get_results_df_from_dict(final_results, proportions)
-
-        _log_results()
         _log_models()
 
-        _generate_visualization(results_as_df)
+        ##### test set results generation
+
+        test_datas = {"in context": test_df, "out of context": out_of_context_test_data}
+
+        if args.apply_relabling == "true":
+            relabling_str = "with relabling"
+        else:
+            relabling_str = "witout relabling"
+
+        for context_type, data_one_context in test_datas.items():
+
+            results_dict_one_context = _generate_test_set_results(
+                transformer_model, data_one_context, projects_list_per_tag
+            )
+
+            results_df_one_context = _get_results_df_from_dict(
+                results_dict_one_context, proportions
+            )
+
+            _log_results(
+                results_dict_one_context,
+                results_df_one_context,
+                context_type,
+                relabling_str,
+            )
+
+            _generate_visualization(results_df_one_context, context_type, relabling_str)
