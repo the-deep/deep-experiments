@@ -2,6 +2,7 @@ from typing import Dict, List
 from transformers import AutoTokenizer
 from utils import custom_leads_stratified_splitting, prepare_X_data, keep_relevant_keys
 import torch
+from collections import Counter
 
 
 class DataPreparation:
@@ -33,7 +34,9 @@ class DataPreparation:
 
         return target_ids
 
-    def _create_y_data(self, excerpt_sentence_ids, input_ids, offset_mapping):
+    def _create_y_data_forward_pass(
+        self, excerpt_sentence_ids, input_ids, offset_mapping
+    ):
         # TODO: recheck all works
 
         # Initiliaze token labels with emoty list, to be filled iteratively
@@ -70,7 +73,7 @@ class DataPreparation:
         sentences_boundaries = forward_data["sentences_boundaries"]
         loss_mask = forward_data["loss_mask"]
 
-        token_labels = self._create_y_data(
+        token_labels = self._create_y_data_forward_pass(
             sample["excerpt_sentence_indices"], input_ids, sentences_boundaries
         )
 
@@ -83,6 +86,7 @@ class DataPreparation:
             "sentences_boundaries": sentences_boundaries,
             "loss_mask": loss_mask,
             "sentences": sample["sentences"],
+            "excerpt_sentence_indices": sample["excerpt_sentence_indices"],
         }
 
         return out
@@ -127,6 +131,12 @@ class DataPreparation:
         # stratified splitting: project-wise.
         project_ids = [lead["project_id"] for lead in processed_data]
 
+        out_of_context_projects = [
+            proj_id
+            for proj_id, proj_count in dict(Counter(project_ids)).items()
+            if proj_count <= 30
+        ]
+
         train_indices, val_indices, test_indices = custom_leads_stratified_splitting(
             project_ids
         )
@@ -144,6 +154,7 @@ class DataPreparation:
                 ],
             )
             for i in train_indices
+            if processed_data[i]["project_id"] not in out_of_context_projects
         ]
 
         val = [
@@ -159,9 +170,10 @@ class DataPreparation:
                 ],
             )
             for i in val_indices
+            if processed_data[i]["project_id"] not in out_of_context_projects
         ]
 
-        test = [
+        test_in_context = [
             keep_relevant_keys(
                 processed_data[i],
                 relevant_keys=[
@@ -172,15 +184,36 @@ class DataPreparation:
                     "sentences_boundaries",
                     "loss_mask",
                     "sentences",
+                    "excerpt_sentence_indices",
                 ],
             )
             for i in test_indices
+            if processed_data[i]["project_id"] not in out_of_context_projects
+        ]
+
+        test_out_of_context = [
+            keep_relevant_keys(
+                processed_data[i],
+                relevant_keys=[
+                    "lead_id",
+                    "input_ids",
+                    "attention_mask",
+                    "token_labels",
+                    "sentences_boundaries",
+                    "loss_mask",
+                    "sentences",
+                    "excerpt_sentence_indices",
+                ],
+            )
+            for i in range(len(project_ids))
+            if processed_data[i]["project_id"] in out_of_context_projects
         ]
 
         self.final_outputs = {
             "train": train,
             "val": val,
-            "test": test,
+            "test_in_context": test_in_context,
+            "test_out_of_context": test_out_of_context,
             "tag_token_proportions": tag_token_proportions,
             "tag_cls_proportions": tag_cls_proportions,
         }

@@ -1,9 +1,4 @@
-from utils import (
-    prepare_X_data,
-    get_metric,
-    retrieve_sentences_probas_gt,
-    get_full_outputs,
-)
+from utils import prepare_X_data
 from typing import Optional
 import pytorch_lightning as pl
 import numpy as np
@@ -16,7 +11,6 @@ import torch.nn.functional as F
 from data import ExtractionDataset
 from typing import List, Dict
 from collections import defaultdict
-import time
 
 
 class FocalLoss(nn.Module):
@@ -271,7 +265,7 @@ class TrainingExtractionModel(pl.LightningModule):
             eps=self.adam_epsilon,
         )
 
-        scheduler = StepLR(optimizer, gamma=0.2, step_size=2)
+        scheduler = StepLR(optimizer, gamma=0.4, step_size=1)
 
         scheduler = {
             "scheduler": scheduler,
@@ -375,15 +369,34 @@ class LoggedExtractionModel(nn.Module):
 
         return torch.cat(backbone_outputs)
 
-    def get_highlights(self, sentences: List[str]):
+    def get_highlights(
+        self, sentences: List[str], force_optimal_setup: str = None
+    ) -> List[Dict[str, List[int]]]:
 
-        final_outputs = []
+        """
+        output: [{'cls': [predictions], 'tokens': [predictions]}, ...]
+
+        one lead output only per call!
+        """
+        # optimal setups can be changed in case there is an issue
+        if force_optimal_setup is not None:
+            possible_setups = ["cls", "tokens", "union", "intersection"]
+            assert (
+                force_optimal_setup in possible_setups
+            ), f"'force_optimal_setup' arg must be one of {possible_setups}, got {force_optimal_setup}"
+            optimal_setup = {
+                tagname: force_optimal_setup for tagname in self.tagname_to_id
+            }
+        else:
+            optimal_setup = self.optimal_setups
+
+        n_sentences = len(sentences)
 
         test_dset = prepare_X_data(sentences, self.tokenizer)
 
         test_loader = self._get_loaders(
             [test_dset], self.test_params, training_mode=False
-        )  # one lead
+        )  # only one lead
 
         probas = self._generate_probas(test_loader)
 
@@ -391,12 +404,14 @@ class LoggedExtractionModel(nn.Module):
 
         initial_sentence_ids = 0
 
-        for sentence_begin, sentence_end in test_dset["sentences_boundaries"]:
+        final_outputs = [[] for _ in range(n_sentences)]
+
+        for sent_id, (sentence_begin, sentence_end) in enumerate(
+            test_dset["sentences_boundaries"]
+        ):
 
             sent_len = sentence_end - sentence_begin
             final_sentences_ids = initial_sentence_ids + sent_len
-
-            final_outputs_one_sentence = defaultdict(list)
 
             if sent_len > 3:
                 probas_one_sent = probas[initial_sentence_ids:final_sentences_ids, :]
@@ -409,7 +424,7 @@ class LoggedExtractionModel(nn.Module):
                 )
 
                 for tag_name, tag_id in self.tagname_to_id.items():
-                    ratios_per_sent_tag_cls = ratios_one_sent_cls[:, tag_id][0].item()
+                    ratios_per_sent_tag_cls = ratios_one_sent_cls[0, tag_id].item()
                     ratios_per_sent_tag_tokens = (
                         ratios_one_sent_tokens[:, tag_id][1:].mean().item()
                     )
@@ -418,12 +433,18 @@ class LoggedExtractionModel(nn.Module):
                     cls_vote = 1 if ratios_per_sent_tag_cls >= 1 else 0
                     tokens_vote = 1 if ratios_per_sent_tag_tokens >= 1 else 0
 
-                    # return tagname if prediited value is 1.
-                    if cls_vote:
-                        final_outputs_one_sentence["cls"].append(tag_name)
-                    if tokens_vote:
-                        final_outputs_one_sentence["tokens"].append(tag_name)
-
-            final_outputs.append(final_outputs_one_sentence)
+                    # return tagname if predicted value is 1.
+                    if optimal_setup[tag_name] == "union" and any(
+                        [cls_vote, tokens_vote]
+                    ):
+                        final_outputs[sent_id].append(tag_name)
+                    elif optimal_setup[tag_name] == "intersection" and all(
+                        [cls_vote, tokens_vote]
+                    ):
+                        final_outputs[sent_id].append(tag_name)
+                    elif optimal_setup[tag_name] == "cls" and cls_vote:
+                        final_outputs[sent_id].append(tag_name)
+                    elif optimal_setup[tag_name] == "tokens" and tokens_vote:
+                        final_outputs[sent_id].append(tag_name)
 
         return final_outputs

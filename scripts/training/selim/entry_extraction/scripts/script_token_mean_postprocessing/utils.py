@@ -1,11 +1,13 @@
 import torch
 from typing import List, Dict, Tuple
 import numpy as np
-from sklearn import metrics
+from copy import copy
 import re
 import random
 import itertools
 from collections import defaultdict
+import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
 
 # fix random state
 random_state = 1234
@@ -68,29 +70,55 @@ def beta_score(precision: float, recall: float, f_beta: float) -> float:
         )
 
 
-def get_metric(preds: List[int], groundtruth: List[int], f_beta: float):
-
-    precision = metrics.precision_score(
-        groundtruth, preds, average="binary", zero_division=0
+def _get_metrics(preds: List[int], groundtruth: List[int], f_beta=1):
+    """
+    metrics for one tag
+    """
+    precision, recall, f_score, _ = precision_recall_fscore_support(
+        groundtruth, preds, average="binary", beta=f_beta
     )
-    recall = metrics.recall_score(groundtruth, preds, average="binary", zero_division=0)
-    f_beta_score = beta_score(precision, recall, f_beta)
+
+    confusion_results = confusion_matrix(groundtruth, preds, labels=[0, 1])
+    n_test_set_excerpts = sum(sum(confusion_results))
+    accuracy = (confusion_results[0, 0] + confusion_results[1, 1]) / n_test_set_excerpts
+    sensitivity = confusion_results[0, 0] / (
+        confusion_results[0, 0] + confusion_results[0, 1]
+    )
+    specificity = confusion_results[1, 1] / (
+        confusion_results[1, 0] + confusion_results[1, 1]
+    )
+
     return {
         "precision": np.round(precision, 3),
         "recall": np.round(recall, 3),
-        "fbeta_score": np.round(f_beta_score, 3),
+        "f_score": np.round(f_score, 3),
+        "accuracy": np.round(accuracy, 3),
+        "sensitivity": np.round(sensitivity, 3),
+        "specificity": np.round(specificity, 3),
     }
 
 
-def clean_name_for_logging(dict_values: Dict[str, float]) -> Dict[str, float]:
+def _clean_str_for_logging(text: str):
+    return re.sub("[^0-9a-zA-Z]+", "_", copy(text))
+
+
+def _clean_results_for_logging(
+    results: Dict[str, Dict[str, float]], prefix: str = ""
+) -> Dict[str, float]:
     """clean names and prepare them for logging"""
-    return {
-        re.sub("[^0-9a-zA-Z]+", "_", name): value for name, value in dict_values.items()
-    }
+
+    final_mlflow_outputs = {}
+    for tagname, tagresults in results.items():
+        for metric, score in tagresults.items():
+            if type(score) is not str:
+                mlflow_name = f"{prefix}_{tagname}_{metric}"
+                mlflow_name = _clean_str_for_logging(mlflow_name)
+                final_mlflow_outputs[mlflow_name] = score
+
+    return final_mlflow_outputs
 
 
 def get_full_outputs(
-    tag_name: str,
     gts_one_tag: List[int],
     best_predictions_cls: List[int],
     best_predictions_tokens: List[int],
@@ -101,65 +129,63 @@ def get_full_outputs(
     """
     each: List[Unique[0, 1]] of len(n_sentences)
     """
-    full_outputs_one_tag = defaultdict()
+    full_outputs_one_tag = {}
 
     # hyperparameters
-    full_outputs_one_tag[
-        f"_optimal_threshold_{tag_name}_tokens"
-    ] = best_threshold_tokens
-    full_outputs_one_tag[f"_optimal_threshold_{tag_name}_cls"] = best_threshold_cls
+    full_outputs_one_tag[f"_optimal_threshold_tokens"] = best_threshold_tokens
+    full_outputs_one_tag[f"_optimal_threshold_cls"] = best_threshold_cls
 
     # cls alone
-    results_cls = get_metric(
+    results_cls = _get_metrics(
         best_predictions_cls,
         gts_one_tag,
         fbeta,
-    )
-    for metric_name, metric_number in results_cls.items():
-        full_outputs_one_tag[f"{tag_name}_{metric_name}_cls"] = np.round(
-            metric_number, 2
-        )
+    )["f_score"]
 
     # tokens alone
-    results_tokens = get_metric(
+    results_tokens = _get_metrics(
         best_predictions_tokens,
         gts_one_tag,
         fbeta,
-    )
-    for metric_name, metric_number in results_tokens.items():
-        full_outputs_one_tag[f"{tag_name}_{metric_name}_tokens"] = np.round(
-            metric_number, 2
-        )
+    )["f_score"]
 
     # intersection cls tokens
     intersection_tokens_cls = [
         1 if all([cls_pred, token_pred]) else 0
         for cls_pred, token_pred in zip(best_predictions_cls, best_predictions_tokens)
     ]
-    results_intersection = get_metric(
+    results_intersection = _get_metrics(
         intersection_tokens_cls,
         gts_one_tag,
         fbeta,
-    )
-    for metric_name, metric_number in results_intersection.items():
-        full_outputs_one_tag[
-            f"{tag_name}_{metric_name}_intersection_tokens_cls"
-        ] = np.round(metric_number, 2)
+    )["f_score"]
 
     # union cls tokens
     union_tokens_cls = [
         1 if any([cls_pred, token_pred]) else 0
         for cls_pred, token_pred in zip(best_predictions_cls, best_predictions_tokens)
     ]
-    results_union = get_metric(
+    results_union = _get_metrics(
         union_tokens_cls,
         gts_one_tag,
         fbeta,
-    )
-    for metric_name, metric_number in results_union.items():
-        full_outputs_one_tag[f"{tag_name}_{metric_name}_union_tokens_cls"] = np.round(
-            metric_number, 2
-        )
+    )["f_score"]
+
+    full_outputs_one_tag["f_score_results_cls_val"] = results_cls
+    full_outputs_one_tag["f_score_results_tokens_val"] = results_tokens
+    full_outputs_one_tag["f_score_results_intersection_val"] = results_intersection
+    full_outputs_one_tag["f_score_results_union_val"] = results_union
+
+    f_score_outputs = {
+        "cls": results_cls,
+        "tokens": results_tokens,
+        "intersection": results_intersection,
+        "union": results_union,
+    }
+    # optimal_setup = max(f_score_outputs, key=f_score_outputs.get)
+    full_outputs_one_tag[
+        "optimal_setup"
+    ] = "union"  # force optimal setup to be the union of cls and tokens.
 
     return full_outputs_one_tag
 
@@ -261,10 +287,12 @@ def custom_leads_stratified_splitting(
 
 
 def retrieve_sentences_probas_gt(
-    all_leads_probas, all_leads_groundtruths, all_leads_sentences_offsets, leads_nb
-):  # TODO
-    # get sentences
-
+    all_leads_probas,
+    all_leads_groundtruths,
+    all_leads_sentences_offsets,
+    leads_nb,
+    omit_short_entries: bool = True,
+):
     initial_sentence_ids = 0
     n_tags = all_leads_probas.shape[1]
 
@@ -280,7 +308,9 @@ def retrieve_sentences_probas_gt(
             sent_len = sentence_end - sentence_begin
             final_sentences_ids = initial_sentence_ids + sent_len
 
-            if sent_len > 3:  # no highlightining sentences of 3 tokens or less
+            if (
+                not omit_short_entries or sent_len > 3
+            ):  # no highlightining sentences of 3 tokens or less
                 probas_one_sent = all_leads_probas[
                     initial_sentence_ids:final_sentences_ids, :
                 ]
@@ -318,7 +348,7 @@ def _get_final_thresholds(
     mins = torch.min(all_leads_probas, dim=0).values.tolist()
     maxs = torch.max(all_leads_probas, dim=0).values.tolist()
     thresholds_possibilities = [
-        np.round(np.linspace(min, max, 10), 3) for (min, max) in list(zip(mins, maxs))
+        np.round(np.linspace(min, max, 20), 3) for (min, max) in list(zip(mins, maxs))
     ]
 
     sentences_probas, sentences_groundtruths = retrieve_sentences_probas_gt(
@@ -326,6 +356,7 @@ def _get_final_thresholds(
         all_leads_groundtruths,
         all_leads_sentences_offsets,
         leads_nb,
+        omit_short_entries=True,
     )
 
     for tag_name, tag_id in tagname_to_id.items():
@@ -336,11 +367,11 @@ def _get_final_thresholds(
             1:-1
         ]  # min and max proba predicted won't be the optimal thresholds
 
-        best_fbeta_score_cls = -1
+        best_f_score_cls = -1
         best_threshold_cls = -1
         best_predictions_cls = []
 
-        best_fbeta_score_tokens = -1
+        best_f_score_tokens = -1
         best_threshold_tokens = -1
         best_predictions_tokens = []
 
@@ -359,14 +390,14 @@ def _get_final_thresholds(
             ]
 
             # cls results
-            results_per_threshold_tag_cls = get_metric(
+            results_per_threshold_tag_cls = _get_metrics(
                 preds_per_sent_tag_cls,
                 gts_one_tag,
                 fbeta,
             )
 
-            if results_per_threshold_tag_cls["fbeta_score"] > best_fbeta_score_cls:
-                best_fbeta_score_cls = results_per_threshold_tag_cls["fbeta_score"]
+            if results_per_threshold_tag_cls["f_score"] > best_f_score_cls:
+                best_f_score_cls = results_per_threshold_tag_cls["f_score"]
 
                 best_threshold_cls = one_threshold
                 best_predictions_cls = preds_per_sent_tag_cls
@@ -378,14 +409,14 @@ def _get_final_thresholds(
             ]
 
             # tokens resuts, one threshold
-            results_per_threshold_tokens = get_metric(
+            results_per_threshold_tokens = _get_metrics(
                 preds_per_sent_tag_tokens,
                 gts_one_tag,
                 fbeta,
             )
 
-            if results_per_threshold_tokens["fbeta_score"] > best_fbeta_score_tokens:
-                best_fbeta_score_tokens = results_per_threshold_tokens["fbeta_score"]
+            if results_per_threshold_tokens["f_score"] > best_f_score_tokens:
+                best_f_score_tokens = results_per_threshold_tokens["f_score"]
 
                 best_threshold_tokens = one_threshold
                 best_predictions_tokens = preds_per_sent_tag_tokens
@@ -395,7 +426,6 @@ def _get_final_thresholds(
         optimal_thresholds_tokens[tag_name] = best_threshold_tokens
 
         outputs[tag_name] = get_full_outputs(
-            tag_name,
             gts_one_tag,
             best_predictions_cls,
             best_predictions_tokens,
@@ -409,7 +439,7 @@ def _get_final_thresholds(
 
 def hypertune_threshold(model, val_loader, fbeta):
     """
-    ...
+    main funtion for optimal threshold tuning
     """
 
     # len equals to the number of leads not to the number os rows
@@ -440,3 +470,108 @@ def hypertune_threshold(model, val_loader, fbeta):
     )
 
     return val_results, optimal_thresholds_cls, optimal_thresholds_tokens
+
+
+def _create_y_data_matrix(
+    excerpt_sentence_ids: List[Dict], n_sentences: int, tagname_to_tagid: Dict[str, int]
+):
+    """
+    labels as matrix
+    """
+    labels = torch.zeros((n_sentences, len(tagname_to_tagid)))
+
+    for one_sentence_ids_labels in excerpt_sentence_ids:
+        sent_id = one_sentence_ids_labels["index"]
+        sent_tags = one_sentence_ids_labels["tags"]
+
+        for one_tag in sent_tags:
+            labels[sent_id, tagname_to_tagid[one_tag]] = 1
+
+    return labels
+
+
+def _create_y_predictions_matrix(
+    predictions: List[List[str]], n_sentences: int, tagname_to_tagid: Dict[str, int]
+):
+    predictions_matrix = torch.zeros((n_sentences, len(tagname_to_tagid)))
+    for sent_id, predictions_one_sentence in enumerate(predictions):
+        for one_predicted_tag in predictions_one_sentence:
+            predictions_matrix[sent_id, tagname_to_tagid[one_predicted_tag]] = 1
+
+    return predictions_matrix
+
+
+def _generate_test_set_results(model, test_dataset, fbeta: float = 1):
+    """
+    generate predictions on test set  and get results.
+    """
+
+    # Generate predictions
+    n_total_test_sentences = 0
+    total_predictions, total_groudtruths = [], []
+
+    for test_lead in test_dataset:
+        # lead_id = test_lead["lead_id"]
+        sentences = test_lead["sentences"]
+        n_sentences_one_lead = len(sentences)
+        n_total_test_sentences += n_sentences_one_lead
+
+        excerpt_sentence_indices = test_lead["excerpt_sentence_indices"]
+        groundtruth_matrix_one_lead = _create_y_data_matrix(
+            excerpt_sentence_indices, n_sentences_one_lead, model.tagname_to_id
+        )
+
+        predictions_one_lead = model.get_highlights(sentences)
+        assert (
+            len(predictions_one_lead) == n_sentences_one_lead
+        ), f"problem in test set sentences generation, len of 'predictions_one_lead': {len(predictions_one_lead['cls'])}, number of lead sentences: {n_sentences_one_lead}."
+
+        predictions_matrix_one_lead = _create_y_predictions_matrix(
+            predictions_one_lead, n_sentences_one_lead, model.tagname_to_id
+        )
+
+        total_predictions.append(predictions_matrix_one_lead)
+        total_groudtruths.append(groundtruth_matrix_one_lead)
+
+    total_predictions = torch.cat(total_predictions)
+    total_groudtruths = torch.cat(total_groudtruths)
+
+    ######### Generate results
+    results_test_set = {}
+    for tagname, tag_id in model.tagname_to_id.items():
+        predictions_one_tag = total_predictions[:, tag_id].tolist()
+        groundtruth_one_tag = total_groudtruths[:, tag_id].tolist()
+
+        tag_metrics = _get_metrics(predictions_one_tag, groundtruth_one_tag, fbeta)
+        results_test_set[tagname] = tag_metrics
+
+    return results_test_set, n_total_test_sentences
+
+
+def _get_results_df_from_dict(
+    final_results: Dict[str, Dict[str, float]], proportions: Dict[str, Dict[str, float]]
+):
+    """
+    input:
+        final_results: Dict: {tagname: {metric: score}}
+        proportions: {'cls': {tagname: proportion}, 'tokens': {tagname: proportion}}
+
+    output: results as a dataframe and mean outputs of each tag
+    """
+    results_as_df = pd.DataFrame.from_dict(final_results, orient="index")
+    metrics_list = list(results_as_df.columns)
+    results_as_df["tag"] = results_as_df.index
+    results_as_df.sort_values(by=["tag"], inplace=True, ascending=True)
+
+    proportions_types = []
+    for token_type, one_type_proportions in proportions.items():
+        proportion_name = f"positive_examples_proportion_{token_type}"
+        proportions_types.append(proportion_name)
+        results_as_df[proportion_name] = [
+            one_type_proportions[one_tag] for one_tag in results_as_df["tag"]
+        ]
+
+    ordered_columns = ["tag"] + metrics_list + proportions_types
+    results_as_df = results_as_df[ordered_columns]
+
+    return results_as_df

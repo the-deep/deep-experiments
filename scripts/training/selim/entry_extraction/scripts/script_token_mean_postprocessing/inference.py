@@ -15,6 +15,11 @@ class EntryExtractionWrapper(mlflow.pyfunc.PythonModel):
         pass
 
     def predict(self, context, inputs):
-        sentences = inputs["return_type"].tolist()
-        predictions = self.model.get_highlights(sentences)
+        sentences = inputs["lead_sentences"].tolist()
+        forced_setup = (
+            None
+            if "forced_setup" not in inputs.columns
+            else inputs["forced_setup"].iloc[0]
+        )
+        predictions = self.model.get_highlights(sentences, forced_setup)
         return predictions

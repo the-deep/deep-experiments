@@ -14,6 +14,7 @@ from dataclasses import dataclass
 import string
 from ast import literal_eval
 from copy import copy
+import random
 from tqdm import tqdm
 
 tqdm.pandas()
@@ -178,7 +179,9 @@ def create_excerpts_data_version(
 ):
 
     train_df = pd.read_csv(excerpts_csv_path)
-    train_df["nlp_tags"] = train_df["nlp_tags"].apply(_select_relevant_tags)
+    train_df["nlp_tags"] = [
+        ["is_relevant"] for _ in train_df.index
+    ]  # train_df["nlp_tags"].apply(_select_relevant_tags)
 
     # sentencizer = Sentencizer()
     train_df["original_language"] = train_df["original_language"].apply(
@@ -197,8 +200,10 @@ def create_excerpts_data_version(
             # "original_language": lambda x: Counter(list(x)).most_common(1)[0][0],
         }
     )
+
+    # if subsampling, no need to run for everything, just a sample big enough to contain the subsample we will keep in the end.
     if n_subsample is not None:
-        full_text = full_text.sample(n=n_subsample, random_state=1234)
+        full_text = full_text.sample(n=n_subsample * 3, random_state=1234)
 
     full_text["n_excerpts"] = full_text.entry_id.apply(lambda x: len(x))
 
@@ -286,13 +291,22 @@ def create_excerpts_data_version(
                             }
                             matched_sentences.append(match_one_sentence)
 
-                output_one_lead = {
-                    "id": {"lead_id": one_lead_id, "project_id": int(project_id)},
-                    "sentences": lead_sentences,
-                    "excerpt_sentence_indices": matched_sentences,
-                }
+                n_relevant_sentences = len(matched_sentences)
+                n_total_sentences = len(lead_sentences)
 
-                raw_data.append(output_one_lead)
+                ratio_relevant_sentences = n_relevant_sentences / n_total_sentences
+
+                if ratio_relevant_sentences > 0.1 and ratio_relevant_sentences < 0.7:
+                    output_one_lead = {
+                        "id": {"lead_id": one_lead_id, "project_id": int(project_id)},
+                        "sentences": lead_sentences,
+                        "excerpt_sentence_indices": matched_sentences,
+                    }
+
+                    raw_data.append(output_one_lead)
+
+    if n_subsample is not None:
+        raw_data = random.sample(raw_data, min(len(raw_data), n_subsample))
 
     tagname_to_id = _get_tagname_to_id(list(set(flatten(train_df["nlp_tags"]))))
 

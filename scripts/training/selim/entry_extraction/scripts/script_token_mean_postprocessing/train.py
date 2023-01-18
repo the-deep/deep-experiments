@@ -5,6 +5,10 @@ import multiprocessing
 import logging
 from pathlib import Path
 import os
+
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
 import pandas as pd
 import argparse
 import torch
@@ -14,14 +18,16 @@ import pytorch_lightning as pl
 from ast import literal_eval
 from model import TrainingExtractionModel, LoggedExtractionModel
 from inference import EntryExtractionWrapper
-from utils import clean_name_for_logging, hypertune_threshold
+from utils import (
+    _clean_results_for_logging,
+    hypertune_threshold,
+    _generate_test_set_results,
+    _clean_str_for_logging,
+    _get_results_df_from_dict,
+)
 from prepare_data_for_training_job import DataPreparation
 import time
 import json
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -122,6 +128,11 @@ def _train_model():
     ) = hypertune_threshold(logged_extraction_model, val_loader, args.fbeta)
     logged_extraction_model.optimal_thresholds_cls = optimal_thresholds_cls
     logged_extraction_model.optimal_thresholds_tokens = optimal_thresholds_tokens
+    logged_extraction_model.optimal_setups = {
+        tagname: outputs["optimal_setup"] for tagname, outputs in val_results.items()
+    }
+
+    mlflow.log_metrics(_clean_results_for_logging(val_results))
 
     return logged_extraction_model
 
@@ -213,7 +224,8 @@ if __name__ == "__main__":
     ).final_outputs
 
     train_dataset = preprocessed_data["train"]
-    test_dataset = preprocessed_data["test"]
+    test_in_context_dataset = preprocessed_data["test_in_context"]
+    test_out_of_context_dataset = preprocessed_data["test_out_of_context"]
     val_dataset = preprocessed_data["val"]
     tag_token_proportions = preprocessed_data["tag_token_proportions"]
     tag_cls_proportions = preprocessed_data["tag_cls_proportions"]
@@ -235,31 +247,23 @@ if __name__ == "__main__":
 
     with mlflow.start_run():
         # log token proportions
-        token_proportions = clean_name_for_logging(
-            {
-                f"__proportion_in_percentage_{tagname}_tokens": round(
-                    100 * tag_token_proportions[tag_id].item(), 2
-                )
-                for tagname, tag_id in tagname_to_tagid.items()
-            }
-        )
-        mlflow.log_metrics(token_proportions)
+        token_proportions = {
+            tagname: round(tag_token_proportions[tag_id].item(), 2)
+            for tagname, tag_id in tagname_to_tagid.items()
+        }
 
         # log cls proportions
-        cls_proportions = clean_name_for_logging(
-            {
-                f"__proportion_in_percentage_{tagname}_cls": round(
-                    100 * tag_cls_proportions[tag_id].item(), 2
-                )
-                for tagname, tag_id in tagname_to_tagid.items()
-            }
-        )
-        mlflow.log_metrics(cls_proportions)
+        cls_proportions = {
+            tagname: round(tag_cls_proportions[tag_id].item(), 2)
+            for tagname, tag_id in tagname_to_tagid.items()
+        }
+        tot_proportions = {"cls": cls_proportions, "tokens": token_proportions}
 
         n_leads_per_category = {
             "_n_leads_train": len(train_dataset),
             "_n_leads_val": len(val_dataset),
-            "_n_leads_test": len(test_dataset),
+            "_n_leads_test_out_of_context": len(test_out_of_context_dataset),
+            "_n_leads_test_in_context_dataset": len(test_in_context_dataset),
         }
         mlflow.log_params(n_leads_per_category)
 
@@ -299,38 +303,48 @@ if __name__ == "__main__":
         mlflow.log_params(model_params)
 
         # train model using pytorch lightning
-
         logged_extraction_model = _train_model()
-
-        # Generate test set results
-
-        start_test_predictions = time.process_time()
-        results_test_set = {}
-        n_test_sentences = 0
-
-        for test_lead in test_dataset:
-            lead_id = test_lead["lead_id"]
-            sentences = test_lead["sentences"]
-            predictions_one_lead = logged_extraction_model.get_highlights(sentences)
-
-            n_test_sentences += len(sentences)
-
-            results_test_set[lead_id] = {
-                lead_id: dict(zip(sentences, predictions_one_lead))
-            }
-
-        end_test_predictions = time.process_time()
-        test_set_results_generation_time = end_test_predictions - start_test_predictions
-        mlflow.log_metrics(
-            {
-                "_time_test_set_predictions_per_sentence": round(
-                    test_set_results_generation_time / n_test_sentences, 4
-                )
-            }
-        )
 
         # This class is logged as a pickle artifact and used at inference time
         _log_models()
 
-    with open(Path(args.output_data_dir) / "test_results_predictions.json", "w") as f:
-        json.dump(results_test_set, f)
+        # Generate test set results
+        start_test_predictions = time.process_time()
+
+        test_datasets = {
+            "test_in_context": test_in_context_dataset,
+            "test_out_of_context": test_out_of_context_dataset,
+        }
+
+        for context_name, test_dataset in test_datasets.items():
+
+            results_test_set, n_total_test_sentences = _generate_test_set_results(
+                logged_extraction_model, test_dataset, args.fbeta
+            )
+
+            end_test_predictions = time.process_time()
+            test_set_results_generation_time = (
+                end_test_predictions - start_test_predictions
+            )
+            mlflow.log_metrics(
+                {
+                    "_time_test_set_predictions_per_sentence": round(
+                        test_set_results_generation_time / n_total_test_sentences, 4
+                    )
+                }
+            )
+            mlflow.log_metrics(
+                _clean_results_for_logging(results_test_set, prefix=context_name)
+            )
+            with open(
+                Path(args.output_data_dir) / f"{context_name}_results_predictions.json",
+                "w",
+            ) as f:
+                json.dump(results_test_set, f)
+
+            test_results_as_df = _get_results_df_from_dict(
+                results_test_set, tot_proportions
+            )
+            test_results_as_df.to_csv(
+                Path(args.output_data_dir) / f"{context_name}_results.csv", index=None
+            )
