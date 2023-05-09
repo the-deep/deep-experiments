@@ -167,7 +167,7 @@ ml-runs/
 *.sqlite
 
 # all csv files
-*.csv
-*.csv.gz
-*.csv#
-*.json
+# *.csv
+# *.csv.gz
+# *.csv#
+# *.json
