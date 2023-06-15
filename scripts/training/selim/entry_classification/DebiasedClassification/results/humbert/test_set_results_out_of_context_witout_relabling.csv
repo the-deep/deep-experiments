@@ -1,0 +1,165 @@
+tag,precision,recall,f_score,accuracy,sensitivity,specificity,positive_examples_proportion
+first_level_tags->Affected->Displaced,0.777,0.834,0.804,0.782,0.721,0.834,0.33939874050779784
+first_level_tags->Affected->Non displaced,0.207,0.141,0.168,0.977,0.991,0.141,0.06154227780845156
+first_level_tags->pillars_1d->Casualties,0.713,0.469,0.566,0.976,0.993,0.469,0.034656040201326704
+first_level_tags->pillars_1d->Context,0.55,0.513,0.531,0.868,0.929,0.513,0.13953637243840572
+first_level_tags->pillars_1d->Covid-19,0.701,0.123,0.209,0.692,0.974,0.123,0.11044962431284058
+first_level_tags->pillars_1d->Displacement,0.725,0.582,0.646,0.865,0.941,0.582,0.1325027406358275
+first_level_tags->pillars_1d->Humanitarian access,0.63,0.185,0.286,0.985,0.998,0.185,0.022693264837442287
+first_level_tags->pillars_1d->Information and communication,0.554,0.263,0.357,0.973,0.994,0.263,0.019012410879324003
+first_level_tags->pillars_1d->Shock/event,0.398,0.11,0.173,0.905,0.984,0.11,0.03976922646053885
+first_level_tags->pillars_2d->At risk,0.614,0.183,0.282,0.89,0.985,0.183,0.0483312128413792
+first_level_tags->pillars_2d->Capacities & response,0.627,0.638,0.632,0.871,0.92,0.638,0.19048419233262118
+first_level_tags->pillars_2d->Humanitarian conditions,0.503,0.791,0.615,0.685,0.635,0.791,0.3059829880532283
+first_level_tags->pillars_2d->Impact,0.539,0.552,0.546,0.627,0.678,0.552,0.25317873746709235
+first_level_tags->pillars_2d->Priority interventions,0.457,0.684,0.548,0.968,0.977,0.684,0.0515959702651015
+first_level_tags->pillars_2d->Priority needs,0.352,0.2,0.255,0.972,0.991,0.2,0.024189611989981676
+first_level_tags->sectors->Agriculture,1.0,0.167,0.286,0.979,1.0,0.167,0.015931696153507615
+first_level_tags->sectors->Cross,0.388,0.5,0.437,0.825,0.876,0.5,0.15177921277736434
+first_level_tags->sectors->Education,0.779,0.817,0.798,0.977,0.986,0.817,0.0647670259500204
+first_level_tags->sectors->Food security,0.739,0.751,0.745,0.961,0.978,0.751,0.07964247705467668
+first_level_tags->sectors->Health,0.728,0.782,0.754,0.909,0.936,0.782,0.19163645965864082
+first_level_tags->sectors->Livelihoods,0.704,0.728,0.716,0.916,0.948,0.728,0.10576853830088581
+first_level_tags->sectors->Logistics,0.231,0.111,0.15,0.983,0.995,0.111,0.021260932536348434
+first_level_tags->sectors->Nutrition,0.661,0.676,0.669,0.985,0.992,0.676,0.025285866320986467
+first_level_tags->sectors->Protection,0.677,0.688,0.682,0.849,0.899,0.688,0.17566475422297972
+first_level_tags->sectors->Shelter,0.632,0.654,0.643,0.961,0.978,0.654,0.05565291147546231
+first_level_tags->sectors->Wash,0.828,0.796,0.812,0.981,0.991,0.796,0.05944579142361028
+secondary_tags->Age->12-17 years old,1.0,1.0,1.0,1.0,1.0,1.0,0.010522441206359876
+secondary_tags->Age->18-24 years old,0.123,0.06,0.08,0.968,0.99,0.06,0.021348952957086043
+secondary_tags->Age->18-59 years old,0.16,0.172,0.166,0.945,0.97,0.172,0.04666682670379528
+secondary_tags->Age->25-59 years old,0.165,0.088,0.115,0.964,0.988,0.088,0.02046874874970993
+secondary_tags->Age->5-17 years old,0.153,0.216,0.179,0.96,0.975,0.216,0.019140440582215073
+secondary_tags->Age-><18 years,0.281,0.602,0.383,0.921,0.935,0.602,0.0704163365900889
+secondary_tags->Age-><18 years old,0.241,0.346,0.284,0.947,0.966,0.346,0.05072376791415609
+secondary_tags->Age-><5 years old,0.391,0.466,0.425,0.986,0.992,0.466,0.01799617511262613
+secondary_tags->Age->>60 years old,0.165,0.397,0.234,0.974,0.98,0.397,0.02742236198798121
+secondary_tags->Displaced->Asylum seekers,0.667,0.171,0.272,0.921,0.992,0.171,0.01092253402789447
+secondary_tags->Displaced->Idp,0.461,0.409,0.434,0.942,0.973,0.409,0.07243280441062326
+secondary_tags->Displaced->In transit,0.103,0.08,0.09,0.933,0.97,0.08,0.007113650366885118
+secondary_tags->Displaced->Irregular,0.0,0.0,0.0,0.98,1.0,0.0,0.002928679453633243
+secondary_tags->Displaced->Migrants,0.767,0.699,0.731,0.727,0.759,0.699,0.08598794920421537
+secondary_tags->Displaced->Others of concern,0.112,0.382,0.173,0.849,0.869,0.382,0.034423986364836644
+secondary_tags->Displaced->Pendular,1.0,0.043,0.082,0.972,1.0,0.043,0.0014243304446631619
+secondary_tags->Displaced->Refugees,0.482,0.355,0.409,0.817,0.917,0.355,0.16501428331372878
+secondary_tags->Displaced->Returnees,0.398,0.219,0.283,0.956,0.986,0.219,0.02058077473973962
+secondary_tags->Gender->All,0.364,0.617,0.457,0.889,0.912,0.617,0.10152755439261908
+secondary_tags->Gender->Female,0.346,0.454,0.393,0.941,0.962,0.454,0.05125189043858175
+secondary_tags->Gender->Male,0.239,0.112,0.153,0.979,0.994,0.112,0.021484984516407808
+secondary_tags->Non displaced->Host,0.31,0.236,0.268,0.986,0.994,0.236,0.045442542669899416
+secondary_tags->severity->Critical issue,0.186,0.151,0.167,0.976,0.989,0.151,0.018028182538348897
+secondary_tags->severity->Issue of concern,0.2,0.518,0.289,0.615,0.632,0.518,0.06641540837474294
+secondary_tags->severity->Minor issue,0.021,0.019,0.02,0.978,0.989,0.019,0.013899224620111866
+secondary_tags->severity->Severe issue,0.308,0.455,0.367,0.749,0.805,0.455,0.12224436069168047
+secondary_tags->specific_needs_groups->Child head of household,0.167,0.5,0.25,0.994,0.995,0.5,0.0005761336630098183
+secondary_tags->specific_needs_groups->Chronically ill,0.5,0.296,0.372,0.993,0.998,0.296,0.0027126293300045613
+secondary_tags->specific_needs_groups->Elderly head of household,0.1,0.167,0.125,0.991,0.994,0.167,0.0003600835393811364
+secondary_tags->specific_needs_groups->Female head of household,0.5,0.077,0.133,0.997,1.0,0.077,0.0032727592801529955
+secondary_tags->specific_needs_groups->Indigenous people,0.588,0.256,0.357,0.985,0.997,0.256,0.007377711629097951
+secondary_tags->specific_needs_groups->Lgbtqia+,0.333,0.036,0.065,0.994,1.0,0.036,0.002192508662009586
+secondary_tags->specific_needs_groups->Minorities,0.0,0.0,0.0,0.992,0.998,0.0,0.0034568019780589097
+secondary_tags->specific_needs_groups->Persons with disability,0.393,0.314,0.349,0.993,0.997,0.314,0.00758575989629594
+secondary_tags->specific_needs_groups->Pregnant or lactating women,0.5,0.463,0.481,0.99,0.995,0.463,0.005817349625113026
+secondary_tags->specific_needs_groups->Single women (including widows),0.0,0.0,0.0,0.996,0.999,0.0,0.0008321930687919597
+secondary_tags->specific_needs_groups->Unaccompanied or separated children,0.286,0.5,0.364,0.994,0.996,0.5,0.0024565699242224195
+subpillars_1d->Casualties->Dead,0.538,0.607,0.57,0.979,0.988,0.607,0.015779660881324466
+subpillars_1d->Casualties->Injured,0.25,0.042,0.071,0.992,0.999,0.042,0.0019924622512422882
+subpillars_1d->Casualties->Missing,0.727,0.4,0.516,0.995,0.999,0.4,0.0010242376231285658
+subpillars_1d->Context->Demography,0.537,0.516,0.526,0.967,0.983,0.516,0.018764353329972554
+subpillars_1d->Context->Economy,0.495,0.355,0.414,0.976,0.991,0.355,0.029846924486480863
+subpillars_1d->Context->Environment,0.84,0.452,0.587,0.989,0.999,0.452,0.005825351481543718
+subpillars_1d->Context->Legal & policy,0.624,0.519,0.567,0.963,0.985,0.519,0.015611621896279937
+subpillars_1d->Context->Politics,0.548,0.286,0.376,0.982,0.996,0.286,0.0104984356370678
+subpillars_1d->Context->Security & stability,0.619,0.17,0.267,0.965,0.996,0.17,0.046298741307983456
+subpillars_1d->Context->Socio cultural,0.222,0.208,0.215,0.989,0.995,0.208,0.013987245040849477
+subpillars_1d->Displacement->Intentions,0.672,0.488,0.566,0.985,0.995,0.488,0.0043610117547270965
+subpillars_1d->Displacement->Local integration,0.538,0.281,0.369,0.956,0.988,0.281,0.020020644789591185
+subpillars_1d->Displacement->Type/numbers/movements,0.687,0.54,0.605,0.891,0.955,0.54,0.10256779572860904
+subpillars_1d->Humanitarian access->People facing humanitarian access constraints/humanitarian access gaps,0.0,0.0,0.0,0.998,1.0,0.0,0.0016483824247225357
+subpillars_1d->Humanitarian access->Physical constraints,0.5,0.154,0.235,0.996,0.999,0.154,0.006297461010954542
+subpillars_1d->Humanitarian access->Population to relief,0.5,0.045,0.083,0.994,1.0,0.045,0.0032007425722767684
+subpillars_1d->Humanitarian access->Relief to population,0.0,0.0,0.0,0.996,1.0,0.0,0.004160965343959799
+subpillars_1d->Information and communication->Communication means and preferences,0.909,0.303,0.455,0.994,1.0,0.303,0.00745773019340487
+subpillars_1d->Information and communication->Information challenges and barriers,0.778,0.064,0.118,0.974,0.999,0.064,0.0018724344047819095
+subpillars_1d->Information and communication->Knowledge and info gaps (hum),0.333,0.3,0.316,0.993,0.997,0.3,0.003840891086732122
+subpillars_1d->Information and communication->Knowledge and info gaps (pop),0.583,0.127,0.209,0.989,0.999,0.127,0.0056973217786526476
+subpillars_1d->Shock/event->Hazard & threats,0.262,0.215,0.236,0.958,0.981,0.215,0.01850029206775972
+subpillars_1d->Shock/event->Mitigating factors,0.0,0.0,0.0,0.989,1.0,0.0,0.0008962079202374951
+subpillars_1d->Shock/event->Type and characteristics,0.483,0.097,0.162,0.952,0.995,0.097,0.014923462243240431
+subpillars_1d->Shock/event->Underlying/aggravating factors,0.167,0.016,0.03,0.978,0.998,0.016,0.006393483288122844
+subpillars_2d->At risk->Risk and vulnerabilities,0.544,0.162,0.25,0.885,0.982,0.162,0.0480351441534436
+subpillars_2d->Capacities & response->International response,0.448,0.718,0.552,0.923,0.937,0.718,0.10594457914236102
+subpillars_2d->Capacities & response->Local response,0.0,0.0,0.0,0.993,0.999,0.0,0.0018244232661977578
+subpillars_2d->Capacities & response->National response,0.333,0.021,0.039,0.936,0.997,0.021,0.006257451728801082
+subpillars_2d->Capacities & response->People reached/response gaps,0.103,0.136,0.118,0.984,0.991,0.136,0.029566859511406647
+subpillars_2d->Humanitarian conditions->Coping mechanisms,0.624,0.322,0.425,0.956,0.99,0.322,0.02836658104680286
+subpillars_2d->Humanitarian conditions->Living standards,0.521,0.666,0.585,0.773,0.807,0.666,0.15650830992790327
+subpillars_2d->Humanitarian conditions->Number of people in need,0.545,0.057,0.103,0.98,0.999,0.057,0.010434420785622265
+subpillars_2d->Humanitarian conditions->Physical and mental well being,0.491,0.558,0.522,0.898,0.936,0.558,0.08878859895495755
+subpillars_2d->Impact->Driver/aggravating factors,0.507,0.416,0.457,0.634,0.762,0.416,0.09075705563690777
+subpillars_2d->Impact->Impact on people,0.284,0.45,0.348,0.8,0.847,0.45,0.09747061318225829
+"subpillars_2d->Impact->Impact on systems, services and networks",0.486,0.333,0.395,0.886,0.956,0.333,0.09978314969072825
+subpillars_2d->Impact->Number of people affected,0.353,0.054,0.094,0.973,0.997,0.054,0.011690712245240896
+subpillars_2d->Priority interventions->Expressed by humanitarian staff,0.508,0.702,0.59,0.973,0.981,0.702,0.04893135207368109
+subpillars_2d->Priority interventions->Expressed by population,0.0,0.0,0.0,0.997,0.999,0.0,0.0027686423250194046
+subpillars_2d->Priority needs->Expressed by humanitarian staff,0.317,0.144,0.198,0.979,0.994,0.144,0.013019020412735754
+subpillars_2d->Priority needs->Expressed by population,0.333,0.085,0.136,0.99,0.998,0.085,0.008465964103672051
+subsectors->Education->Learning environment,0.365,0.443,0.4,0.973,0.984,0.443,0.013571148506453497
+subsectors->Education->Teachers and education personnel,0.567,0.472,0.515,0.991,0.996,0.472,0.002296532795608581
+subsectors->Education->Teaching and learning,0.174,0.211,0.19,0.988,0.993,0.211,0.006465499995999072
+subsectors->Health->Health care system,0.55,0.549,0.549,0.937,0.966,0.549,0.057229277192308615
+subsectors->Health->Health status,0.615,0.372,0.463,0.945,0.984,0.372,0.035856318665930496
+subsectors->Livelihoods->Assets,0.0,0.0,0.0,0.994,0.999,0.0,0.002008465964103672
+subsectors->Livelihoods->Expenditures,0.0,0.0,0.0,0.991,1.0,0.0,0.004264989477558794
+subsectors->Livelihoods->Income,0.504,0.377,0.432,0.918,0.967,0.377,0.027438365700842595
+subsectors->Livelihoods->Skills and qualifications,0.484,0.279,0.354,0.981,0.994,0.279,0.0037688743788558948
+subsectors->Logistics->Supply chain,0.111,0.05,0.069,0.983,0.995,0.05,0.021260932536348434
+subsectors->Nutrition->Nutritional status,0.25,0.167,0.2,0.99,0.996,0.167,0.003528818685935137
+subsectors->Protection->Child protection,0.54,0.281,0.37,0.969,0.992,0.281,0.016019716574245224
+subsectors->Protection->Civil and political rights,0.0,0.0,0.0,0.991,0.999,0.0,0.003032703587232238
+subsectors->Protection->Documentation,0.505,0.511,0.508,0.945,0.971,0.511,0.01625177041073529
+subsectors->Protection->Freedom of movement,0.0,0.0,0.0,0.991,0.999,0.0,0.005609301357915037
+subsectors->Protection->Housing land and property,0.5,0.043,0.08,0.994,1.0,0.043,0.0020564771026878237
+subsectors->Protection->Human rights,0.12,0.17,0.14,0.967,0.98,0.17,0.0013363100239255508
+subsectors->Protection->Justice and rule of law,0.6,0.065,0.118,0.982,0.999,0.065,0.0029686887357867025
+subsectors->Protection->Liberty,0.0,0.0,0.0,0.982,1.0,0.0,0.002912675740771859
+subsectors->Protection->Mines,0.0,0.0,0.0,0.996,1.0,0.0,0.0016403805682918438
+subsectors->Protection->Physical safety and security,0.404,0.261,0.317,0.937,0.977,0.261,0.017524065583215304
+subsectors->Protection->Sexual and gender based violence,0.582,0.393,0.469,0.964,0.988,0.393,0.01820422337982412
+subsectors->Shelter->Domestic living space,0.444,0.171,0.247,0.982,0.996,0.171,0.004585063734786471
+subsectors->Shelter->Dwelling enveloppe,0.308,0.242,0.271,0.968,0.987,0.242,0.01029038736986981
+subsectors->Wash->Hygiene,0.606,0.43,0.503,0.985,0.995,0.43,0.011522673260196365
+subsectors->Wash->Sanitation,0.635,0.398,0.489,0.988,0.997,0.398,0.008954077345944259
+subsectors->Wash->Vector control,0.5,0.8,0.615,0.997,0.998,0.8,0.0005201206679949749
+subsectors->Wash->Waste management,0.667,0.667,0.667,0.993,0.997,0.667,0.001912443686935369
+subsectors->Wash->Water supply,0.619,0.691,0.653,0.987,0.993,0.691,0.0149554696689632
+mean->first_level_tags->Affected,0.492,0.488,0.486,0.88,0.856,0.488,-
+mean->first_level_tags->pillars_1d,0.61,0.321,0.395,0.895,0.973,0.321,-
+mean->first_level_tags->pillars_2d,0.515,0.508,0.48,0.836,0.864,0.508,-
+mean->first_level_tags->sectors,0.67,0.606,0.608,0.939,0.962,0.606,-
+mean->secondary_tags->Age,0.298,0.372,0.318,0.963,0.977,0.372,-
+mean->secondary_tags->Displaced,0.443,0.262,0.275,0.9,0.941,0.262,-
+mean->secondary_tags->Gender,0.316,0.394,0.334,0.936,0.956,0.394,-
+mean->secondary_tags->Non displaced,0.31,0.236,0.268,0.986,0.994,0.236,-
+mean->secondary_tags->severity,0.179,0.286,0.211,0.83,0.854,0.286,-
+mean->secondary_tags->specific_needs_groups,0.306,0.237,0.227,0.993,0.997,0.237,-
+mean->subpillars_1d->Casualties,0.505,0.35,0.386,0.989,0.995,0.35,-
+mean->subpillars_1d->Context,0.555,0.358,0.422,0.976,0.992,0.358,-
+mean->subpillars_1d->Displacement,0.632,0.436,0.513,0.944,0.979,0.436,-
+mean->subpillars_1d->Humanitarian access,0.25,0.05,0.08,0.996,1.0,0.05,-
+mean->subpillars_1d->Information and communication,0.651,0.198,0.274,0.987,0.999,0.198,-
+mean->subpillars_1d->Shock/event,0.228,0.082,0.107,0.969,0.994,0.082,-
+mean->subpillars_2d->At risk,0.544,0.162,0.25,0.885,0.982,0.162,-
+mean->subpillars_2d->Capacities & response,0.221,0.219,0.177,0.959,0.981,0.219,-
+mean->subpillars_2d->Humanitarian conditions,0.545,0.401,0.409,0.902,0.933,0.401,-
+mean->subpillars_2d->Impact,0.408,0.313,0.324,0.823,0.89,0.313,-
+mean->subpillars_2d->Priority interventions,0.254,0.351,0.295,0.985,0.99,0.351,-
+mean->subpillars_2d->Priority needs,0.325,0.114,0.167,0.984,0.996,0.114,-
+mean->subsectors->Education,0.369,0.375,0.368,0.984,0.991,0.375,-
+mean->subsectors->Health,0.582,0.46,0.506,0.941,0.975,0.46,-
+mean->subsectors->Livelihoods,0.247,0.164,0.196,0.971,0.99,0.164,-
+mean->subsectors->Logistics,0.111,0.05,0.069,0.983,0.995,0.05,-
+mean->subsectors->Nutrition,0.25,0.167,0.2,0.99,0.996,0.167,-
+mean->subsectors->Protection,0.296,0.157,0.182,0.974,0.991,0.157,-
+mean->subsectors->Shelter,0.376,0.207,0.259,0.975,0.992,0.207,-
+mean->subsectors->Wash,0.605,0.597,0.585,0.99,0.996,0.597,-
